@@ -44,6 +44,18 @@ Categories=Graphics;Photography;
 Keywords=photos;pictures;search;faces;
 EOF
 chmod +x "$MENU/photofind.desktop"
+# The new app, while it's being built (it replaces the one above once it does everything)
+cat > "$MENU/photofind-next.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Photo Finder (new, preview)
+Comment=The next Photo Finder: browse your photos by date
+Exec=env PYTHONPATH="$APP" "$ENV/bin/python" -m photofind.ui
+Icon=$APP/photofind-icon.png
+Terminal=false
+Categories=Graphics;Photography;
+EOF
+chmod +x "$MENU/photofind-next.desktop"
 update-desktop-database "$MENU" >/dev/null 2>&1 || true
 
 echo
