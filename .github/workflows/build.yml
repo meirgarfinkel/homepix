@@ -52,7 +52,7 @@ jobs:
           key: models-${{ hashFiles('photofind/core/ai/models.py') }}
       - if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          pip install numpy
+          pip install numpy pillow
           PHOTOFIND_HOME="$PWD/models-home" python -c \
             "from photofind.core.ai.models import MODELS, ensure_models; ensure_models(list(MODELS))"
           mv models-home/models models

@@ -16,7 +16,10 @@ IMAGE=photofind-build:alma9
 "$ENGINE" build -q -t "$IMAGE" -f "$HERE/containers/build.Containerfile" "$HERE/containers" >/dev/null
 # Kept apart from build/ (a build made directly on this computer) since the two can't share a Python.
 mkdir -p "$ROOT/build/alma9"
-"$ENGINE" run --rm \
+# Build as this user, so the files it makes belong to them. Rootless Podman needs keep-id for that.
+USERNS=()
+case "$(basename "$ENGINE")" in podman*) USERNS=(--userns=keep-id) ;; esac
+"$ENGINE" run --rm "${USERNS[@]}" \
   --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -e PHOTOFIND_BUILD=/src/build/alma9 \
   -v "$ROOT:/src:z" -w /src \
