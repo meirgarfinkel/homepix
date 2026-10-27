@@ -22,6 +22,15 @@ MIN_TILE, MAX_TILE, DEFAULT_TILE = 90, 360, 170
 PREFETCH_SCREENS = 1.5  # also load this many screens of thumbnails ahead and behind
 
 
+def clock(seconds) -> str:
+    """A video's length: 0:42, 3:07, 1:02:15."""
+    if not seconds:
+        return ""
+    s = round(seconds)
+    h, m, s = s // 3600, s // 60 % 60, s % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
 @dataclass(slots=True)
 class Row:
     y: int
@@ -217,6 +226,9 @@ class TimelineView(QAbstractScrollArea):
         head_font.setPointSizeF(head_font.pointSizeF() * 1.25)
         head_font.setWeight(QFont.Weight.DemiBold)
         sub_font = QFont(self.font())
+        small_font = QFont(self.font())
+        small_font.setPointSizeF(small_font.pointSizeF() * 0.85)
+        small_font.setWeight(QFont.Weight.DemiBold)
         placeholder = pal.color(QPalette.ColorRole.AlternateBase)
         highlight = pal.color(QPalette.ColorRole.Highlight)
         k = self._row_at(top)
@@ -239,13 +251,16 @@ class TimelineView(QAbstractScrollArea):
                     it = self.items[i]
                     rect = QRect(MARGIN + (i - r.start) * (self._cell + SPACING), r.y, self._cell, self._cell)
                     img = self.loader.get(it.qhash)
+                    video = it.kind == "video"
                     if img is not None:
                         p.drawImage(rect, img)
                     else:
                         p.fillRect(rect, placeholder)
                         if self.loader.failed(it.qhash):
                             p.setPen(pal.color(QPalette.ColorRole.PlaceholderText))
-                            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "Can't show\nthis photo")
+                            p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "▶" if video else "Can't show\nthis photo")
+                    if video:
+                        self._video_badge(p, rect, it.duration, small_font)
                     if i in self.selected:
                         p.fillRect(rect, QColor(highlight.red(), highlight.green(), highlight.blue(), 70))
                         p.setPen(QPen(highlight, 3))
@@ -256,6 +271,23 @@ class TimelineView(QAbstractScrollArea):
             k += 1
         p.end()
         self._request_thumbs(top, h)
+
+    @staticmethod
+    def _video_badge(p, rect, duration, font):
+        """▶ and the length, bottom right, white on a dark pill."""
+        text = f"▶ {clock(duration)}".strip()
+        p.setFont(font)
+        fm = p.fontMetrics()
+        w, h = fm.horizontalAdvance(text) + 10, fm.height() + 2
+        pill = QRect(rect.right() - w - 5, rect.bottom() - h - 5, w, h)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 150))
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.drawRoundedRect(pill, h / 2, h / 2)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(QColor(255, 255, 255))
+        p.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
 
     def _request_thumbs(self, top, h):
         """On-screen tiles first, then the screens just below and above."""

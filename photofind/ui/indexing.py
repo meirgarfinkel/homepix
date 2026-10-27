@@ -21,9 +21,10 @@ class IndexWatcher(QObject):
     state = Signal(dict)
     library_changed = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, rescan: bool = True):
         super().__init__(parent)
         self.indexer = Indexer()
+        self._closed = False
         self._changes = 0
         self._was_running = False
         self._refreshed = time.time()
@@ -33,10 +34,11 @@ class IndexWatcher(QObject):
         self._timer.start(500)
         self._rescan = QTimer(self)
         self._rescan.timeout.connect(self.start)
-        self._rescan.start(RESCAN_EVERY * 1000)
+        if rescan:
+            self._rescan.start(RESCAN_EVERY * 1000)
 
     def start(self, forget_missing=False):
-        if library_folders():
+        if library_folders() and not self._closed:
             self.indexer.start(forget_missing=forget_missing)
             self._tick()
 
@@ -44,7 +46,8 @@ class IndexWatcher(QObject):
         self.indexer.stop()
 
     def shutdown(self, wait: float = 3.0):
-        """Stop and wait a little for the current photo to finish (the index is safe either way)."""
+        """Stop for good, waiting a little for the current photo to finish (the index is safe either way)."""
+        self._closed = True
         self._timer.stop()
         self._rescan.stop()
         self.indexer.stop()

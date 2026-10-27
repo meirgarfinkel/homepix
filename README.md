@@ -1,6 +1,6 @@
 # photofind
 
-Private photo search that runs entirely on your own computer. Point it at a folder, let it work through your photos (overnight if the folder is big), then search with plain words like "dog on the beach" or "birthday cake", and by the people you've named.
+A private photo manager with AI search and face recognition that runs entirely on your own computer. Point it at a folder, let it work through your photos (overnight if the folder is big), then search with plain words like "dog on the beach" or "birthday cake", and by the people you've named.
 
 Nothing is uploaded anywhere. The only network access is a one-time download of the AI models (about 130 MB) the first time you index.
 
@@ -13,16 +13,19 @@ To install it on your own computer straight from this folder instead:
 - **Linux (Debian, Ubuntu, Pop!_OS):** open a terminal here and run `bash install_linux.sh`, then open **Photo Finder** from your applications menu.
 - **Windows:** install Python from python.org, then double-click `install_windows.bat`. It adds Photo Finder to the Start menu and desktop.
 
-Photo Finder runs in its own app window (on Linux through Qt, on Windows through the Edge engine built into Windows). If that window can't be created, it opens in a browser instead. Closing the window quits the app. While it's open, it looks for new photos every 30 minutes. `--self-test` checks that the window, interface and AI parts all work.
+Photo Finder is a native desktop app (Qt). While it's open, it looks for new photos every 30 minutes; opening it a second time brings the open window forward. `--self-test` checks that the window, thumbnails and AI parts all work.
 
 What's in it:
 
-- First run asks which folder your photos are in (your Pictures folder is one click).
-- A search box; results fill in while it's still working through your photos.
-- A row of people across the top. When it finds faces it doesn't know, a yellow prompt asks who they are.
-- Click a person to see all their photos. Each photo has a "Not (name)" button for mistakes, and you can change or remove the name.
-- Click a photo to see it large, then Open it in your photo viewer or Show it in its folder.
-- The gear icon manages which folders are included.
+- **Timeline:** every photo and video by date, in month sections, with a year scrubber down the side for jumping through the years. Ctrl + mouse wheel (or the Size slider) makes the thumbnails bigger or smaller.
+- **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show.
+- **People:** everyone you've named, as a page of faces. Click one to see their photos.
+- **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
+- **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
+- **Info** (I): when it was taken and where that date came from, camera, size, place, people, folder.
+- **Settings** (Ctrl+,): which folders make up the library. Photo Finder only reads them.
+
+Naming people and fixing faces, file operations (copy, move, rename, delete) and editing dates come in later versions (see [PLAN.md](PLAN.md)).
 
 The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
 

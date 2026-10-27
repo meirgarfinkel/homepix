@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 from ...core import open_db
 from ...core.info import photo_info
 from .. import workers
+from .timeline import clock
 
 
 def _lookup(photo_id):
@@ -80,12 +81,16 @@ class InfoPanel(QScrollArea):
             head += "<p style='color:#c0392b'>The file can't be reached right now (is its drive connected?).</p>"
         if info.get("error"):
             head += f"<p style='color:#c0392b'>This file couldn't be read: {e(info['error'])}</p>"
-        row("Taken", e(nice_date(info["taken"])), info["date_source"])
+        video = info.get("kind") == "video"
+        row("Recorded" if video else "Taken", e(nice_date(info["taken"])), info["date_source"])
+        if info.get("duration"):
+            row("Length", e(clock(info["duration"])))
         row("Camera", e(info.get("camera", "")), info.get("lens"))
         row("Exposure", e(info.get("exposure", "")))
         if "dimensions" in info:
             w, h = info["dimensions"]
-            row("Size", f"{w:,} × {h:,} ({w * h / 1e6:.1f} megapixels) · {e(info.get('size', ''))}")
+            pixels = f"{w:,} × {h:,}" if video else f"{w:,} × {h:,} ({w * h / 1e6:.1f} megapixels)"
+            row("Size", f"{pixels} · {e(info.get('size', ''))}")
         else:
             row("Size", e(info.get("size", "")))
         if "gps" in info:

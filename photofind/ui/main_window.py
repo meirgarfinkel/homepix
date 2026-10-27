@@ -20,39 +20,50 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import SearchIndex, add_folder, data_dir, library_folders, open_db, remove_folder
+from ..core import SearchIndex, add_folder, data_dir, library_folders, named_people, open_db, remove_folder
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
 from . import workers
 from .indexing import IndexStatus, IndexWatcher
 from .thumbs import ThumbLoader
 from .views.banner import Banner
 from .views.info_panel import InfoPanel
+from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
-from .views.sidebar import ALL, Sidebar
+from .views.sidebar import ALL, PEOPLE, Sidebar, person_of, person_place
 from .views.timeline import MAX_TILE, MIN_TILE, TimelineView
 from .views.viewer import Viewer
 from .views.welcome import Welcome
 
 
-def load_library(folder):
-    """What the grid and the sidebar show: (months, {folder: count}, total photos)."""
+def _folder(place):
+    return None if place in (ALL, PEOPLE) or person_of(place) is not None else place
+
+
+def load_library(place):
+    """What the grid and the sidebar show: (months, {folder: count}, total photos, named people)."""
     db = open_db()
     try:
-        items = load_items(db, folder=None if folder == ALL else folder)
+        items = [] if place == PEOPLE else load_items(db, folder=_folder(place), person=person_of(place))
         counts = folder_counts(db)
-        return group_by_month(items), counts, sum(counts.values())
+        return group_by_month(items), counts, sum(counts.values()), named_people(db)
     finally:
         db.close()
 
 
-def run_search(index: SearchIndex, q: str, folder):
+def run_search(index: SearchIndex, q: str, place):
     start = time.perf_counter()
-    found = index.search(q, folder=None if folder == ALL else folder)
+    found = index.search(q, folder=_folder(place), person_id=person_of(place))
     sections = []
     for title, rows in (("Best matches", found["matches"]), ("Possibly related", found["related"])):
         if rows:
             sections.append(Month("0000-00", [item_from_row(r) for r in rows], title))
     return sections, len(found["matches"]), time.perf_counter() - start
+
+
+def counted(photos: int, videos: int) -> str:
+    """'1,234 photos', '1 video', '1,234 photos and 56 videos'."""
+    parts = [f"{n:,} {word}{'s' if n != 1 else ''}" for n, word in ((photos, "photo"), (videos, "video")) if n]
+    return " and ".join(parts) or "0 photos"
 
 
 class SearchBox(QLineEdit):
@@ -71,13 +82,15 @@ class SearchBox(QLineEdit):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, index: bool = True):
+        """index: look for new photos in the background (off for the self-test)."""
         super().__init__()
         self.setWindowTitle("Photo Finder")
         # window layout and sizes, kept with the rest of Photo Finder's data
         self.settings = QSettings(str(data_dir() / "window.ini"), QSettings.Format.IniFormat)
         self.loader = ThumbLoader()
-        self.watcher = IndexWatcher(self)
+        self.watcher = IndexWatcher(self, rescan=index)
+        self.loaded = False  # the library has been read once
         self.search_index = SearchIndex(settling=lambda: self.watcher.indexer.snapshot()["running"])
         self.place = ALL  # what the grid shows when not searching: ALL or a folder
         self.query = ""  # the search being shown, if any
@@ -91,8 +104,10 @@ class MainWindow(QMainWindow):
         self.timeline.empty_text = "Loading your photos..."
         self.viewer = Viewer()
         self.welcome = Welcome()
+        self.people = PeopleView()
+        self.people_names = {}  # person id -> name
         self.stack = QStackedWidget()
-        for w in (self.welcome, self.timeline, self.viewer):
+        for w in (self.welcome, self.timeline, self.people, self.viewer):
             self.stack.addWidget(w)
         self.stack.setCurrentWidget(self.timeline)
         self.banner = Banner()
@@ -120,6 +135,7 @@ class MainWindow(QMainWindow):
         self.viewer.closed.connect(self.close_viewer)
         self.viewer.current_changed.connect(lambda i: self.info.show_photo(self.viewer.items[i].id))
         self.sidebar.chosen.connect(self.show_place)
+        self.people.chosen.connect(lambda pid: self.show_place(person_place(pid)))
         self.welcome.folder_chosen.connect(self.add_library_folder)
         self.banner.forget_missing.connect(self._forget_missing)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
@@ -136,7 +152,8 @@ class MainWindow(QMainWindow):
         self.timeline.set_tile_size(int(self.settings.value("tile", self.timeline.tile)))
         self.zoom.setValue(self.timeline.tile)
         self.reload()
-        QTimer.singleShot(1500, self.watcher.start)  # look for new photos once the window is up
+        if index:
+            QTimer.singleShot(1500, self.watcher.start)  # look for new photos once the window is up
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -213,16 +230,23 @@ class MainWindow(QMainWindow):
             self.timeline.empty_text = f"Couldn't open the photo library:\n{err}"
             self.timeline.viewport().update()
             return
-        months, counts, total = res
+        months, counts, total, people = res
+        self.loaded = True
         roots = library_folders()
-        self.sidebar.set_folders(roots, counts, total)
-        if self.place != ALL and self.sidebar.current_path() != self.place:  # that folder is gone
+        self.people_names = {p["id"]: p["name"] for p in people}
+        self.sidebar.set_folders(roots, counts, total, people)
+        if self.place != ALL and self.sidebar.current_path() != self.place:  # that folder or person is gone
             self.place = ALL
             return self.reload(fresh=True)
         if not roots and not total:
             self._show(self.welcome)
             return
-        if self.stack.currentWidget() is self.welcome:
+        self.people.set_people(people)
+        if self.place == PEOPLE and not self.query:
+            self._show(self.people)
+            self.count_label.setText(f"  {len(people):,} people")
+            return
+        if self.stack.currentWidget() in (self.welcome, self.people):
             self._show(self.timeline)
         if self.query:
             if self._fresh:
@@ -236,18 +260,25 @@ class MainWindow(QMainWindow):
         self.timeline.set_months(months, fresh=fresh)
         self._count_text()
 
+    def _place_name(self) -> str:
+        """" in 2023", " of Mom", or nothing for all photos."""
+        pid = person_of(self.place)
+        if pid is not None:
+            return f" of {self.people_names.get(pid, 'them')}"
+        return "" if self.place in (ALL, PEOPLE) else f" in {Path(self.place).name}"
+
     def _count_text(self):
-        n = len(self.timeline.items)
-        text = f"{n:,} photo{'s' if n != 1 else ''}"
-        if self.place != ALL:
-            text += f" in {Path(self.place).name}"
-        self.count_label.setText(f"  {text}")
+        videos = sum(it.kind == "video" for it in self.timeline.items)
+        self.count_label.setText(f"  {counted(len(self.timeline.items) - videos, videos)}{self._place_name()}")
 
     def show_place(self, place: str):
-        """Show all photos, or one folder (and the folders inside it)."""
+        """Show all photos, the people page, one person's photos, or one folder (and those inside it)."""
         self.close_viewer()
         self.place = place
-        if self.query:
+        self.sidebar.select(place)
+        if self.query and place == PEOPLE:  # the people page isn't something to search
+            self.search_box.clear()
+        elif self.query:
             self.search()  # the search now looks in here
         else:
             self.reload(fresh=True)
@@ -338,7 +369,9 @@ class MainWindow(QMainWindow):
             self.count_label.setText("")
             return
         sections, n, took = res
-        where = "" if self.place == ALL else f" in {Path(self.place).name}"
+        if self.stack.currentWidget() is self.people:
+            self._show(self.timeline)
+        where = self._place_name()
         self.timeline.empty_text = f"No photos{where} look like “{self.query}”."
         self.timeline.set_scrubber(False)
         self.timeline.set_months(sections, fresh=True)

@@ -5,11 +5,15 @@ from pathlib import Path
 
 from PIL import ExifTags, Image
 
+from .video import video_size
+
 GPS_IFD = 0x8825
 EXIF_IFD = 0x8769
 DATE_SOURCES = {
     "exif": "from the camera (EXIF)",
     "file-modified": "guessed from when the file was last changed",
+    "video": "recorded in the video",
+    "filename": "from the file's name",
     None: "unknown (indexed before this was recorded)",
 }
 
@@ -69,7 +73,8 @@ def human_size(n: int) -> str:
 
 def photo_info(db, photo_id: int) -> dict | None:
     """None if the photo isn't in the index. 'offline' is set when the file can't be reached right now."""
-    r = db.execute("SELECT id, path, size, taken, taken_source FROM photos WHERE id=?", (photo_id,)).fetchone()
+    r = db.execute("SELECT id, path, size, taken, taken_source, kind, duration FROM photos WHERE id=?",
+                   (photo_id,)).fetchone()
     if r is None:
         return None
     path = Path(r["path"])
@@ -79,14 +84,20 @@ def photo_info(db, photo_id: int) -> dict | None:
         "name": path.name,
         "folder": str(path.parent),
         "taken": r["taken"],
+        "kind": r["kind"],
         "date_source": DATE_SOURCES.get(r["taken_source"], r["taken_source"]),
         "people": [x[0] for x in db.execute(
             "SELECT DISTINCT pe.name FROM faces f JOIN people pe ON pe.id = f.person_id WHERE f.photo_id=? "
             "ORDER BY pe.name", (photo_id,))],
     }
+    if r["duration"]:
+        info["duration"] = r["duration"]
     try:
         info["size"] = human_size(os.stat(path).st_size)
-        info.update(read_exif(path))
+        if r["kind"] == "photo":
+            info.update(read_exif(path))
+        elif dims := video_size(path):
+            info["dimensions"] = dims
     except OSError:
         info["offline"] = True
         if r["size"]:

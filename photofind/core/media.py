@@ -1,6 +1,7 @@
 """Reading photos: which files count, decoding, and when they were taken."""
 
 import datetime as dt
+import re
 from pathlib import Path
 
 from PIL import Image, ImageFile, ImageOps
@@ -51,3 +52,31 @@ def date_taken(path: Path, fallback_mtime: float) -> tuple[str, str]:
     except Exception:
         pass
     return dt.datetime.fromtimestamp(fallback_mtime).isoformat(sep=" ", timespec="seconds"), "file-modified"
+
+
+# Dates in file names, most precise first (from the Sep 2026 rename pipeline).
+_NAME_DATES = [
+    (re.compile(r"(19|20)(\d{2})-(\d{2})-(\d{2}) at (\d{2})[-.](\d{2})[-.](\d{2})"), True),  # macOS screenshots
+    (re.compile(r"(19|20)(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})[-_.\s]+(\d{2})[-_.:]?(\d{2})[-_.:]?(\d{2})"), True),
+    (re.compile(r"(19|20)(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})(?!\d)"), False),
+]
+PLACEHOLDER_DATES = {dt.datetime(1998, 2, 9, 6, 49)}  # the sRGB colour profile's own date
+
+
+def is_placeholder(d: dt.datetime) -> bool:
+    """A date tools stamp when they have none: never a real one."""
+    return d in PLACEHOLDER_DATES or (d.month == 1 and d.day == 1 and d.time() == dt.time())
+
+
+def filename_date(name: str):
+    """The date (and time, if there is one) in a file's name, or None."""
+    for pattern, has_time in _NAME_DATES:
+        for m in pattern.finditer(name):
+            g = [int(x) for x in m.groups()]
+            try:
+                d = dt.datetime(g[0] * 100 + g[1], g[2], g[3], *(g[4:7] if has_time else ()))
+            except ValueError:
+                continue
+            if 1990 <= d.year <= dt.date.today().year + 1 and not is_placeholder(d):
+                return d
+    return None

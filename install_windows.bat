@@ -28,7 +28,7 @@ for %%f in (photofind_app.py photofind-icon.png photofind-icon.ico requirements.
 )
 
 if not exist "%ENV%\Scripts\python.exe" py -3 -m venv "%ENV%"
-echo Downloading the parts Photo Finder needs (one time, about 100 MB)...
+echo Downloading the parts Photo Finder needs (one time, about 300 MB)...
 "%ENV%\Scripts\python.exe" -m pip install --quiet --upgrade pip
 "%ENV%\Scripts\python.exe" -m pip install --quiet -r "%APP%\requirements.txt"
 if errorlevel 1 (

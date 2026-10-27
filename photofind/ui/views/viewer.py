@@ -1,4 +1,5 @@
-"""One photo, big: fit to the window or zoomed, with previous/next.
+"""One photo, big: fit to the window or zoomed, with previous/next. A video shows a frame with a play
+button; playing it opens the system's video player.
 
 Photos are decoded with the core's reader (so HEIC and EXIF rotation work like everywhere else),
 first at screen size; zooming in past that loads the full resolution. The next and previous photos
@@ -10,10 +11,11 @@ from pathlib import Path
 
 from PIL import Image
 from PySide6.QtCore import QPointF, QRectF, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QImage, QPainter, QPalette
+from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPalette, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 from ...core import load_photo
+from ...core.video import video_frame, video_size
 from .. import workers
 
 FULL = 1 << 15  # "no limit" for load_photo
@@ -26,8 +28,13 @@ def to_qimage(img) -> QImage:
     return QImage(data, img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888).copy()
 
 
-def decode(path: str, max_side: int):
-    """The photo at most max_side big, and the longest side of the original."""
+def decode(path: str, max_side: int, video: bool = False):
+    """The photo (or a video's frame) at most max_side big, and the longest side of the original."""
+    if video:
+        frame = video_frame(path, max_side)
+        if frame is None:
+            raise ValueError("this video's picture can't be decoded, but it may still play")
+        return to_qimage(frame), max(video_size(path) or frame.size)
     with Image.open(path) as original:
         full_side = max(original.size)
     return to_qimage(load_photo(Path(path), max_side)), full_side
@@ -60,10 +67,6 @@ class Viewer(QWidget):
         if not self.items:
             return
         index = max(0, min(len(self.items) - 1, index))
-        if self.items[index].kind == "video":  # no player of our own: hand it to the system's
-            QDesktopServices.openUrl(QUrl.fromLocalFile(self.items[index].path))
-            if self.index >= 0:
-                return
         self.index = index
         self.zoom = None
         self._center = QPointF(0.5, 0.5)
@@ -81,7 +84,7 @@ class Viewer(QWidget):
 
     def _load(self, index: int, max_side: int):
         key = (self.items[index].path, max_side)
-        if key in self._images or key in self._pending or self.items[index].kind == "video":
+        if key in self._images or key in self._pending:
             return
         self._pending.add(key)
 
@@ -98,7 +101,7 @@ class Viewer(QWidget):
             if self.index == index:
                 self.update()
 
-        workers.run(decode, done, *key)
+        workers.run(decode, done, *key, self.items[index].kind == "video")
 
     def _image(self):
         """The sharpest decoded version of the current photo there is: (QImage, original's longest
@@ -121,10 +124,38 @@ class Viewer(QWidget):
         if shown is None:
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._error or "")
+            if self._is_video():
+                self._draw_play(p)
+            p.end()
             return
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.drawImage(self._target_rect(shown), shown[0])
+        if self._is_video():
+            self._draw_play(p)
         p.end()
+
+    def _is_video(self) -> bool:
+        return 0 <= self.index < len(self.items) and self.items[self.index].kind == "video"
+
+    def _play_rect(self) -> QRectF:
+        r = min(self.width(), self.height()) * 0.09 + 24
+        return QRectF(self.width() / 2 - r, self.height() / 2 - r, 2 * r, 2 * r)
+
+    def _draw_play(self, p):
+        box = self._play_rect()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 140))
+        p.drawEllipse(box)
+        c, r = box.center(), box.width() / 2
+        p.setBrush(QColor(255, 255, 255, 235))
+        p.drawPolygon(QPolygonF([QPointF(c.x() - r * 0.28, c.y() - r * 0.42), QPointF(c.x() - r * 0.28, c.y() + r * 0.42),
+                                 QPointF(c.x() + r * 0.45, c.y())]))
+
+    def play(self):
+        """Open the video in the system's player (Photo Finder has none of its own)."""
+        if self._is_video():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(self.items[self.index].path))
 
     def _scale(self, shown) -> float:
         """Logical pixels per pixel of the decoded image."""
@@ -160,7 +191,7 @@ class Viewer(QWidget):
 
     def set_zoom(self, zoom, around: QPointF | None = None):
         shown = self._image()
-        if shown is None:
+        if shown is None or self._is_video():
             return
         if zoom is not None:
             if (self.items[self.index].path, FULL) not in self._images:
@@ -180,10 +211,14 @@ class Viewer(QWidget):
             self.go(self.index + (1 if e.angleDelta().y() < 0 else -1))
 
     def mouseDoubleClickEvent(self, e):
+        if self._is_video():
+            return self.play()
         self.set_zoom(None if self.zoom is not None else 1.0, e.position())
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton and self.zoom is not None:
+        if e.button() == Qt.MouseButton.LeftButton and self._is_video() and self._play_rect().contains(e.position()):
+            self.play()
+        elif e.button() == Qt.MouseButton.LeftButton and self.zoom is not None:
             self._drag_from = e.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
         elif e.button() == Qt.MouseButton.BackButton:
@@ -222,6 +257,8 @@ class Viewer(QWidget):
             self.set_zoom(None)
         elif key == Qt.Key.Key_1:
             self.set_zoom(1.0)
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_P) and self._is_video():
+            self.play()
         elif key == Qt.Key.Key_Escape:
             if self.window().isFullScreen():
                 self.window().showNormal()

@@ -25,25 +25,23 @@ for f in photofind_app.py photofind-icon.png requirements.txt; do
   cp "$SRC/$f" "$APP/"
 done
 
+# An environment from before the app went native still carries the old window's web engine and the
+# rest of Qt (a few hundred MB more than the app needs): start that one afresh.
+if [ -d "$ENV" ] && ls "$ENV"/lib/python3*/site-packages/webview >/dev/null 2>&1; then
+  rm -rf "$ENV"
+fi
 if [ ! -x "$ENV/bin/python" ]; then
   python3 -m venv "$ENV"
 fi
 echo "Downloading the parts Photo Finder needs (one time, about 300 MB)..."
 "$ENV/bin/python" -m pip install --quiet --upgrade pip
-# PySide6 6.12 moved the web engine into packages of its own that share files with the older
-# PySide6_Addons. Left over from an earlier install, they don't fit the pinned version, and
-# removing them alone deletes files the pinned one needs, so all of Qt is put in fresh.
-if "$ENV/bin/python" -m pip show --quiet PySide6_WebEngine >/dev/null 2>&1; then
-  "$ENV/bin/python" -m pip uninstall --quiet -y PySide6 PySide6_Essentials PySide6_Addons \
-    PySide6_WebEngine PySide6_Pdf shiboken6 >/dev/null 2>&1 || true
-fi
 "$ENV/bin/python" -m pip install --quiet -r "$APP/requirements.txt"
 
 cat > "$MENU/photofind.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Photo Finder
-Comment=Find your photos by describing them
+Comment=Browse, search and organize your photos
 Exec="$ENV/bin/python" "$APP/photofind_app.py"
 Icon=$APP/photofind-icon.png
 Terminal=false
@@ -51,18 +49,7 @@ Categories=Graphics;Photography;
 Keywords=photos;pictures;search;faces;
 EOF
 chmod +x "$MENU/photofind.desktop"
-# The new app, while it's being built (it replaces the one above once it does everything)
-cat > "$MENU/photofind-next.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Photo Finder (new, preview)
-Comment=The next Photo Finder: browse your photos by date
-Exec=env PYTHONPATH="$APP" "$ENV/bin/python" -m photofind.ui
-Icon=$APP/photofind-icon.png
-Terminal=false
-Categories=Graphics;Photography;
-EOF
-chmod +x "$MENU/photofind-next.desktop"
+rm -f "$MENU/photofind-next.desktop"  # the preview entry, from while the app was being rebuilt
 update-desktop-database "$MENU" >/dev/null 2>&1 || true
 
 echo
