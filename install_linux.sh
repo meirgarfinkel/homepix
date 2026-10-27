@@ -30,6 +30,13 @@ if [ ! -x "$ENV/bin/python" ]; then
 fi
 echo "Downloading the parts Photo Finder needs (one time, about 300 MB)..."
 "$ENV/bin/python" -m pip install --quiet --upgrade pip
+# PySide6 6.12 moved the web engine into packages of its own that share files with the older
+# PySide6_Addons. Left over from an earlier install, they don't fit the pinned version, and
+# removing them alone deletes files the pinned one needs, so all of Qt is put in fresh.
+if "$ENV/bin/python" -m pip show --quiet PySide6_WebEngine >/dev/null 2>&1; then
+  "$ENV/bin/python" -m pip uninstall --quiet -y PySide6 PySide6_Essentials PySide6_Addons \
+    PySide6_WebEngine PySide6_Pdf shiboken6 >/dev/null 2>&1 || true
+fi
 "$ENV/bin/python" -m pip install --quiet -r "$APP/requirements.txt"
 
 cat > "$MENU/photofind.desktop" <<EOF
