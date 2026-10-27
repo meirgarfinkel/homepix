@@ -26,7 +26,7 @@ is stopped before it leaves your computer. Run the same checks any time with
 | Workflow | Runs on | Does |
 |---|---|---|
 | `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests; required for merging into `main` |
-| `Build Photo Finder` (`.github/workflows/build.yml`) | version tags, or by hand from the Actions tab | builds the Linux AppImage and the Windows installer; for a tag, publishes a GitHub Release with both |
+| `Build Photo Finder` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros; the Windows installer only for tags and by hand; for a tag, publishes a GitHub Release with both |
 
 ## Releasing
 

@@ -1,35 +1,87 @@
-# Builds the Linux AppImage and the Windows installer on GitHub's machines,
-# so you don't need a Windows computer. Run it from the repository's Actions tab
-# ("Build Photo Finder" > Run workflow), or push a tag like v0.1.0 to also publish
-# a GitHub Release with both files attached.
+# Builds Photo Finder on GitHub's machines.
+# - Linux: the AppImage is built in AlmaLinux 9 (glibc 2.34), then its self-test runs on a fresh
+#   Debian, Ubuntu, Fedora and Arch. This runs on every pull request that touches the app or its
+#   packaging, so a change that breaks some distro shows up before it's merged.
+# - Windows: the installer, built only when asked (Actions tab > Build Photo Finder > Run workflow)
+#   or for a release.
+# Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files.
 name: Build Photo Finder
 
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+  pull_request:
+    branches: [main]
+    paths:
+      - "photofind/**"
+      - "photofind_app.py"
+      - "photofind-icon.*"
+      - "requirements.txt"
+      - "packaging/**"
+      - ".github/workflows/build.yml"
 
 permissions:
   contents: read
 
+concurrency:  # a new push to a pull request replaces the build still running for the old one
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux:
-    # Built on an older Ubuntu so the AppImage also runs on older systems.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: sudo apt-get update && sudo apt-get install -y libxcb-cursor0
-      - run: bash packaging/build_linux.sh
-      - run: QT_QPA_PLATFORM=offscreen ./PhotoFinder-x86_64.AppImage --appimage-extract-and-run --self-test
+      - run: bash packaging/build_in_container.sh
       - uses: actions/upload-artifact@v4
         with:
           name: PhotoFinder-Linux
           path: PhotoFinder-x86_64.AppImage
+          if-no-files-found: error
+
+  linux-models:
+    # The AI models, so the self-test can check they run on each distro. Downloaded once, then cached.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: models
+          key: models-${{ hashFiles('photofind/core/ai/models.py') }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install numpy
+          PHOTOFIND_HOME="$PWD/models-home" python -c \
+            "from photofind.core.ai.models import MODELS, ensure_models; ensure_models(list(MODELS))"
+          mv models-home/models models
+      - uses: actions/upload-artifact@v4
+        with:
+          name: models
+          path: models
+          retention-days: 1
+
+  linux-smoke:
+    needs: [linux, linux-models]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false  # see every distro's result, not just the first failure
+      matrix:
+        distro: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "fedora:latest", "archlinux:latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhotoFinder-Linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: models
+      - run: bash packaging/smoke_test.sh "${{ matrix.distro }}" PhotoFinder-x86_64.AppImage models
 
   windows:
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +99,7 @@ jobs:
   release:
     # Only for version tags: publish both builds as a GitHub Release.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows]
+    needs: [linux-smoke, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -67,6 +67,8 @@ faces and 27 named people.
 
 **Done when:** the same AppImage passes on every distro in the matrix and opens on your machine.
 
+*Status: built and passing on all six distros. The Qt window here is still the current pywebview one; the native Qt app comes in M3.*
+
 ### M3 — Qt app: browsing at parity
 - Main window, timeline (virtualized grid, month/year headers, scrubber), folders, viewer, info panel.
 - Thumbnail pipeline: background loading, disk cache, video frames.
