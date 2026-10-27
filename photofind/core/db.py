@@ -128,7 +128,14 @@ def _m5_details(db):
         db.execute(stmt)
 
 
-MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details]
+def _m6_no_rating(db):
+    """Star ratings were dropped. The column stays (always 0): removing one needs SQLite 3.35, newer
+    than the release build's."""
+    db.execute("DROP INDEX IF EXISTS photos_rating")
+    db.execute("UPDATE photos SET rating = 0 WHERE rating != 0")
+
+
+MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating]
 LATEST = len(MIGRATIONS)
 
 

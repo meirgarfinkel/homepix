@@ -1,8 +1,8 @@
-"""The details Photo Finder edits in a photo's own file (description, keywords, rating, date taken,
-location, which way up it is), and which tags each one is kept in.
+"""The details Photo Finder edits in a photo's own file (description, keywords, date taken, location,
+which way up it is), and which tags each one is kept in.
 
-Each detail is written to the standard tag that other photo apps read (XMP for the description,
-keywords and rating; EXIF for the date, location and orientation), and to the older tags too where
+Each detail is written to the standard tag that other photo apps read (XMP for the description
+and keywords; EXIF for the date, location and orientation), and to the older tags too where
 the file already has them, so they don't disagree. Tags are named with ExifTool's family 1 groups
 (IFD0:Orientation, XMP-dc:Subject, ...), so a change reads and writes the same names, and can be
 undone by writing back the values it had.
@@ -21,19 +21,16 @@ from .video import VIDEO_EXTS
 
 DESCRIPTION = ("XMP-dc:Description", "IPTC:Caption-Abstract", "IFD0:ImageDescription")
 KEYWORDS = ("XMP-dc:Subject", "IPTC:Keywords")
-RATING = ("XMP-xmp:Rating", "IFD0:Rating", "IFD0:RatingPercent")
 PHOTO_DATES = ("ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate", "XMP-exif:DateTimeOriginal",
                "XMP-xmp:CreateDate", "XMP-photoshop:DateCreated")
 VIDEO_DATES = ("QuickTime:CreateDate", "Keys:CreationDate")  # UTC; local with its offset
 GPS = ("GPS:GPSLatitude", "GPS:GPSLatitudeRef", "GPS:GPSLongitude", "GPS:GPSLongitudeRef")
 ORIENTATION = ("IFD0:Orientation", "QuickTime:Rotation")
-NUMERIC = {"XMP-xmp:Rating", "IFD0:Rating", "IFD0:RatingPercent", "GPS:GPSLatitude", "GPS:GPSLongitude",
-           "IFD0:Orientation", "QuickTime:Rotation"}
-ALL = DESCRIPTION + KEYWORDS + RATING + PHOTO_DATES + VIDEO_DATES + GPS + ORIENTATION + ("File:FileType",)
+NUMERIC = {"GPS:GPSLatitude", "GPS:GPSLongitude", "IFD0:Orientation", "QuickTime:Rotation"}
+ALL = DESCRIPTION + KEYWORDS + PHOTO_DATES + VIDEO_DATES + GPS + ORIENTATION + ("File:FileType",)
 
 # What cameras put in ImageDescription when nobody wrote one
 _JUNK = re.compile(r"^(|[A-Z ]*DIGITAL CAMERA|SONY DSC|DCIM|default|Untitled|Image)$", re.I)
-_PERCENT = {0: 0, 1: 1, 2: 25, 3: 50, 4: 75, 5: 99}  # Windows' RatingPercent for 0-5 stars
 
 
 class MetadataError(OSError):
@@ -84,7 +81,6 @@ def move_box(box, old: int, new: int):
 class Details:
     description: str = ""
     keywords: list = field(default_factory=list)
-    rating: int = 0
     taken: dt.datetime | None = None  # as shown: local time
     gps: tuple | None = None  # (latitude, longitude)
     orientation: int = 1
@@ -124,10 +120,6 @@ def details(path, tags: dict) -> Details:
         if tags.get(t):
             d.keywords = _listed(tags[t])
             break
-    try:
-        d.rating = max(0, min(5, int(round(float(tags.get("XMP-xmp:Rating", tags.get("IFD0:Rating", 0)) or 0)))))
-    except (TypeError, ValueError):
-        pass
     if is_video(path):
         if local := parse_date(tags.get("Keys:CreationDate")):
             d.taken = local
@@ -175,7 +167,6 @@ class Edit:
     keywords: list | None = None  # the whole list
     add_keywords: tuple = ()
     remove_keywords: tuple = ()
-    rating: int | None = None
     date: dt.datetime | None = None  # set to this (local time)
     shift: dt.timedelta | None = None  # or move by this
     gps: tuple | None = None  # (lat, lon), or () to remove it
@@ -235,13 +226,6 @@ def changes(path, d: Details, edit: Edit) -> dict:
         words = _unique([w for w in d.keywords if w.casefold() not in gone] + list(edit.add_keywords))
     if words is not None and words != d.keywords:
         also(KEYWORDS, words or None)
-    if edit.rating is not None and edit.rating != d.rating:
-        stars = max(0, min(5, int(edit.rating)))
-        out["XMP-xmp:Rating"] = stars or None
-        if "IFD0:Rating" in has:
-            out["IFD0:Rating"] = stars or None
-        if "IFD0:RatingPercent" in has:
-            out["IFD0:RatingPercent"] = _PERCENT[stars] or None
     if edit.touches_date():
         if video:
             for t, utc in (("QuickTime:CreateDate", True), ("Keys:CreationDate", False)):

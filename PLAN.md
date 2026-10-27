@@ -22,7 +22,7 @@ photofind/
     fileops.py          THE only code that changes files: journal, Trash, no-overwrite moves,
                         undo/redo, index updated in the same step, indexer paused while working
     metadata.py         exiftool (one long-running process): read all, write date/description/
-                        keywords/rating/GPS/orientation, old values journaled
+                        keywords/GPS/orientation, old values journaled
     organize.py         plan / preview / apply via fileops (both modes)
     dedupe.py           exact + near duplicates, keeper rule, adopt Duplicates/ + mapping CSV
   cli.py                the command line, on top of core
@@ -125,7 +125,7 @@ folders; Export makes copies for anywhere else. The Recycle Bin on Windows is le
 ### M5 — Metadata
 - exiftool bundled with its own Perl.
 - View all metadata.
-- Edit date (one, a batch, shift by N hours), description, keywords, rating, GPS; rotate and flip.
+- Edit date (one, a batch, shift by N hours), description, keywords, GPS; rotate and flip.
 
 **Done when:**
 - Round-trip tests pass on JPEG, HEIC, DNG and PNG.
@@ -135,15 +135,16 @@ folders; Export makes copies for anywhere else. The Recycle Bin on Windows is le
 *Status: done.* The AppImage bundles ExifTool 13.59 with only the Perl it uses (30 MB); its
 self-test writes and reads back details on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and
 Arch. ExifTool runs once per session (stay-open), so reading details costs about 1 ms a photo; they're read while
-indexing, so ratings, keywords and descriptions written by other apps show up too. Every change is
+indexing, so keywords and descriptions written by other apps show up too. Every change is
 an operation in the journal like a move: Undo writes back exactly the tags that were there, and a
 crash mid-write is finished or left untouched on the next start. Writes keep the file's modified
 time; the index, thumbnails and face boxes follow (boxes turn with the photo, so names stay). Each
-detail goes in the standard tag and in the others the file already has (XMP, EXIF, IPTC, Windows'
-rating), so other apps agree. Rotating changes only the orientation tag, never the pixels. HEIC
+detail goes in the standard tag and in the others the file already has (XMP, EXIF, IPTC), so
+other apps agree. Rotating changes only the orientation tag, never the pixels. HEIC
 photos turn with their rotation box, so they can't be flipped. Moving a batch's date moves their
 Live Photo clips' dates too. DNG photos are indexed and shown from their built-in preview. Round
-trips are tested on JPEG, PNG, HEIC, DNG, TIFF and GIF, including killing the app mid-write.
+trips are tested on JPEG, PNG, HEIC, DNG, TIFF and GIF, including killing the app mid-write. Star ratings were
+built too, then dropped in 0.5.1 as not needed.
 
 ### M6 — Faces
 - Face boxes in the viewer.
@@ -171,7 +172,7 @@ are all found, with no bursts flagged.
 
 ### M9 — Scene labels and filters
 - Zero-shot labels: screenshots, documents, receipts, food, beach…
-- Filter by label and by rating.
+- Filter by label.
 
 ### M10 — Windows and release
 - Windows build and installer, a migration path for existing installs, and updated docs.

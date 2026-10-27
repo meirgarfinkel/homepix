@@ -74,7 +74,7 @@ def human_size(n: int) -> str:
 
 def photo_info(db, photo_id: int) -> dict | None:
     """None if the photo isn't in the index. 'offline' is set when the file can't be reached right now."""
-    r = db.execute("SELECT id, path, size, taken, taken_source, kind, duration, rating, keywords, description "
+    r = db.execute("SELECT id, path, size, taken, taken_source, kind, duration, keywords, description "
                    "FROM photos WHERE id=?", (photo_id,)).fetchone()
     if r is None:
         return None
@@ -93,7 +93,6 @@ def photo_info(db, photo_id: int) -> dict | None:
     }
     if r["duration"]:
         info["duration"] = r["duration"]
-    info["rating"] = r["rating"] or 0
     info["keywords"] = json.loads(r["keywords"]) if r["keywords"] else []
     info["description"] = r["description"] or ""
     try:

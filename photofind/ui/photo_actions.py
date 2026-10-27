@@ -1,5 +1,5 @@
-"""The Photo menu: details written into the photos themselves (description, keywords, rating,
-location, date and time), turning them, and seeing everything a file holds. Each change is an
+"""The Photo menu: details written into the photos themselves (description, keywords, location,
+date and time), turning them, and seeing everything a file holds. Each change is an
 operation like a move, so Undo takes it back."""
 
 import os
@@ -34,15 +34,11 @@ class PhotoActions:
         self.all_details = a("All details...", self.show_all, ["Alt+Return"])
         self.turns = {t: a(names[0], lambda _=False, t=t: self.turn(t), keys)
                       for (t, names), keys in zip(TURNS.items(), (["Ctrl+R"], ["Ctrl+Shift+R"], [], []), strict=True)}
-        self.rates = [a("No rating" if n == 0 else "★" * n, lambda _=False, n=n: self.rate(n), [f"Ctrl+{n}"])
-                      for n in range(6)]
-        self.targeted = [self.details, self.date, self.all_details, *self.turns.values(), *self.rates]
+        self.targeted = [self.details, self.date, self.all_details, *self.turns.values()]
 
     def menu(self, parent) -> QMenu:
         m = QMenu("&Photo", parent)
         m.addActions([self.details, self.date])
-        rating = m.addMenu("Rating")
-        rating.addActions(self.rates[1:] + self.rates[:1])
         m.addSeparator()
         m.addActions(list(self.turns.values()))
         m.addSeparator()
@@ -52,8 +48,6 @@ class PhotoActions:
     def add_to(self, menu: QMenu):
         """The tile menu's part."""
         menu.addActions([self.details, self.date])
-        rating = menu.addMenu("Rating")
-        rating.addActions(self.rates[1:] + self.rates[:1])
         menu.addActions([self.turns["right"], self.turns["left"]])
 
     # --- doing ------------------------------------------------------------------------------------------
@@ -69,17 +63,6 @@ class PhotoActions:
     def _run(self, items, edit, summary, past, kind="details"):
         paths = [it.path for it in items]
         self.w.ops.run(kind, summary, past, lambda db: files.plan_details(db, paths, edit))
-
-    def rate(self, n: int):
-        items = self._items()
-        if not items:
-            return
-        what = self.w._what(items)
-        stars = f"{n} star{'s' if n != 1 else ''}"
-        if n:
-            self._run(items, metadata.Edit(rating=n), f"Rate {what} {stars}", f"Rated {what} {stars}")
-        else:
-            self._run(items, metadata.Edit(rating=0), f"Remove the rating of {what}", f"Removed the rating of {what}")
 
     def turn(self, how: str):
         items = [it for it in self._items() if it.kind == "photo"]

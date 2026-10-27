@@ -4,7 +4,7 @@ and every tag a file holds."""
 import datetime as dt
 import re
 
-from PySide6.QtCore import QDateTime, Qt, Signal
+from PySide6.QtCore import QDateTime, Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDateTimeEdit,
@@ -17,11 +17,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QRadioButton,
     QSpinBox,
-    QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
-    QWidget,
 )
 
 from ...core.metadata import Edit
@@ -40,41 +38,6 @@ def parse_place(text: str):
     return (lat, lon) if -90 <= lat <= 90 and -180 <= lon <= 180 else None
 
 
-class Stars(QWidget):
-    """Five stars to click (clicking the rating there takes it away)."""
-
-    changed = Signal(int)
-
-    def __init__(self, rating=0, parent=None):
-        super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        self.buttons = []
-        for n in range(1, 6):
-            b = QToolButton()
-            b.setAutoRaise(True)
-            b.setToolTip(f"{n} star{'s' if n > 1 else ''} (Ctrl+{n})")
-            b.clicked.connect(lambda _=False, n=n: self.set(0 if self.rating == n else n, emit=True))
-            lay.addWidget(b)
-            self.buttons.append(b)
-        self.note = QLabel()
-        self.note.setStyleSheet("color: palette(placeholder-text)")
-        lay.addSpacing(6)
-        lay.addWidget(self.note)
-        lay.addStretch()
-        self.set(rating)
-
-    def set(self, rating, emit=False, mixed=False):
-        self.rating = rating
-        for n, b in enumerate(self.buttons, 1):
-            b.setText("★" if n <= rating else "☆")
-            b.setStyleSheet("font-size: 18px; color: #e0a000" if n <= rating else "font-size: 18px")
-        self.note.setText("different in each" if mixed else ("" if rating else "no rating"))
-        if emit:
-            self.changed.emit(rating)
-
-
 def _common(values):
     """The value all have, or None if they differ."""
     values = list(values)
@@ -82,7 +45,7 @@ def _common(values):
 
 
 class DetailsDialog(QDialog):
-    """Description, keywords, rating and location, for one photo or many. Only what's changed here is
+    """Description, keywords and location, for one photo or many. Only what's changed here is
     written; with several photos, the keywords shown are those all of them have, and adding or
     removing one does so in each (their other keywords stay)."""
 
@@ -113,13 +76,6 @@ class DetailsDialog(QDialog):
             self.keywords.setToolTip("The keywords all of them have. Others stay as they are.")
         self.keywords.textEdited.connect(lambda: self._touched.add("keywords"))
         form.addRow("Keywords:", self.keywords)
-
-        rating = _common(d.rating for d in ds)
-        self.stars = Stars(rating or 0)
-        if rating is None:
-            self.stars.set(0, mixed=True)
-        self.stars.changed.connect(lambda _: self._touched.add("rating"))
-        form.addRow("Rating:", self.stars)
 
         place = _common(d.gps for d in ds)
         self.place = QLineEdit("" if not place else f"{place[0]:.6f}, {place[1]:.6f}")
@@ -154,8 +110,6 @@ class DetailsDialog(QDialog):
             e.add_keywords = tuple(w for w in new if w.casefold() not in old)
             kept = {w.casefold() for w in new}
             e.remove_keywords = tuple(w for w in self.common_words if w.casefold() not in kept)
-        if "rating" in self._touched:
-            e.rating = self.stars.rating
         if "place" in self._touched:
             e.gps = parse_place(self.place.text())
         return e

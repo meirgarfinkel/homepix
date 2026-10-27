@@ -42,7 +42,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | **Timeline** (main view): everything by date, grouped by month and year, with a scrubber | v1 |
 | Folders: the library's real folder tree | v1 |
 | People: a page per person | v1 |
-| Search results; filter by rating | v1 |
+| Search results | v1 |
 | Viewer: full screen, zoom, previous/next; videos open in the system player | v1 |
 | Info panel: date **and where it came from**, camera, size, dimensions, GPS, people, path | v1 |
 
@@ -50,7 +50,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 
 | Requirement | Priority |
 |---|---|
-| Star rating 0–5 and keywords, written into the file | v1 |
+| Keywords, written into the file | v1 |
 | Organizer: rename to `YYYY_MM_DD_HH_MM_SS.ext` and sort into `<library>/<year>/`; no real date goes to `Unsorted/`. Two modes: *organize a folder* and *tidy the library*. Manual, previewed, undoable. Rules from the Sep 2026 pipeline (`~/Pictures/.claude_pipeline_history/`) | v1 |
 
 ## 4. File operations
@@ -70,7 +70,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 |---|---|
 | View all metadata | v1 |
 | Edit date taken: one photo, a batch, and "shift by N hours" | v1 |
-| Edit description, keywords, rating, GPS | v1 |
+| Edit description, keywords, GPS | v1 |
 | Writing: via exiftool, file modification time kept, old values journaled for undo, index fingerprint updated in the same step (so faces and names survive) | v1 |
 | Faces, people and scene labels stay in the app's database | v1 |
 
@@ -105,4 +105,5 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 ## Not planned
 
 Virtual albums and smart albums; map view; crop and image adjustments; drag-and-drop out of the app;
-video search and video faces; cloud sync; multiple users; mobile app; online sharing.
+video search and video faces; star ratings (built in 0.5.0, then dropped as not needed); cloud sync;
+multiple users; mobile app; online sharing.

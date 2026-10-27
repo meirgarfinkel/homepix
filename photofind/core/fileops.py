@@ -130,7 +130,7 @@ def taken_now(path, kind, st) -> tuple[str, str]:
 
 def _apply_meta(db, path, change) -> dict:
     """After writing details into a file: its new fingerprint (so it isn't indexed again from scratch,
-    which would lose who is in it), date, rating, keywords and description; the face boxes moved if
+    which would lose who is in it), date, keywords and description; the face boxes moved if
     it was turned; its thumbnails kept unless it was."""
     row = db.execute("SELECT id, qhash, kind, taken FROM photos WHERE path=?", (path,)).fetchone()
     if row is None:
@@ -142,7 +142,7 @@ def _apply_meta(db, path, change) -> dict:
     if any(t in change["new"] for t in metadata.PHOTO_DATES + metadata.VIDEO_DATES):
         fields["taken"], fields["taken_source"] = taken_now(path, row["kind"], st)
     if d is not None:
-        fields.update(rating=d.rating, keywords=json.dumps(d.keywords) if d.keywords else None,
+        fields.update(keywords=json.dumps(d.keywords) if d.keywords else None,
                       description=d.description or None, details_done=1)
     db.execute(f"UPDATE photos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), row["id"]))
     turn = change.get("orientation")

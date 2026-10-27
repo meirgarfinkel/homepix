@@ -102,13 +102,13 @@ def test_details_round_trip(home, lib, ext):
     mtime = os.stat(p).st_mtime
     when = dt.datetime(2019, 5, 6, 7, 8, 9)
     edit = md.Edit(description="Grandma's 90th\nin the garden, ünïcode ✓", keywords=["family", "garden, back"],
-                   rating=4, date=when, gps=(31.778, -35.235))
+                   date=when, gps=(31.778, -35.235))
     result, cant = edit_and_run(db, fo, [p], edit)
     assert cant == [] and result.finished == 1, (cant, result)
     d = md.read([p])[str(p)]
     assert d.description == edit.description
     assert d.keywords == ["family", "garden, back"]
-    assert d.rating == 4 and d.taken == when
+    assert d.taken == when
     assert d.gps == pytest.approx((31.778, -35.235), abs=1e-5)
     assert abs(os.stat(p).st_mtime - mtime) < 1  # its modified time is kept
 
@@ -118,8 +118,8 @@ def test_details_round_trip(home, lib, ext):
     assert date_taken(p, 0) == ("2019-05-06 07:08:09", "exif")  # what indexing reads agrees
     r = row(db, p)
     assert r["qhash"] == quick_hash(p, os.path.getsize(p)) and r["size"] == os.path.getsize(p)
-    assert (r["taken"], r["rating"], json.loads(r["keywords"]), r["description"]) == (
-        "2019-05-06 07:08:09", 4, ["family", "garden, back"], edit.description)
+    assert (r["taken"], json.loads(r["keywords"]), r["description"]) == (
+        "2019-05-06 07:08:09", ["family", "garden, back"], edit.description)
     info = index(pf, lib)
     assert (info["done"], info["moved"], info["removed"]) == (0, 0, 0)  # nothing to index again
 
@@ -134,7 +134,7 @@ def test_names_survive_editing(home, lib):
                (pid, b"\x01\x02"))
     db.execute("UPDATE photos SET faces_done=1")  # as if its faces had been found when indexed
     db.commit()
-    edit_and_run(db, fo, [p], md.Edit(rating=5, description="Ann"))
+    edit_and_run(db, fo, [p], md.Edit(keywords=["party"], description="Ann"))
     pf.index_folder(lib, want_faces=True)  # a full pass, faces and all, afterwards
     assert db.execute("SELECT p.name FROM faces f JOIN people p ON p.id=f.person_id").fetchall()[0][0] == "Ann"
     assert row(db, p)["id"] == pid
@@ -144,11 +144,11 @@ def test_undo_puts_back_exactly_what_was_there(home, lib):
     pf, db, fo, md = home
     p = make_photo(lib / "a.jpg", exif={270: "OLYMPUS DIGITAL CAMERA", 0x9003: "2010:01:02 03:04:05"})
     subprocess.run(["exiftool", "-q", "-overwrite_original", "-IPTC:Keywords=old one", "-IPTC:Keywords=old two",
-                    "-XMP-xmp:Rating=2", str(p)], check=True)
+                    str(p)], check=True)
     index(pf, lib)
     original = md.read([p])[str(p)].tags
     assert md.read([p])[str(p)].description == ""  # the camera's words aren't a description
-    edit_and_run(db, fo, [p], md.Edit(description="New", keywords=["x"], rating=5, date=dt.datetime(2020, 1, 1),
+    edit_and_run(db, fo, [p], md.Edit(description="New", keywords=["x"], date=dt.datetime(2020, 1, 1),
                                       gps=(1.5, 2.5)))
     changed = md.read([p])[str(p)]
     assert changed.tags["IPTC:Keywords"] == "x"  # the older tags are kept in step
@@ -156,9 +156,9 @@ def test_undo_puts_back_exactly_what_was_there(home, lib):
     fo.undo(db)
     assert md.read([p])[str(p)].tags == original
     r = row(db, p)
-    assert (r["rating"], r["taken"]) == (2, "2010-01-02 03:04:05")
+    assert (r["taken"], json.loads(r["keywords"])) == ("2010-01-02 03:04:05", ["old one", "old two"])
     fo.redo(db)
-    assert md.read([p])[str(p)].rating == 5
+    assert md.read([p])[str(p)].description == "New"
 
 
 def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
@@ -249,26 +249,25 @@ def test_a_format_exiftool_cant_write_is_reported(home, lib):
     p = lib / "a.gif"
     Image.new("RGB", (8, 8)).save(p)
     index(pf, lib)
-    steps, cant = fo.plan_details(db, [str(p)], md.Edit(rating=3))
+    steps, cant = fo.plan_details(db, [str(p)], md.Edit(description="x"))
     result = fo.run(db, "details", "t", steps)
     assert result.finished == 1 or result.skipped  # either it can, or it says why
 
 
 # --- reading what other apps wrote ------------------------------------------------------------------
 
-def test_indexing_reads_ratings_and_keywords_written_elsewhere(home, lib):
+def test_indexing_reads_keywords_and_descriptions_written_elsewhere(home, lib):
     pf, db, fo, md = home
     p = make_photo(lib / "a.jpg")
-    subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-xmp:Rating=3", "-XMP-dc:Subject=trip",
+    subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-dc:Subject=trip",
                     "-XMP-dc:Description=From digiKam", str(p)], check=True)
     index(pf, lib)
     r = row(db, p)
-    assert (r["rating"], json.loads(r["keywords"]), r["description"], r["details_done"]) == (3, ["trip"],
-                                                                                             "From digiKam", 1)
-    subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-xmp:Rating=1", str(p)], check=True)
+    assert (json.loads(r["keywords"]), r["description"], r["details_done"]) == (["trip"], "From digiKam", 1)
+    subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-dc:Subject=home", str(p)], check=True)
     os.utime(p, (os.stat(p).st_atime, os.stat(p).st_mtime + 5))  # (as a real edit later on would)
     index(pf, lib)  # changed outside: read again
-    assert row(db, p)["rating"] == 1
+    assert json.loads(row(db, p)["keywords"]) == ["home"]
 
 
 # --- killed partway ---------------------------------------------------------------------------------
@@ -287,7 +286,7 @@ KILLER = textwrap.dedent("""
     metadata.write = write
     db = open_db()
     paths = sorted(os.path.join(sys.argv[1], n) for n in os.listdir(sys.argv[1]) if n.endswith(".jpg"))
-    steps, _ = fileops.plan_details(db, paths, metadata.Edit(rating=5, description="crash"))
+    steps, _ = fileops.plan_details(db, paths, metadata.Edit(description="crash"))
     fileops.run(db, "details", "test", steps)
     os._exit(0)
 """)
@@ -306,17 +305,17 @@ def test_killed_while_writing_details(home, lib, tmp_path, after):
     fo.recover(db)
     from photofind.core.util import quick_hash
 
-    rated = 0
+    changed = 0
     for i in range(3):
         p = lib / f"{i}.jpg"
         rw = row(db, p)
         assert rw["qhash"] == quick_hash(p, os.path.getsize(p))  # the index matches every file
-        assert rw["rating"] == md.read([p])[str(p)].rating
-        rated += rw["rating"] == 5
-    assert rated == after
+        assert (rw["description"] or "") == md.read([p])[str(p)].description
+        changed += rw["description"] == "crash"
+    assert changed == after
     assert not [n for n in os.listdir(lib) if "exiftool_tmp" in n]
     fo.undo(db)
-    assert all(md.read([lib / f"{i}.jpg"])[str(lib / f"{i}.jpg")].rating == 0 for i in range(3))
+    assert all(md.read([lib / f"{i}.jpg"])[str(lib / f"{i}.jpg")].description == "" for i in range(3))
 
 
 # --- in the app ----------------------------------------------------------------------------------------
@@ -355,19 +354,6 @@ def window(home, lib, app):
     w.close()
 
 
-def test_rating_from_the_keyboard_and_filtering_by_it(window, app):
-    w = window
-    w.timeline.set_current(0)
-    w.photo.rates[4].trigger()  # Ctrl+4
-    wait_until(app, lambda: not w.ops.busy and w.timeline.items[0].rating == 4)
-    assert w.undo_action.text() == "Undo Rate 1 photo 4 stars"
-    w.rating_filter.setCurrentIndex(3)
-    wait_until(app, lambda: len(w.timeline.items) == 1)
-    assert "rated ★★★ and up" in w.count_label.text()
-    w.rating_filter.setCurrentIndex(0)
-    wait_until(app, lambda: len(w.timeline.items) == 3)
-
-
 def test_editing_details_of_several_from_the_dialog(window, lib, app, monkeypatch):
     from photofind.core import metadata
     from photofind.ui.views import details_dialogs
@@ -378,12 +364,11 @@ def test_editing_details_of_several_from_the_dialog(window, lib, app, monkeypatc
     def fill(dlg):
         dlg.keywords.setText("trip")
         dlg._touched.add("keywords")
-        dlg.stars.set(2, emit=True)
         return True
 
     monkeypatch.setattr(details_dialogs.DetailsDialog, "exec", fill)
     w.photo.details.trigger()
-    wait_until(app, lambda: not w.ops.busy and all(it.rating == 2 for it in w.timeline.items))
+    wait_until(app, lambda: not w.ops.busy and w.undo_action.text() == "Undo Change the details of 3 photos")
     found = metadata.read([it.path for it in w.timeline.items])
     assert all(d.keywords == ["trip"] for d in found.values())
 

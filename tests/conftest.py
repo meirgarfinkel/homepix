@@ -1,9 +1,17 @@
 import importlib
+import os
 import shutil
+import tempfile
 
 import numpy as np
 import pytest
 from PIL import Image
+
+# A safety net under every test: nothing reaches the real data folder (~/.local/share/photofind), even
+# a test that forgets the pf fixture or undoes its setting. Tests that need one get their own (pf).
+_SAFE = tempfile.mkdtemp(prefix="photofind-tests-")
+os.environ["PHOTOFIND_HOME"] = os.path.join(_SAFE, "data")
+os.environ["XDG_DATA_HOME"] = os.path.join(_SAFE, "share")
 
 
 class FakeClip:
