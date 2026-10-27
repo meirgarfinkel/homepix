@@ -1,0 +1,39 @@
+# Runs on every push to every branch. `main` only accepts changes that pass.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pillow pytest
+      - name: Byte-compile every module
+        run: python -m compileall -q photofind.py photofind_app.py
+      - name: Tests
+        run: |
+          if [ -d tests ]; then pytest -q; else echo "No tests yet (they arrive with M0)."; fi

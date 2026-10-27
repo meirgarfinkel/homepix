@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build"]
+
+[tool.ruff.lint]
+# pycodestyle errors/warnings, pyflakes, bugbear (likely bugs), pyupgrade, import order
+select = ["E", "W", "F", "B", "UP", "I"]
+ignore = [
+    "E501",  # long lines: style only; the code is reorganized in M1
+    "E731",  # small `q = lambda ...` helpers are used on purpose
+]
