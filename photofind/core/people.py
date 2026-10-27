@@ -7,7 +7,6 @@ and done as a step of an operation in the journal (core/fileops.py), so Undo put
 Naming someone recognizes them in more photos too: those faces are part of the same change.
 """
 
-import json
 
 import numpy as np
 
@@ -234,11 +233,6 @@ def plan_forget(db, pid: int):
     """No such person: their faces are unnamed again (and may be recognized as someone else)."""
     faces = {r[0]: [None, 0, 0] for r in db.execute("SELECT id FROM faces WHERE person_id=?", (pid,))}
     return _change(db, faces, {pid: None})
-
-
-def inverse(step_before: str) -> dict:
-    c = json.loads(step_before)
-    return {"old": c["new"], "new": c["old"]}
 
 
 # --- for the app -----------------------------------------------------------------------------------

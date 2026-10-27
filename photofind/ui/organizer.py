@@ -2,13 +2,42 @@
 it as one operation (Undo takes it back)."""
 
 import os
+from collections import Counter
 
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from ..core import library_folders, open_db, organize
 from . import workers
 from .fileops import plural
-from .views.organize_dialog import OrganizeDialog
+from .views.changes_dialog import ChangesDialog, relative
+
+
+def _why(why: str) -> str:
+    if why == "renamed":
+        return "Named by its date"
+    if why == "with its photo":
+        return "Goes with its photo"
+    place = why.removeprefix("to ")
+    return "No date: into Unsorted/" if place == "Unsorted" else f"Into {place}/"
+
+
+def summary(plan) -> str:
+    """"940 go with their photo, 3 into Unsorted/ ..." for the files that change."""
+    counts = Counter("year" if c.why.startswith("to ") and c.why != "to Unsorted" else c.why for c in plan.changes)
+    parts = [(counts["renamed"], "named by their date"), (counts["year"], "into their year's folder"),
+             (counts["to Unsorted"], "into Unsorted/ (no date)"), (counts["with its photo"], "go with their photo")]
+    return ", ".join(f"{n:,} {text}" for n, text in parts if n)
+
+
+def preview(plan, folders, title, parent):
+    n = len(plan.changes)
+    note = ("Each is named by when it was taken, in its year's folder. Nothing changes until you "
+            "choose Organize, and Undo takes it all back.")
+    if plan.not_ready:
+        note += f" {plan.not_ready:,} files are still being indexed and are left for now."
+    rows = [(relative(c.src, folders), relative(c.dst, folders), _why(c.why), c.src) for c in plan.changes]
+    return ChangesDialog(title, f"<b>{n:,} of {plan.looked_at:,} files</b> will be renamed or moved: "
+                         f"{summary(plan)}.", note, rows, f"Organize {n:,} files", parent)
 
 
 def _plan(scope):
@@ -66,7 +95,7 @@ class Organizer:
                 text += f" ({plural(plan.not_ready, 'file')} still being indexed were left for now.)"
             QMessageBox.information(self.w, title, text)
             return
-        dlg = OrganizeDialog(plan, folders, title, self.w)
+        dlg = preview(plan, folders, title, self.w)
         if not dlg.exec():
             return
         steps, n = plan.steps(), len(plan.changes)

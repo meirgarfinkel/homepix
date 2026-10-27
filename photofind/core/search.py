@@ -7,8 +7,10 @@ import time
 
 import numpy as np
 
+from . import duplicates
 from .config import MATCH_STRICTNESS, MAX_NEAR, NEAR_STRICTNESS
 from .db import open_db
+from .settings import library_folders
 
 
 def split_matches(scores: np.ndarray):
@@ -46,6 +48,7 @@ class SearchIndex:
         self.version = None
         self.built = 0.0
         self.rows, self.ids, self.mat = [], np.zeros(0, np.int64), np.zeros((0, 512), np.float32)
+        self.aside = np.zeros(0, bool)
         self._text = None
         self._text_lock = threading.Lock()
 
@@ -62,6 +65,8 @@ class SearchIndex:
                 self.rows = [{"id": r["id"], "path": r["path"], "taken": r["taken"], "qhash": r["qhash"],
                               "kind": r["kind"] or "photo"} for r in rows]
                 self.ids = np.array([r["id"] for r in rows], np.int64)
+                library = library_folders()  # the duplicates set aside aren't searched
+                self.aside = np.array([duplicates.set_aside(r["path"], library) for r in rows], bool)
                 if rows:
                     blob = b"".join(r["clip"] for r in rows)
                     self.mat = np.frombuffer(blob, np.float16).reshape(len(rows), -1).astype(np.float32)
@@ -87,12 +92,15 @@ class SearchIndex:
         """{"total": photos searched, "matches": [row + "score"], "related": [...]}, best first.
         person_id: only photos with that person in them. folder: only photos in it or below it."""
         rows, ids, mat = self.vectors()
-        sel = np.arange(len(rows))
+        keep = np.ones(len(rows), bool)
+        aside = self.aside
+        if len(aside) == len(rows) and (folder is None or not duplicates.set_aside(folder, library_folders())):
+            keep &= ~aside
+        sel = np.flatnonzero(keep)
         if person_id is not None or folder is not None:
             own = db is None
             db = db or open_db()
             try:
-                keep = np.ones(len(rows), bool)
                 if person_id is not None:
                     theirs = [r[0] for r in db.execute(
                         "SELECT DISTINCT photo_id FROM faces WHERE person_id=?", (person_id,))]

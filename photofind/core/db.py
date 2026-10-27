@@ -149,8 +149,25 @@ def _m8_faces(db):
     db.execute("ALTER TABLE faces ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
 
 
+def _m9_duplicates(db):
+    """Duplicates: a photo's look (phash, a 64-bit perceptual hash of its thumbnail) and size in
+    pixels, filled in after indexing; sha256 (from M2) is filled in only for files that might be exact
+    copies. apart: pairs of photos someone said aren't duplicates (a < b), never offered again."""
+    for stmt in (
+        "ALTER TABLE photos ADD COLUMN phash INTEGER",
+        "ALTER TABLE photos ADD COLUMN width INTEGER",
+        "ALTER TABLE photos ADD COLUMN height INTEGER",
+        """CREATE TABLE apart (
+            a INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+            b INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+            PRIMARY KEY (a, b)
+        )""",
+    ):
+        db.execute(stmt)
+
+
 MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates,
-              _m8_faces]
+              _m8_faces, _m9_duplicates]
 LATEST = len(MIGRATIONS)
 
 

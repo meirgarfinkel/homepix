@@ -195,6 +195,21 @@ Moving, renaming and trashing a photo elsewhere in the app don't take its sideca
 **Done when:** your 6,641 known duplicates are recognized, and a test library's planted duplicates
 are all found, with no bursts flagged.
 
+*Status: done.* Exact copies are the same fingerprint, confirmed by hashing the whole file (only
+for files that might be copies). Near ones need a perceptual hash (of the thumbnail, so it's quick)
+within 4 bits and the search model to see the same picture (0.95); two shots are never matched:
+real dates up to an hour apart, or the same size in pixels with nearly the same file size (a series
+whose dates were lost). Raw files (DNG) are only exact copies: the JPEG beside one is the same shot.
+Each file joins the best match ranked above it, so bursts don't chain into one group. On a copy of
+your index, of the 6,641 files in `Duplicates/` the file each duplicates is found for 6,513 (1,346
+the same bytes, 5,034 look the same, 133 by name). Still in the library: 1,668 groups with 1,682
+extra copies, 91% of them a smaller copy with the same camera date (the Sep 2026 pipeline hashed
+photos without turning them upright first, so it missed copies saved turned). Finding them takes
+2 s; working out every photo's look the first time took 15 minutes (it's done after indexing).
+`Duplicates/` stays out of the timeline, person pages and search; the review screen sends extras
+there (named after the copy kept) or to the Trash after a preview, and "not duplicates" is
+remembered; all of it is undoable. The info panel doesn't say what a file in `Duplicates/` copies yet.
+
 ### M9 — Scene labels and filters
 - Zero-shot labels: screenshots, documents, receipts, food, beach…
 - Filter by label.

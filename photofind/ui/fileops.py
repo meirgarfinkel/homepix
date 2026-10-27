@@ -106,7 +106,7 @@ class FileOps(QObject):
             finally:
                 db.close()
 
-        self._go(f"{summary}...", work, lambda res, err: self._report(past, res, err), files=kind != "people")
+        self._go(f"{summary}...", work, lambda res, err: self._report(past, res, err), files=kind not in ("people", "apart"))
 
     def undo(self):
         self._go("Undoing...", lambda p, s: self._history(fileops.can_undo, fileops.undo, p),

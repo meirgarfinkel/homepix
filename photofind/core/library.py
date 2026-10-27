@@ -212,6 +212,10 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     if want_faces:
         info["tagged"] += auto_assign(db)
     redated = 0 if info.get("stopped") else read_details(db, prefix, stop)
+    if not info.get("stopped"):
+        from .duplicates import fill_looks
+
+        fill_looks(db, prefix, stop)
     if todo or removed or info["moved"] or redated:
         link_motion(db)
         db.commit()
@@ -293,7 +297,8 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
             "error_reader) VALUES (?,?,?,?,?,?,?,?,?,NULL,NULL) ON CONFLICT(path) DO UPDATE SET size=excluded.size, "
             "mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, "
             "taken_source=excluded.taken_source, moment=excluded.moment, clip=excluded.clip, "
-            "faces_done=excluded.faces_done, error=NULL, error_reader=NULL, details_done=0",
+            "faces_done=excluded.faces_done, error=NULL, error_reader=NULL, details_done=0, "
+            "sha256=NULL, phash=NULL, width=NULL, height=NULL",
             (path, st.st_size, st.st_mtime, qh, taken, source, moment, to_blob(vec), int(bool(faces))),
         )
     else:
@@ -323,7 +328,7 @@ def _index_video(db, path, st):
         "error, error_reader) VALUES (?,?,?,?,?,?,?,'video',?,1,NULL,NULL) ON CONFLICT(path) DO UPDATE SET "
         "size=excluded.size, mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, "
         "taken_source=excluded.taken_source, moment=excluded.moment, kind='video', duration=excluded.duration, "
-        "faces_done=1, clip=NULL, error=NULL, error_reader=NULL, details_done=0",
+        "faces_done=1, clip=NULL, error=NULL, error_reader=NULL, details_done=0, sha256=NULL",
         (path, st.st_size, st.st_mtime, qh, taken, source, moment, meta["duration"]),
     )
     db.execute("DELETE FROM faces WHERE photo_id = (SELECT id FROM photos WHERE path=?)", (path,))
