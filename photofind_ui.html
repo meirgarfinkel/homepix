@@ -429,9 +429,20 @@ function renderStatus() {
     el.textContent = `${fmt(state.counts.photos)} photo${state.counts.photos === 1 ? "" : "s"}`;
   }
   const banner = $("banner");
-  banner.hidden = !ix.error;
-  if (ix.error) banner.textContent = ix.error;
+  banner.hidden = !ix.error && !ix.missing;
+  if (ix.error) { banner.textContent = ix.error; banner.dataset.missing = ""; }
+  else if (ix.missing && banner.dataset.missing !== String(ix.missing)) {  // re-render only when the count changes
+    banner.dataset.missing = ix.missing;
+    banner.innerHTML = `${fmt(ix.missing)} photo${ix.missing === 1 ? "" : "s"} Photo Finder knew about can’t be found right now.
+      They’re kept in case a drive is unplugged or a folder is out of reach.
+      <button class="link" id="forgetMissing">They were deleted, remove them</button>`;
+  }
 }
+$("banner").addEventListener("click", async e => {
+  if (!e.target.closest("#forgetMissing")) return;
+  await api("api/forget-missing", {});
+  refreshState();
+});
 
 let peopleKey = "";
 function renderPeople() {

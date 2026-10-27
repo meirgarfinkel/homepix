@@ -80,11 +80,13 @@ class Indexer:
         self.thread = None
         self.stop_flag = False
         self.again = False
+        self.forget_missing = False  # next pass: also remove photos that can't be found
         self.state = {"running": False, "phase": "idle", "done": 0, "todo": 0, "eta": None, "error": None,
-                      "folder": None, "last_run": None}
+                      "folder": None, "last_run": None, "missing": 0}
 
-    def start(self):
+    def start(self, forget_missing=False):
         with self.lock:
+            self.forget_missing |= forget_missing
             if self.thread and self.thread.is_alive():
                 self.again = True  # finish this pass, then go again (e.g. a folder was added)
                 return
@@ -106,13 +108,17 @@ class Indexer:
             self.again = False
             with self.lock:
                 self.state.update(running=True, error=None, phase="scanning", done=0, todo=0, eta=None)
+                forget, self.forget_missing = self.forget_missing, False
+            missing = 0
             for folder in load_settings().get("folders", []):
                 if self.stop_flag:
                     break
                 if not Path(folder).is_dir():
                     continue  # e.g. an unplugged drive; its photos stay searchable
                 try:
-                    pf.index_folder(folder, True, self._progress, lambda: self.stop_flag or self.again)
+                    info = pf.index_folder(folder, True, self._progress, lambda: self.stop_flag or self.again,
+                                           forget_missing=forget)
+                    missing += info["missing"]
                 except SystemExit as e:  # model download failed
                     with self.lock:
                         self.state["error"] = (
@@ -125,6 +131,8 @@ class Indexer:
                     with self.lock:
                         self.state["error"] = f"Something went wrong while looking through {folder}: {e}"
                     print(f"index error: {e!r}", file=sys.stderr)
+            with self.lock:
+                self.state["missing"] = missing
             if not self.again or self.stop_flag:
                 break
         with self.lock:
@@ -551,6 +559,9 @@ class Handler(BaseHTTPRequestHandler):
             if route == "/api/rescan":
                 INDEXER.start()
                 return self._json({"ok": True})
+            if route == "/api/forget-missing":  # "those photos were deleted on purpose"
+                INDEXER.start(forget_missing=True)
+                return self._json({"ok": True})
             if route == "/api/name":
                 name = (b.get("name") or "").strip()
                 ids = [int(i) for i in b.get("face_ids", [])]
@@ -749,6 +760,9 @@ def self_test():
         import onnxruntime  # noqa: F401
         import tokenizers  # noqa: F401
         print("SELF-TEST: AI libraries load.", flush=True)
+        if not pf.HEIF:
+            raise RuntimeError("HEIC support (pillow-heif) is missing from this build")
+        print("SELF-TEST: HEIC photos can be read.", flush=True)
         if pf.model_path("face_detect.onnx").exists() and pf.model_path("face_embed.onnx").exists():
             from PIL import Image as _I
             pf._ort_session(pf.model_path("face_detect.onnx"))
