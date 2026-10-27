@@ -25,10 +25,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
 
-import numpy as np
-
 from photofind import core as pf
 from photofind.core.ai.models import _ort_session
+from photofind.core.indexer import Indexer
+from photofind.core.search import SearchIndex
+from photofind.core.settings import (  # noqa: F401
+    add_folder,
+    load_settings,
+    pictures_folder,
+    remove_folder,
+    save_settings,
+)
 
 UI_FILE = Path(__file__).with_name("ui.html")
 # When bundled into a single app (PyInstaller), extra files live in a temporary folder.
@@ -38,114 +45,9 @@ RESCAN_EVERY = 30 * 60  # look for new photos every 30 minutes while the app is 
 MAX_RESULTS = 200
 
 
-# --------------------------------------------------------------------------
-# Settings
-# --------------------------------------------------------------------------
-
-def settings_path() -> Path:
-    return pf.data_dir() / "settings.json"
-
-
-def load_settings() -> dict:
-    try:
-        return json.loads(settings_path().read_text(encoding="utf-8"))
-    except Exception:
-        return {"folders": []}
-
-
-def save_settings(s: dict):
-    tmp = settings_path().with_suffix(".tmp")
-    tmp.write_text(json.dumps(s, indent=2), encoding="utf-8")
-    tmp.replace(settings_path())
-
-
-def pictures_folder() -> Path:
-    """The user's Pictures folder, wherever their system keeps it."""
-    if os.name != "nt" and shutil.which("xdg-user-dir"):
-        try:
-            out = subprocess.run(["xdg-user-dir", "PICTURES"], capture_output=True, text=True, timeout=3).stdout.strip()
-            if out and Path(out).is_dir() and Path(out) != Path.home():
-                return Path(out)
-        except Exception:
-            pass
-    return Path.home() / "Pictures"
-
-
-# --------------------------------------------------------------------------
-# Background indexing
-# --------------------------------------------------------------------------
-
-class Indexer:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.thread = None
-        self.stop_flag = False
-        self.again = False
-        self.forget_missing = False  # next pass: also remove photos that can't be found
-        self.state = {"running": False, "phase": "idle", "done": 0, "todo": 0, "eta": None, "error": None,
-                      "folder": None, "last_run": None, "missing": 0}
-
-    def start(self, forget_missing=False):
-        with self.lock:
-            self.forget_missing |= forget_missing
-            if self.thread and self.thread.is_alive():
-                self.again = True  # finish this pass, then go again (e.g. a folder was added)
-                return
-            self.stop_flag = False
-            self.thread = threading.Thread(target=self._run, daemon=True)
-            self.thread.start()
-
-    def stop(self):
-        self.stop_flag = True
-
-    def _progress(self, info):
-        with self.lock:
-            self.state.update(phase=info["phase"], done=info["done"], todo=info["todo"],
-                              eta=info["eta"], folder=info["root"], running=True)
-
-    def _run(self):
-        pf.be_nice()
-        while True:
-            self.again = False
-            with self.lock:
-                self.state.update(running=True, error=None, phase="scanning", done=0, todo=0, eta=None)
-                forget, self.forget_missing = self.forget_missing, False
-            missing = 0
-            for folder in load_settings().get("folders", []):
-                if self.stop_flag:
-                    break
-                if not Path(folder).is_dir():
-                    continue  # e.g. an unplugged drive; its photos stay searchable
-                try:
-                    info = pf.index_folder(folder, True, self._progress, lambda: self.stop_flag or self.again,
-                                           forget_missing=forget)
-                    missing += info["missing"]
-                except pf.ModelDownloadError as e:
-                    with self.lock:
-                        self.state["error"] = (
-                            "Couldn't download what Photo Finder needs to recognize photos. "
-                            "Check your internet connection, then choose Check for new photos in Settings."
-                        )
-                    print(e, file=sys.stderr)
-                    break
-                except Exception as e:
-                    with self.lock:
-                        self.state["error"] = f"Something went wrong while looking through {folder}: {e}"
-                    print(f"index error: {e!r}", file=sys.stderr)
-            with self.lock:
-                self.state["missing"] = missing
-            if not self.again or self.stop_flag:
-                break
-        with self.lock:
-            self.state.update(running=False, phase="idle", last_run=time.time())
-        FACES.invalidate()
-
-    def snapshot(self):
-        with self.lock:
-            return dict(self.state)
-
-
-INDEXER = Indexer()
+# Settings, background indexing and search live in the core, shared with the new app.
+INDEXER = Indexer(on_finished=lambda: FACES.invalidate())
+SEARCH = SearchIndex(settling=lambda: INDEXER.snapshot()["running"])
 
 
 def rescan_loop():
@@ -160,18 +62,6 @@ def rescan_loop():
 # Search and faces
 # --------------------------------------------------------------------------
 
-_clip_text = None
-_clip_lock = threading.Lock()
-
-
-def clip_text():
-    global _clip_text
-    with _clip_lock:
-        if _clip_text is None:
-            _clip_text = pf.ClipText()
-        return _clip_text
-
-
 def photo_item(r, score=None):
     return {
         "id": r["id"],
@@ -180,40 +70,6 @@ def photo_item(r, score=None):
         "v": r["qhash"],  # changes with the photo's content, so the browser never shows a stale copy
         "score": None if score is None else round(float(score), 3),
     }
-
-
-class Embeddings:
-    """Every photo's search vector, kept in memory: reading them all from SQLite took
-    far longer than the search itself. Reloaded only after the database changes."""
-
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.db = None      # a connection of our own, so data_version can tell us about others' writes
-        self.version = None
-        self.built = 0.0
-        self.rows, self.ids, self.mat = [], np.zeros(0, np.int64), np.zeros((0, 512), np.float32)
-
-    def get(self):
-        with self.lock:
-            if self.db is None:
-                self.db = pf.open_db()
-            version = self.db.execute("PRAGMA data_version").fetchone()[0]
-            # while indexing the database changes constantly: reload at most every 10 seconds
-            settling = INDEXER.snapshot()["running"] and time.time() - self.built < 10
-            if version != self.version and not settling:
-                rows = self.db.execute("SELECT id, path, taken, qhash, clip FROM photos WHERE clip IS NOT NULL").fetchall()
-                self.rows = [{"id": r["id"], "path": r["path"], "taken": r["taken"], "qhash": r["qhash"]} for r in rows]
-                self.ids = np.array([r["id"] for r in rows], np.int64)
-                if rows:
-                    blob = b"".join(r["clip"] for r in rows)
-                    self.mat = np.frombuffer(blob, np.float16).reshape(len(rows), -1).astype(np.float32)
-                else:
-                    self.mat = np.zeros((0, 512), np.float32)
-                self.version, self.built = version, time.time()
-            return self.rows, self.ids, self.mat
-
-
-EMBEDDINGS = Embeddings()
 
 
 def search(q: str, person_id=None) -> dict:
@@ -233,21 +89,11 @@ def search(q: str, person_id=None) -> dict:
             return nothing
         return {"total": total, "matches": [photo_item(r) for r in rows], "related": [], "recent": True}
 
-    rows, ids, mat = EMBEDDINGS.get()
-    sel = np.arange(len(rows))
-    if person_id:
-        with closing(pf.open_db()) as db:
-            theirs = [r[0] for r in db.execute("SELECT DISTINCT photo_id FROM faces WHERE person_id=?", (person_id,))]
-        sel = np.flatnonzero(np.isin(ids, theirs))
-        mat = mat[sel]
-    if not len(sel):
-        return nothing
-    scores = mat @ clip_text().query(q)
-    clear, near = pf.split_matches(scores)
+    found = SEARCH.search(q, person_id)
     return {
-        "total": len(sel),
-        "matches": [photo_item(rows[sel[i]], scores[i]) for i in clear[:MAX_RESULTS]],
-        "related": [photo_item(rows[sel[i]], scores[i]) for i in near],
+        "total": found["total"],
+        "matches": [photo_item(r, r["score"]) for r in found["matches"][:MAX_RESULTS]],
+        "related": [photo_item(r, r["score"]) for r in found["related"]],
     }
 
 
@@ -534,26 +380,14 @@ class Handler(BaseHTTPRequestHandler):
         try:
             b = self._body()
             if route == "/api/folders/add":
-                p = Path(b["path"]).expanduser().resolve()
-                if not p.is_dir():
-                    return self._json({"error": "That folder doesn't exist."}, 400)
-                s = load_settings()
-                folders = s.setdefault("folders", [])
-                if any(p == Path(f) or Path(f) in p.parents for f in folders):
-                    return self._json({"error": "That folder is already included."}, 400)
-                # adding a parent folder replaces the folders inside it
-                s["folders"] = [f for f in folders if p not in Path(f).parents] + [str(p)]
-                save_settings(s)
+                try:
+                    add_folder(b["path"])
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
                 INDEXER.start()
                 return self._json({"ok": True})
             if route == "/api/folders/remove":
-                s = load_settings()
-                s["folders"] = [f for f in s.get("folders", []) if f != b["path"]]
-                save_settings(s)
-                prefix = b["path"].rstrip(os.sep) + os.sep
-                with closing(pf.open_db()) as db:
-                    db.execute("DELETE FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))
-                    db.commit()
+                remove_folder(b["path"])
                 FACES.invalidate()
                 return self._json({"ok": True})
             if route == "/api/rescan":

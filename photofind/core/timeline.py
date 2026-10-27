@@ -1,5 +1,7 @@
-"""The library in date order, grouped by month: what the timeline shows."""
+"""The library in date order, grouped by month (what the timeline shows), and its folders."""
 
+import os
+from collections import Counter
 from dataclasses import dataclass, field
 
 
@@ -16,6 +18,7 @@ class Item:
 class Month:
     key: str  # "YYYY-MM"
     items: list = field(default_factory=list)
+    title: str = ""  # shown instead of the month's name (e.g. a section of search results)
 
     @property
     def year(self) -> int:
@@ -26,8 +29,12 @@ class Month:
         return int(self.key[5:7])
 
 
-def load_items(db, where: str = "1=1", params=()) -> list[Item]:
-    """Every showable item, newest first. Photos that couldn't be read have no thumbnail to show."""
+def load_items(db, where: str = "1=1", params=(), folder=None) -> list[Item]:
+    """Every showable item, newest first; folder: only those in it or below it. Photos that couldn't be
+    read have no thumbnail to show."""
+    if folder is not None:
+        prefix = str(folder).rstrip(os.sep) + os.sep
+        where, params = f"({where}) AND substr(path, 1, ?) = ?", (*params, len(prefix), prefix)
     rows = db.execute(
         "SELECT id, path, taken, qhash, kind FROM photos "
         f"WHERE error IS NULL AND qhash IS NOT NULL AND ({where}) ORDER BY taken DESC, path DESC",
@@ -45,3 +52,15 @@ def group_by_month(items: list[Item]) -> list[Month]:
             months.append(Month(key))
         months[-1].items.append(it)
     return months
+
+
+def item_from_row(r) -> Item:
+    return Item(r["id"], r["path"], r["taken"] or "0000-00-00 00:00:00", r["qhash"], r["kind"] or "photo")
+
+
+def folder_counts(db) -> Counter:
+    """{folder: photos directly in it} for every folder holding showable photos."""
+    counts = Counter()
+    for (path,) in db.execute("SELECT path FROM photos WHERE error IS NULL AND qhash IS NOT NULL"):
+        counts[os.path.dirname(path)] += 1
+    return counts

@@ -66,25 +66,37 @@ class TimelineView(QAbstractScrollArea):
 
     # --- data and layout -----------------------------------------------------------------------------
 
-    def set_months(self, months: list[Month]):
-        """Show these (as from core.timeline.group_by_month). Keeps the photo at the top of the screen
-        in place, if it's still there."""
-        keep = self._top_item()
+    def set_months(self, months: list[Month], fresh: bool = False):
+        """Show these (as from core.timeline.group_by_month). Keeps the selection and the photo at the
+        top of the screen in place, if they're still there; fresh: start at the top with nothing
+        selected (showing something else, rather than an update of the same)."""
+        keep = -1 if fresh else self._top_item()
         keep_qhash = self.items[keep].qhash if 0 <= keep < len(self.items) else None
-        cur = self.items[self.current].id if 0 <= self.current < len(self.items) else None
-        sel = {self.items[i].id for i in self.selected}
+        cur = self.items[self.current].id if 0 <= self.current < len(self.items) and not fresh else None
+        sel = set() if fresh else {self.items[i].id for i in self.selected}
         self.months = months
         self.items = [it for m in months for it in m.items]
         index = {it.id: i for i, it in enumerate(self.items)}
         self.current = index.get(cur, -1)
         self.selected = {index[i] for i in sel if i in index}
         self._relayout()
+        if fresh:
+            self.verticalScrollBar().setValue(0)
         if keep_qhash:
             for i, it in enumerate(self.items):
                 if it.qhash == keep_qhash:
                     self._scroll_to_item_top(i)
                     break
         self.selection_changed.emit()
+
+    def set_scrubber(self, on: bool):
+        """The year scrubber (for anything in date order), or a plain scroll bar (search results)."""
+        self.scrubber.setVisible(on)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff if on
+                                        else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setViewportMargins(0, 0, Scrubber.WIDTH if on else 0, 0)
+        self.scrubber.place()
+        self._relayout()  # the grid is wider or narrower now
 
     def set_tile_size(self, px: int):
         px = max(MIN_TILE, min(MAX_TILE, px))
@@ -214,7 +226,8 @@ class TimelineView(QAbstractScrollArea):
                 m = self.months[r.month]
                 p.setPen(pal.color(QPalette.ColorRole.Text))
                 p.setFont(head_font)
-                title = f"{calendar.month_name[m.month]} {m.year}" if m.month else str(m.year or "Unknown date")
+                title = m.title or (f"{calendar.month_name[m.month]} {m.year}" if m.month
+                                    else str(m.year or "Unknown date"))
                 box = QRect(MARGIN, r.y, self.viewport().width() - 2 * MARGIN, r.h)
                 p.drawText(box, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
                 p.setFont(sub_font)
