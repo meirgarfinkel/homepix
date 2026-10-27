@@ -11,6 +11,8 @@ Commands:
     photofind     search --person Mom           every photo of a named person
     photofind     people                        group unknown faces so you can name them
     photofind     name 3 Mom                    give face group 3 the name "Mom"
+    photofind     organize                      preview naming files by date into year folders
+    photofind     organize --apply ~/Pictures/new   do it (undo from the app's Edit menu)
     photofind     status                        what has been indexed so far
 
 Run any command with -h for its options.
@@ -410,6 +412,39 @@ def cmd_search(args):
         webbrowser.open(out.as_uri())
 
 
+def cmd_organize(args):
+    from .core import fileops, library_folders, organize
+
+    folders = library_folders()
+    if not folders:
+        sys.exit("No library folders yet. Add one in the app first.")
+
+    def work(db):
+        try:
+            plan = organize.plan(db, folders, args.folder)
+        except ValueError as e:
+            sys.exit(str(e))
+        if plan.not_ready:
+            say(f"{plan.not_ready:,} files are still being indexed; they're left for now.")
+        if not plan.changes:
+            say(f"All {plan.looked_at:,} files are named and sorted already.")
+            return
+        for c in plan.changes[:args.show] if not args.all else plan.changes:
+            say(f"  {c.src}\n    -> {c.dst}  ({c.why})")
+        if not args.all and len(plan.changes) > args.show:
+            say(f"  ...and {len(plan.changes) - args.show:,} more (--all shows them)")
+        n = len(plan.changes)
+        if not args.apply:
+            say(f"\n{n:,} of {plan.looked_at:,} files would change. Run again with --apply to do it.")
+            return
+        result = fileops.run(db, "organize", f"Organize {n:,} files", plan.steps())
+        say(f"\nOrganized {result.finished:,} files. The app's Edit > Undo takes it back.")
+        for path, why in result.skipped:
+            say(f"  left as it was: {path} ({why})")
+
+    _locked(work)
+
+
 def cmd_status(args):
     db = open_db()
     q = lambda sql: db.execute(sql).fetchone()[0]
@@ -480,6 +515,13 @@ def main():
     p = sub.add_parser("forget", help="delete a person's name (their faces become unnamed)")
     p.add_argument("name")
     p.set_defaults(func=cmd_forget)
+
+    p = sub.add_parser("organize", help="name files by date and sort them into year folders")
+    p.add_argument("folder", nargs="?", help="a folder in the library (default: the whole library)")
+    p.add_argument("--apply", action="store_true", help="do it (without it, only shows what would change)")
+    p.add_argument("--all", action="store_true", help="list every change")
+    p.add_argument("--show", type=int, default=20, help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_organize)
 
     p = sub.add_parser("status", help="show what has been indexed")
     p.set_defaults(func=cmd_status)

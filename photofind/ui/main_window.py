@@ -41,6 +41,7 @@ from ..core.timeline import Month, folder_counts, group_by_month, item_from_row,
 from . import desktop, workers
 from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
+from .organizer import Organizer
 from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
 from .thumbs import ThumbLoader
@@ -201,6 +202,7 @@ class MainWindow(QMainWindow):
         self.info_dock = self._dock("Info", "info", self.info, Qt.DockWidgetArea.RightDockWidgetArea)
 
         self.naming = PeopleActions(self)
+        self.organizer = Organizer(self)
         self._build_toolbar()
         self._build_file_actions()
         self._build_menus()
@@ -363,6 +365,10 @@ class MainWindow(QMainWindow):
         m.addActions([self.open_app_action, self.show_action])
         m.addSeparator()
         m.addAction(self.export_action)
+        m.addSeparator()
+        m.addAction(self._action("Tidy the library...", self.organizer.tidy,
+                                 tip="Name every file by when it was taken, in its year's folder"))
+        m.addAction(self._action("Organize a folder...", lambda: self.organizer.choose_folder(self._open_folder())))
         m.addSeparator()
         m.addAction(self.settings_action)
         m.addSeparator()
@@ -634,6 +640,8 @@ class MainWindow(QMainWindow):
         if selected:
             menu.addAction(f"Move {self._what(selected)} here", lambda: self._into("move", selected, path))
         menu.addSeparator()
+        if os.path.isdir(path):
+            menu.addAction("Organize this folder...", lambda: self.organizer.preview(path))
         menu.addAction("Show in file manager", lambda: desktop.open_file(path))
         menu.exec(pos)
 

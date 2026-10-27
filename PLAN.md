@@ -177,6 +177,15 @@ viewer shows face boxes with names (N), and clicking one names or corrects it.
 - The old pipeline's tricky cases are tests: placeholder dates, the 1998 sRGB date, and
   filesystem-date-only files going to `Unsorted/`.
 
+*Status: done.* Organizing goes by the one date the app shows everywhere (`core/dates.py`), so it
+agrees with the timeline, and its moves are one operation in the journal: previewed, undoable, safe
+from crashes, and never overwriting. On a copy of your library's index it looks at 28,191 files
+(`Duplicates/` is left alone) in 1.3 s and proposes 943 changes, all of them Live Photo clips that were
+named by the day they were copied: each is renamed to match its photo. Nothing else would change.
+A Live Photo's clip and a photo's `.aae` / `.xmp` / `.json` sidecars are named and moved with it;
+a year folder's own subfolders are kept. Also from the command line: `photofind organize [--apply]`.
+Moving, renaming and trashing a photo elsewhere in the app don't take its sidecars along yet.
+
 ### M8 — Duplicates
 - Exact duplicates (photos and videos), and near duplicates that never touch bursts.
 - The review screen.
