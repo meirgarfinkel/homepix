@@ -6,12 +6,15 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QDockWidget,
+    QFileDialog,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QSlider,
     QStackedWidget,
@@ -20,12 +23,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import SearchIndex, add_folder, data_dir, library_folders, named_people, open_db, remove_folder
+from ..core import (
+    SearchIndex,
+    add_folder,
+    data_dir,
+    library_folders,
+    load_settings,
+    named_people,
+    open_db,
+    pictures_folder,
+    remove_folder,
+)
+from ..core import fileops as files
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
-from . import workers
+from . import desktop, workers
+from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
 from .thumbs import ThumbLoader
 from .views.banner import Banner
+from .views.file_dialogs import BatchRenameDialog, ExportDialog, RenameDialog
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
@@ -60,6 +76,11 @@ def run_search(index: SearchIndex, q: str, place):
     return sections, len(found["matches"]), time.perf_counter() - start
 
 
+def inside(path: str, folders) -> bool:
+    """Is path one of folders or inside one?"""
+    return any(path == f or path.startswith(f.rstrip(os.sep) + os.sep) for f in folders)
+
+
 def counted(photos: int, videos: int) -> str:
     """'1,234 photos', '1 video', '1,234 photos and 56 videos'."""
     parts = [f"{n:,} {word}{'s' if n != 1 else ''}" for n, word in ((photos, "photo"), (videos, "video")) if n]
@@ -90,6 +111,9 @@ class MainWindow(QMainWindow):
         self.settings = QSettings(str(data_dir() / "window.ini"), QSettings.Format.IniFormat)
         self.loader = ThumbLoader()
         self.watcher = IndexWatcher(self, rescan=index)
+        self.indexing = index
+        self.ops = FileOps(self)
+        self._select_after = None  # after files went away: the index of the photo to select instead
         self.loaded = False  # the library has been read once
         self.search_index = SearchIndex(settling=lambda: self.watcher.indexer.snapshot()["running"])
         self.place = ALL  # what the grid shows when not searching: ALL or a folder
@@ -125,6 +149,8 @@ class MainWindow(QMainWindow):
         self.info_dock = self._dock("Info", "info", self.info, Qt.DockWidgetArea.RightDockWidgetArea)
 
         self._build_toolbar()
+        self._build_file_actions()
+        self._build_menus()
         self.count_label = QLabel()
         self.statusBar().addWidget(self.count_label)
         self.statusBar().addPermanentWidget(IndexStatus(self.watcher))
@@ -140,6 +166,12 @@ class MainWindow(QMainWindow):
         self.banner.forget_missing.connect(self._forget_missing)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
         self.watcher.library_changed.connect(self.reload)
+        self.timeline.menu_requested.connect(self._tile_menu)
+        self.timeline.selection_changed.connect(self._update_actions)
+        self.sidebar.menu_requested.connect(self._folder_menu)
+        QGuiApplication.clipboard().dataChanged.connect(self._update_actions)
+        self.ops.finished.connect(self._after_change)
+        self.ops.history_changed.connect(self._update_history)
 
         geometry = self.settings.value("geometry")
         if geometry is not None:
@@ -151,7 +183,11 @@ class MainWindow(QMainWindow):
             self.restoreState(state)
         self.timeline.set_tile_size(int(self.settings.value("tile", self.timeline.tile)))
         self.zoom.setValue(self.timeline.tile)
+        self._recover()
         self.reload()
+        self._update_history()
+        self._update_actions()
+        self._editor_changed()
         if index:
             QTimer.singleShot(1500, self.watcher.start)  # look for new photos once the window is up
 
@@ -173,7 +209,7 @@ class MainWindow(QMainWindow):
         self.back_action.triggered.connect(self.close_viewer)
         self.back_action.setVisible(False)
         bar.addAction(self.back_action)
-        folders = self.sidebar_dock.toggleViewAction()
+        folders = self.library_action = self.sidebar_dock.toggleViewAction()
         folders.setText("Library")
         folders.setToolTip("Show or hide the folders")
         bar.addAction(folders)
@@ -199,24 +235,315 @@ class MainWindow(QMainWindow):
         self.zoom.setToolTip("Thumbnail size (Ctrl + mouse wheel, Ctrl + / Ctrl -)")
         self.zoom.valueChanged.connect(self.timeline.set_tile_size)
         bar.addWidget(self.zoom)
-        info = self.info_dock.toggleViewAction()
+        info = self.info_action = self.info_dock.toggleViewAction()
         info.setText("Info")
         info.setShortcut(QKeySequence("I"))
         info.setToolTip("Show or hide details about the photo (I)")
         bar.addAction(info)
-        settings = QAction("Settings", self)
+        settings = self.settings_action = QAction("Settings...", self)
         settings.setShortcut(QKeySequence("Ctrl+,"))
         settings.setToolTip("Library folders (Ctrl+,)")
         settings.triggered.connect(self.open_settings)
         bar.addAction(settings)
-        reload = QAction("Reload", self)
+        reload = self.reload_action = QAction("Reload", self)
         reload.setShortcut(QKeySequence.StandardKey.Refresh)
         reload.triggered.connect(self.reload)
         self.addAction(reload)
-        full = QAction("Full screen", self)
+        full = self.full_action = QAction("Full screen", self)
         full.setShortcut(QKeySequence("F11"))
         full.triggered.connect(lambda: self.showNormal() if self.isFullScreen() else self.showFullScreen())
         self.addAction(full)
+
+    def _action(self, text, slot, keys=(), tip=None) -> QAction:
+        a = QAction(text, self)
+        a.setShortcuts([QKeySequence(k) for k in keys])
+        a.triggered.connect(slot)
+        if tip:
+            a.setToolTip(tip)
+        self.addAction(a)  # the shortcut works wherever the focus is in the window
+        return a
+
+    def _build_file_actions(self):
+        Key = QKeySequence.StandardKey
+        self.undo_action = self._action("Undo", self.ops.undo, [Key.Undo])
+        self.redo_action = self._action("Redo", self.ops.redo, ["Ctrl+Shift+Z", "Ctrl+Y"])
+        self.cut_action = self._action("Cut", lambda: self._to_clipboard(cut=True), [Key.Cut])
+        self.copy_action = self._action("Copy", lambda: self._to_clipboard(cut=False), [Key.Copy])
+        self.paste_action = self._action("Paste", lambda: self._paste(self._open_folder()), [Key.Paste])
+        self.select_all_action = self._action("Select all", self.timeline.select_all, [Key.SelectAll])
+        self.rename_action = self._action("Rename...", self._rename, ["F2"])
+        self.move_action = self._action("Move to...", lambda: self._into_chosen("move"), ["Ctrl+Shift+M"])
+        self.new_folder_action = self._action("Move to a new folder...", self._into_new_folder)
+        self.copy_to_action = self._action("Copy to...", lambda: self._into_chosen("copy"))
+        self.trash_action = self._action("Move to Trash", self._trash, [Key.Delete])
+        self.export_action = self._action("Export...", self._export, ["Ctrl+E"])
+        self.open_app_action = self._action("Open in another app", self._open_in_app, ["Ctrl+Return"])
+        self.show_action = self._action("Show in folder", self._show_in_folder)
+        self._targeted = [self.cut_action, self.copy_action, self.rename_action, self.move_action,
+                          self.new_folder_action, self.copy_to_action, self.trash_action, self.export_action,
+                          self.open_app_action, self.show_action]
+
+    def _build_menus(self):
+        bar = self.menuBar()
+        m = bar.addMenu("&File")
+        m.addActions([self.open_app_action, self.show_action])
+        m.addSeparator()
+        m.addAction(self.export_action)
+        m.addSeparator()
+        m.addAction(self.settings_action)
+        m.addSeparator()
+        m.addAction(self._action("Quit", self.close, [QKeySequence.StandardKey.Quit]))
+        m = bar.addMenu("&Edit")
+        m.addActions([self.undo_action, self.redo_action])
+        m.addSeparator()
+        m.addActions([self.cut_action, self.copy_action, self.paste_action, self.select_all_action])
+        m.addSeparator()
+        m.addActions([self.rename_action, self.move_action, self.new_folder_action, self.copy_to_action])
+        m.addSeparator()
+        m.addAction(self.trash_action)
+        m = bar.addMenu("&View")
+        m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
+
+    # --- working with files ----------------------------------------------------------------------------
+
+    def targets(self) -> list:
+        """The photos the Edit menu works on: the one in the viewer, or those selected in the grid."""
+        shown = self.stack.currentWidget()
+        if shown is self.viewer and 0 <= self.viewer.index < len(self.viewer.items):
+            return [self.viewer.items[self.viewer.index]]
+        return self.timeline.selected_items() if shown is self.timeline else []
+
+    @staticmethod
+    def _what(items) -> str:
+        videos = sum(it.kind == "video" for it in items)
+        return counted(len(items) - videos, videos)
+
+    def _open_folder(self):
+        """The folder being looked at, if it's one."""
+        return self.place if os.path.isabs(self.place) else None
+
+    def _update_actions(self):
+        has = bool(self.targets())
+        for a in self._targeted:
+            a.setEnabled(has)
+        mime = QGuiApplication.clipboard().mimeData()
+        self.paste_action.setEnabled(bool(self._open_folder()) and mime is not None and mime.hasUrls())
+
+    def _editor_changed(self):
+        editor = (load_settings().get("editor") or "").strip()
+        self.open_app_action.setText(f"Open in {os.path.basename(editor.split()[0])}" if editor
+                                     else "Open in another app")
+
+    def _update_history(self):
+        try:
+            undo, redo = FileOps.history()
+        except Exception:
+            undo = redo = None
+        self.undo_action.setText(f"Undo {undo}" if undo else "Undo")
+        self.undo_action.setEnabled(bool(undo))
+        self.redo_action.setText(f"Redo {redo}" if redo else "Redo")
+        self.redo_action.setEnabled(bool(redo))
+
+    def _recover(self):
+        db = open_db()
+        try:
+            interrupted = db.execute("SELECT 1 FROM ops WHERE state='running' LIMIT 1").fetchone()
+        finally:
+            db.close()
+        if interrupted:
+            self.ops.recover()
+
+    def _after_change(self, message: str):
+        if message:
+            self.statusBar().showMessage(message, 12000)
+        self.reload()
+        if self.query:
+            self._searches.run(run_search, self._searched, self.search_index, self.query, self.place)
+
+    def _sync_viewer(self):
+        """After files changed under the viewer: keep showing the same photo, or the next one if it's gone."""
+        if self.stack.currentWidget() is not self.viewer:
+            return
+        if not self.timeline.items:
+            return self.close_viewer()
+        old = self.viewer.items[self.viewer.index].id if 0 <= self.viewer.index < len(self.viewer.items) else None
+        index = {it.id: i for i, it in enumerate(self.timeline.items)}
+        i = index.get(old, min(self.viewer.index, len(self.timeline.items) - 1))
+        self.viewer.show_items(self.timeline.items, i)
+
+    def _remember_place(self, items):
+        """Before items may go from what's shown: select what takes their place afterwards."""
+        idx = {it.id: i for i, it in enumerate(self.timeline.items)}
+        found = [idx[it.id] for it in items if it.id in idx]
+        self._select_after = min(found) if found else None
+
+    def _to_clipboard(self, cut: bool):
+        items = self.targets()
+        if not items:
+            return
+        db = open_db()
+        try:
+            paths = files.with_companions(db, [it.path for it in items])
+        finally:
+            db.close()
+        desktop.copy_files(paths, cut)
+        what = self._what(items)
+        self.statusBar().showMessage(f"{'Cut' if cut else 'Copied'} {what}. Paste them into a folder here or in "
+                                     "your file manager.", 6000)
+
+    def _paste(self, folder):
+        if not folder:
+            self.statusBar().showMessage("Choose a folder in the sidebar to paste into.", 5000)
+            return
+        paths, cut = desktop.clipboard_files()
+        paths = [os.path.abspath(p) for p in paths if os.path.isfile(p)]
+        if not paths:
+            self.statusBar().showMessage("There are no files to paste. Copy some first, here or in your file "
+                                         "manager.", 6000)
+            return
+        if not inside(folder, library_folders()):
+            return
+        name = os.path.basename(folder) or folder
+        what = f"{len(paths):,} file{'s' if len(paths) != 1 else ''}"
+        kind = "move" if cut else "copy"
+        verb, past = ("Move", "Moved") if cut else ("Copy", "Copied")
+        self.ops.run(kind, f"{verb} {what} to {name}", f"{past} {what} to {name}",
+                     lambda db: files.plan_into(files.with_companions(db, paths), folder, kind))
+        if cut:
+            QGuiApplication.clipboard().clear()  # they're moved: there's nothing left to paste
+
+    def _trash(self):
+        items = self.targets()
+        if not items:
+            return
+        paths, what = [it.path for it in items], self._what(items)
+        self._remember_place(items)
+        self.ops.run("trash", f"Move {what} to Trash", f"Moved {what} to Trash",
+                     lambda db: files.plan_trash(files.with_companions(db, paths)))
+
+    def _rename(self):
+        items = self.targets()
+        if not items:
+            return
+        if len(items) == 1:
+            dlg = RenameDialog(items[0].path, self)
+            if not dlg.exec() or dlg.name() == os.path.basename(items[0].path):
+                return
+            old, new = os.path.basename(items[0].path), dlg.name()
+            renames = [(items[0].path, new)]
+            summary, past = f"Rename {old} to {new}", f"Renamed {old} to {new}"
+        else:
+            dlg = BatchRenameDialog(items, self, self.settings.value("rename/pattern", "{date} {name}"))
+            if not dlg.exec():
+                return
+            self.settings.setValue("rename/pattern", dlg.edit.text())
+            renames = list(zip([it.path for it in items], dlg.names(), strict=True))
+            what = self._what(items)
+            summary, past = f"Rename {what}", f"Renamed {what}"
+        self.ops.run("rename", summary, past, lambda db: files.plan_rename(db, renames))
+
+    def _start_folder(self, items) -> str:
+        return self._open_folder() or (os.path.dirname(items[0].path) if items else str(pictures_folder()))
+
+    def _into(self, kind, items, folder):
+        roots = library_folders()
+        if not inside(folder, roots):
+            QMessageBox.information(
+                self, "Photo Finder",
+                f"{folder} isn't in your library.\n\nPhoto Finder moves and copies photos only within your "
+                "library folders (see Settings). To put copies somewhere else, use Export.")
+            return
+        paths, what, name = [it.path for it in items], self._what(items), os.path.basename(folder) or folder
+        verb, past = ("Move", "Moved") if kind == "move" else ("Copy", "Copied")
+        if kind == "move":
+            self._remember_place(items)
+        self.ops.run(kind, f"{verb} {what} to {name}", f"{past} {what} to {name}",
+                     lambda db: files.plan_into(files.with_companions(db, paths), folder, kind))
+
+    def _into_chosen(self, kind):
+        items = self.targets()
+        if not items:
+            return
+        title = f"{'Move' if kind == 'move' else 'Copy'} {self._what(items)} to"
+        folder = QFileDialog.getExistingDirectory(self, title, self._start_folder(items))
+        if folder:
+            self._into(kind, items, os.path.abspath(folder))
+
+    def _into_new_folder(self):
+        items = self.targets()
+        if not items:
+            return
+        parent = self._start_folder(items)
+        name, ok = QInputDialog.getText(self, "Move to a new folder", f"Name of the new folder in {parent}:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        problem = bad_name(name)
+        if problem:
+            QMessageBox.information(self, "Move to a new folder", problem)
+            return
+        self._into("move", items, os.path.join(parent, name))
+
+    def _export(self):
+        items = self.targets()
+        if not items:
+            return
+        dlg = ExportDialog(len(items), self.settings, self)
+        if not dlg.exec():
+            return
+        start = self.settings.value("export/folder", str(pictures_folder()))
+        folder = QFileDialog.getExistingDirectory(self, "Export to", start)
+        if not folder:
+            return
+        self.settings.setValue("export/folder", folder)
+        resize, quality = dlg.choice()
+        self.ops.export([it.path for it in items], folder, resize, quality)
+
+    def _open_in_app(self):
+        items = self.targets()[:20]
+        editor = load_settings().get("editor")
+        for it in items:
+            ok = desktop.open_with(editor, it.path) if editor else desktop.open_file(it.path)
+            if not ok:
+                QMessageBox.warning(self, "Photo Finder", f"Couldn't open {it.path}"
+                                    + (f" with “{editor}”. Check the editor in Settings." if editor else "."))
+                return
+
+    def _show_in_folder(self):
+        items = self.targets()
+        if items:
+            desktop.show_in_folder(items[0].path)
+
+    def _tile_menu(self, pos):
+        items = self.targets()
+        if not items:
+            return
+        menu = QMenu(self)
+        if len(items) == 1:
+            menu.addAction("Open", lambda: self.open_viewer(self.timeline.current))
+        menu.addActions([self.open_app_action, self.show_action])
+        menu.addSeparator()
+        menu.addActions([self.cut_action, self.copy_action])
+        if self.paste_action.isEnabled():
+            menu.addAction(self.paste_action)
+        menu.addSeparator()
+        menu.addActions([self.rename_action, self.move_action, self.new_folder_action, self.copy_to_action,
+                         self.export_action])
+        menu.addSeparator()
+        menu.addAction(self.trash_action)
+        menu.exec(pos)
+
+    def _folder_menu(self, path, pos):
+        menu = QMenu(self)
+        mime = QGuiApplication.clipboard().mimeData()
+        paste = menu.addAction("Paste here", lambda: self._paste(path))
+        paste.setEnabled(mime is not None and mime.hasUrls() and os.path.isdir(path))
+        selected = self.targets()
+        if selected:
+            menu.addAction(f"Move {self._what(selected)} here", lambda: self._into("move", selected, path))
+        menu.addSeparator()
+        menu.addAction("Show in file manager", lambda: desktop.open_file(path))
+        menu.exec(pos)
 
     # --- the library ---------------------------------------------------------------------------------
 
@@ -258,7 +585,13 @@ class MainWindow(QMainWindow):
                                     if self.watcher.indexer.snapshot()["running"] else "No photos here.")
         self.timeline.set_scrubber(True)
         self.timeline.set_months(months, fresh=fresh)
+        if self._select_after is not None:
+            if self.timeline.current < 0 and self.timeline.items:
+                self.timeline.set_current(min(self._select_after, len(self.timeline.items) - 1))
+            self._select_after = None
+        self._sync_viewer()
         self._count_text()
+        self._update_actions()
 
     def _place_name(self) -> str:
         """" in 2023", " of Mom", or nothing for all photos."""
@@ -329,6 +662,7 @@ class MainWindow(QMainWindow):
                                               self.statusBar().showMessage("Looking for new photos...", 5000)))
         dlg.exec()
         self._settings_dialog = None
+        self._editor_changed()
 
     def _forget_missing(self):
         n = self.banner.missing
@@ -375,6 +709,7 @@ class MainWindow(QMainWindow):
         self.timeline.empty_text = f"No photos{where} look like “{self.query}”."
         self.timeline.set_scrubber(False)
         self.timeline.set_months(sections, fresh=True)
+        self._sync_viewer()
         self.count_label.setText(f"  {n:,} match{'es' if n != 1 else ''} for “{self.query}”{where}"
                                  f"  ({took:.2f} s)")
         if self.timeline.items:
@@ -403,6 +738,7 @@ class MainWindow(QMainWindow):
         in_viewer = widget is self.viewer
         self.back_action.setVisible(in_viewer)
         self.zoom.setEnabled(widget is self.timeline)
+        self._update_actions()
 
     def open_viewer(self, index: int):
         self.viewer.show_items(self.timeline.items, index)

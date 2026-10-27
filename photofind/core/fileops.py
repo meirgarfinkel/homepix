@@ -1,0 +1,538 @@
+"""Changing files: move, rename, copy, Trash and restore, with undo and redo, journaled so that a
+crash at any moment loses nothing and leaves the index matching the disk.
+
+How a file is never lost:
+- Nothing is ever overwritten (see safefs). A name that's taken gets _1, _2, ... like the library's.
+- Every operation is written to the journal (ops, op_steps) before any file is touched, and each
+  step's destination is recorded before the step happens. So after a crash, recover() can tell
+  from where each file is what was done: a step whose file is at its destination is finished.
+  (So the rest is committed in batches, which makes 5,000 files take a second, not a minute.)
+- Moves happen in two phases, as in the Sep 2026 pipeline: first every file is renamed to a hidden
+  name beside itself, then each goes to its destination. Chains and swaps (A -> B while B -> C)
+  are then safe whatever the order.
+- The index changes in the same transaction that marks a step finished, and while a move is under
+  way its row is at the file's hidden name too, so the index always matches the disk.
+
+Steps (op_steps.action): move, copy, trash, restore. op_steps.done: 0 planned, 1 under way (a move's
+file is at its hidden name; a Trash name is reserved), 2 finished, 3 skipped (why: in `after`).
+An operation's state: running, done, interrupted (stopped or crashed partway: what finished stays
+finished and can be undone), undone.
+"""
+
+import datetime as dt
+import filecmp
+import json
+import os
+import time
+from pathlib import Path
+
+from . import trash as trashcan
+from .safefs import copy_file, free_name, move_file, rename_noreplace
+
+PLANNED, UNDER_WAY, FINISHED, SKIPPED = 0, 1, 2, 3
+
+
+def _now() -> str:
+    return dt.datetime.now().isoformat(sep=" ", timespec="seconds")
+
+
+def _hidden(path: str, op_id: int, seq: int, what: str) -> str:
+    """Photo Finder's own name for a file in transit, next to path (hidden, so indexing skips it)."""
+    return os.path.join(os.path.dirname(path), f".photofind-{what}-{op_id}-{seq}")
+
+
+# --- the index side ---------------------------------------------------------------------------------
+
+def _columns(db, table) -> list[str]:
+    return [r[1] for r in db.execute(f"PRAGMA table_info({table})") if r[1] != "id"]
+
+
+def snapshot(db, path: str):
+    """Everything the index knows about a photo (its row and its faces, names included), to put back
+    after restoring it. None if it isn't indexed."""
+    row = db.execute("SELECT * FROM photos WHERE path=?", (path,)).fetchone()
+    if row is None:
+        return None
+
+    def plain(r, cols):
+        return {c: (r[c].hex() if isinstance(r[c], bytes) else r[c]) for c in cols}
+
+    face_cols = [c for c in _columns(db, "faces") if c != "photo_id"]
+    faces = db.execute("SELECT * FROM faces WHERE photo_id=?", (row["id"],)).fetchall()
+    return {"photo": plain(row, _columns(db, "photos")), "faces": [plain(f, face_cols) for f in faces],
+            "blobs": [c for c in _columns(db, "photos") + face_cols if c in ("clip", "emb")]}
+
+
+def _insert_snapshot(db, snap, path: str) -> int:
+    def unplain(d):
+        return {c: (bytes.fromhex(v) if c in snap["blobs"] and v is not None else v) for c, v in d.items()}
+
+    photo = unplain(snap["photo"]) | {"path": path}
+    cols = list(photo)
+    cur = db.execute(f"INSERT INTO photos ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                     [photo[c] for c in cols])
+    pid = cur.lastrowid
+    people = {r[0] for r in db.execute("SELECT id FROM people")} if snap["faces"] else set()
+    for face in snap["faces"]:
+        f = unplain(face) | {"photo_id": pid}
+        if f.get("person_id") not in people:  # (someone deleted meanwhile)
+            f["person_id"] = None
+        db.execute(f"INSERT INTO faces ({', '.join(f)}) VALUES ({', '.join('?' * len(f))})", list(f.values()))
+    return pid
+
+
+def _apply(db, step) -> dict:
+    """Bring the index in line with a finished step. Returns what to remember about it."""
+    action, src, dst = step["action"], step["src"], step["dst"]
+    if action == "move":
+        # The row is at the file's hidden name once it's staged (see run); at src only if a crash came
+        # first, before any other file could have arrived at src.
+        temp = _hidden(src, step["op_id"], step["seq"], "moving")
+        if db.execute("UPDATE photos SET path=? WHERE path=?", (dst, temp)).rowcount == 0:
+            db.execute("UPDATE photos SET path=? WHERE path=?", (dst, src))
+        return {}
+    if action == "copy":
+        snap = snapshot(db, src)
+        return {"new_id": _insert_snapshot(db, snap, dst)} if snap else {}
+    if action == "trash":
+        db.execute("DELETE FROM photos WHERE path=?", (src,))
+        return {}
+    if action == "restore":
+        before = json.loads(step["before"] or "{}")
+        if before.get("snapshot") and db.execute("SELECT 1 FROM photos WHERE path=?", (dst,)).fetchone() is None:
+            return {"new_id": _insert_snapshot(db, before["snapshot"], dst)}
+        return {}
+    raise ValueError(f"unknown step {action}")
+
+
+# Committing after every file would make a big operation slow (each commit waits for the disk), and
+# isn't needed: recover() tells from where the files are what was done. Only what it can't tell is
+# committed before going on: the plan, the end of the first phase of moves, the names chosen in the
+# Trash, and a destination changed because its name was taken meanwhile.
+
+def _finish(db, step, dst=None):
+    """The step's file is where it should be: update the index and mark it finished, together."""
+    step = dict(step)
+    if dst is not None:
+        step["dst"] = dst
+    after = _apply(db, step)
+    db.execute("UPDATE op_steps SET done=?, dst=?, after=? WHERE id=?",
+               (FINISHED, step["dst"], json.dumps(after), step["id"]))
+
+
+def _skip(db, step, why: str):
+    db.execute("UPDATE op_steps SET done=?, after=? WHERE id=?", (SKIPPED, json.dumps({"why": why}), step["id"]))
+
+
+def _set(db, step, **fields):
+    db.execute(f"UPDATE op_steps SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), step["id"]))
+
+
+# --- planning ---------------------------------------------------------------------------------------
+
+def plan_moves(pairs) -> list[dict]:
+    """[(src, wanted dst)] -> move steps. A wanted name that's taken (and not being vacated by another
+    file in the same operation) gets _1, _2, ...; files already where they're wanted are left out."""
+    srcs = {os.path.abspath(s) for s, _ in pairs}
+    planned, steps = set(), []
+    for src, dst in pairs:
+        src, dst = os.path.abspath(src), os.path.abspath(dst)
+        if src == dst:
+            continue
+        folder, name = os.path.split(dst)
+        stem, ext = os.path.splitext(name)
+        n, candidate = 0, dst
+        while candidate in planned or (os.path.lexists(candidate) and candidate not in srcs):
+            n += 1
+            candidate = os.path.join(folder, f"{stem}_{n}{ext}")
+        planned.add(candidate)
+        steps.append({"action": "move", "src": src, "dst": candidate})
+    return steps
+
+
+def plan_into(paths, folder, action: str) -> list[dict]:
+    """Move or copy files into folder, keeping their names (made free if taken)."""
+    folder = os.path.abspath(folder)
+    if action == "move":
+        return plan_moves([(p, os.path.join(folder, os.path.basename(p))) for p in paths])
+    taken, steps = set(), []
+    for p in paths:
+        name = free_name(folder, os.path.basename(p), taken)
+        taken.add(name)
+        steps.append({"action": "copy", "src": os.path.abspath(p), "dst": os.path.join(folder, name)})
+    return steps
+
+
+def plan_trash(paths) -> list[dict]:
+    return [{"action": "trash", "src": os.path.abspath(p), "dst": None} for p in paths]
+
+
+def companions(db, paths) -> dict[str, str]:
+    """{photo path: its Live Photo clip's path} for those of paths that have one: the motion clip in
+    the same folder taken within 2 seconds (the one with the same name first, then the closest)."""
+    wanted = {}
+    for p in paths:
+        row = db.execute("SELECT taken FROM photos WHERE path=? AND kind='photo' AND taken IS NOT NULL",
+                         (os.path.abspath(p),)).fetchone()
+        if row:
+            wanted[os.path.abspath(p)] = dt.datetime.fromisoformat(row[0])
+    if not wanted:
+        return {}
+    clips = {}
+    for path, taken in db.execute("SELECT path, taken FROM photos WHERE kind='motion' AND taken IS NOT NULL"):
+        clips.setdefault(os.path.dirname(path), []).append((path, dt.datetime.fromisoformat(taken)))
+    out, used = {}, set()
+    for p, taken in wanted.items():
+        stem = os.path.splitext(os.path.basename(p))[0].lower()
+        near = [(os.path.splitext(os.path.basename(c))[0].lower() != stem, abs((t - taken).total_seconds()), c)
+                for c, t in clips.get(os.path.dirname(p), []) if abs((t - taken).total_seconds()) <= 2]
+        near = [n for n in sorted(near) if n[2] not in used]
+        if near:
+            out[p] = near[0][2]
+            used.add(near[0][2])
+    return out
+
+
+def with_companions(db, paths) -> list[str]:
+    """paths, each photo followed by its Live Photo clip (if it has one and it isn't already there)."""
+    paths = [os.path.abspath(p) for p in paths]
+    have, clips = set(paths), companions(db, paths)
+    out = []
+    for p in paths:
+        out.append(p)
+        c = clips.get(p)
+        if c and c not in have:
+            out.append(c)
+            have.add(c)
+    return out
+
+
+def plan_rename(db, renames) -> list[dict]:
+    """[(path, new name without folder)] -> move steps. A name without an extension keeps the file's
+    own; a Live Photo's clip is renamed with its photo."""
+    pairs, clips = [], companions(db, [p for p, _ in renames])
+    for path, name in renames:
+        path = os.path.abspath(path)
+        stem, ext = os.path.splitext(name)
+        if ext.lower() != os.path.splitext(path)[1].lower():
+            stem, ext = name, os.path.splitext(path)[1]
+        pairs.append((path, os.path.join(os.path.dirname(path), stem + ext)))
+        if path in clips:
+            clip = clips[path]
+            pairs.append((clip, os.path.join(os.path.dirname(clip), stem + os.path.splitext(clip)[1])))
+    return plan_moves(pairs)
+
+
+def pattern_names(pattern: str, items) -> list[str]:
+    """Names for a batch rename. items: [(path, taken datetime or None)]; the pattern may use {name}
+    (the current name), {n} (1, 2, ... padded to the same width) and {date} (2024-07-01)."""
+    width = len(str(len(items)))
+    out = []
+    for i, (path, taken) in enumerate(items, 1):
+        out.append(pattern.format_map({
+            "name": os.path.splitext(os.path.basename(path))[0],
+            "n": str(i).zfill(width),
+            "date": taken.strftime("%Y-%m-%d") if taken else "undated",
+        }).strip())
+    return out
+
+
+# --- running ----------------------------------------------------------------------------------------
+
+class Result:
+    def __init__(self, op_id, finished=0, skipped=None, stopped=False):
+        self.op_id, self.finished, self.skipped, self.stopped = op_id, finished, skipped or [], stopped
+
+    def __repr__(self):
+        return f"Result(op={self.op_id}, finished={self.finished}, skipped={self.skipped}, stopped={self.stopped})"
+
+
+def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_stop=None, undoes=None) -> Result:
+    """Do an operation. Its steps are journaled first; then moves (in two phases), copies, Trash and
+    restores. progress(done, total) is called as it goes; should_stop() is checked between files (a
+    move already under way always finishes). Returns a Result; nothing raises for a single file that
+    can't be done: it's skipped, and the reason is in Result.skipped as (path, reason)."""
+    report = progress or (lambda done, total: None)
+    stop = should_stop or (lambda: False)
+    cur = db.execute("INSERT INTO ops (kind, summary, started, state, undoes) VALUES (?,?,?,?,?)",
+                     (kind, summary, _now(), "running", undoes))
+    op_id = cur.lastrowid
+    for seq, s in enumerate(steps):
+        before = s.get("before")
+        if s["action"] == "trash" and before is None:
+            before = {"snapshot": snapshot(db, s["src"])}
+        db.execute("INSERT INTO op_steps (op_id, seq, action, src, dst, before) VALUES (?,?,?,?,?,?)",
+                   (op_id, seq, s["action"], s["src"], s["dst"], json.dumps(before) if before else None))
+    db.commit()  # the whole plan is on disk before any file is touched
+
+    rows = db.execute("SELECT * FROM op_steps WHERE op_id=? ORDER BY seq", (op_id,)).fetchall()
+    result = Result(op_id)
+    total, done = len(rows), 0
+
+    last_commit = time.monotonic()
+
+    def skipped(step, why):
+        _skip(db, step, why)
+        result.skipped.append((step["src"], why))
+
+    def finished(step, dst):
+        nonlocal done, last_commit
+        _finish(db, step, dst)
+        result.finished += 1
+        done += 1
+        report(done, total)
+        if time.monotonic() - last_commit > 0.5:  # so the window can show the progress
+            db.commit()
+            last_commit = time.monotonic()
+
+    # moves, phase 1: each file to its hidden name beside itself
+    moves = [r for r in rows if r["action"] == "move"]
+    staged = []
+    for r in moves:
+        if stop():
+            result.stopped = True
+            break
+        temp = _hidden(r["src"], op_id, r["seq"], "moving")
+        try:
+            rename_noreplace(r["src"], temp)
+        except FileNotFoundError:
+            skipped(r, "it isn't there any more")
+            continue
+        except OSError as e:
+            skipped(r, e.strerror or str(e))
+            continue
+        # the row follows (paths are unique in the index, so it can't go straight to a name being vacated)
+        db.execute("UPDATE photos SET path=? WHERE path=?", (temp, r["src"]))
+        _set(db, r, done=UNDER_WAY)
+        staged.append(r)
+    db.commit()
+    # moves, phase 2: each staged file to its destination (always finished once started)
+    for r in staged:
+        temp = _hidden(r["src"], op_id, r["seq"], "moving")
+        try:
+            dst = _free(db, r, r["dst"])
+            move_file(temp, dst, _hidden(dst, op_id, r["seq"], "partial"))
+        except OSError as e:
+            try:
+                rename_noreplace(temp, r["src"])  # put it back where it was
+            except OSError:
+                continue  # left under way: recover() will finish it
+            db.execute("UPDATE photos SET path=? WHERE path=?", (r["src"], temp))
+            skipped(r, e.strerror or str(e))
+            continue
+        finished(r, dst)
+
+    # Trash: every name in it is chosen (and reserved) first
+    trashing = []
+    for r in rows:
+        if r["action"] != "trash" or result.stopped:
+            continue
+        if not os.path.lexists(r["src"]):
+            skipped(r, "it isn't there any more")
+            continue
+        try:
+            dst = trashcan.reserve(r["src"])
+        except OSError as e:
+            skipped(r, e.strerror or str(e))
+            continue
+        _set(db, r, dst=dst, done=UNDER_WAY)
+        trashing.append(dict(r) | {"dst": dst})
+    db.commit()
+
+    # copies, Trash, restores
+    trashed = {r["id"]: r for r in trashing}
+    for r in rows:
+        if r["action"] == "move" or (r["action"] == "trash" and r["id"] not in trashed):
+            continue
+        if result.stopped or stop():
+            result.stopped = True
+            break
+        try:
+            if r["action"] == "copy":
+                dst = _free(db, r, r["dst"])
+                copy_file(r["src"], dst, _hidden(dst, op_id, r["seq"], "partial"))
+            elif r["action"] == "trash":
+                dst = trashed.pop(r["id"])["dst"]
+                try:
+                    rename_noreplace(r["src"], dst)
+                except BaseException:
+                    trashcan.unreserve(dst)
+                    raise
+            elif r["action"] == "restore":
+                dst = _free(db, r, r["dst"])
+                trashcan.restore(r["src"], dst)
+        except FileNotFoundError:
+            skipped(r, "it isn't there any more")
+            continue
+        except OSError as e:
+            skipped(r, e.strerror or str(e))
+            continue
+        finished(r, dst)
+
+    for r in trashed.values():  # stopped before they went
+        trashcan.unreserve(r["dst"])
+        _skip(db, r, "stopped before it was done")
+    for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done=?", (op_id, PLANNED)).fetchall():
+        _skip(db, r, "stopped before it was done")
+    state = "interrupted" if result.stopped else "done"
+    db.execute("UPDATE ops SET state=?, finished=? WHERE id=?", (state, _now(), op_id))
+    db.commit()
+    return result
+
+
+def _free(db, step, dst: str) -> str:
+    """dst, or a free name beside it if something has taken it since the plan (recorded first)."""
+    folder = os.path.dirname(dst)
+    os.makedirs(folder, exist_ok=True)
+    if os.path.lexists(dst):
+        dst = os.path.join(folder, free_name(folder, os.path.basename(dst)))
+        _set(db, step, dst=dst)
+        db.commit()
+    return dst
+
+
+# --- after a crash ----------------------------------------------------------------------------------
+
+def recover(db) -> list[str]:
+    """Finish what a crash interrupted: every step whose file reached its destination is marked
+    finished (and the index updated); every move caught at its hidden name is completed; leftover
+    partial copies are removed. Returns a line for each operation looked at."""
+    notes = []
+    for op in db.execute("SELECT * FROM ops WHERE state='running' ORDER BY id").fetchall():
+        fixed, started = 0, _second_phase_started(db, op["id"])
+        for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done IN (?, ?) ORDER BY seq",
+                            (op["id"], PLANNED, UNDER_WAY)).fetchall():
+            src, dst, action = r["src"], r["dst"], r["action"]
+            if dst:
+                Path(_hidden(dst, op["id"], r["seq"], "partial")).unlink(missing_ok=True)
+            if action == "move":
+                fixed += _recover_move(db, op["id"], r, started)
+            elif action == "copy":
+                if os.path.lexists(dst) and os.path.lexists(src) and os.path.getsize(dst) == os.path.getsize(src):
+                    _finish(db, r)
+                    fixed += 1
+                else:
+                    _skip(db, r, "interrupted before it was done")
+            elif action == "trash":
+                if dst and os.path.lexists(dst) and not os.path.lexists(src):
+                    _finish(db, r)
+                    fixed += 1
+                else:
+                    if dst:
+                        trashcan.unreserve(dst)
+                    _skip(db, r, "interrupted before it was done")
+            elif action == "restore":
+                if os.path.lexists(dst) and not os.path.lexists(src):
+                    trashcan.unreserve(src)
+                    _finish(db, r)
+                    fixed += 1
+                else:
+                    _skip(db, r, "interrupted before it was done")
+        db.execute("UPDATE ops SET state='interrupted', finished=? WHERE id=?", (_now(), op["id"]))
+        db.commit()
+        notes.append(f"{op['summary']}: interrupted; {fixed} file(s) finished on recovery")
+    return notes
+
+
+def _second_phase_started(db, op_id) -> bool:
+    """Had any of the operation's moved files reached its destination? (Then every file was already
+    at its hidden name, and the moves are finished; if not, they're taken back, since files not yet
+    moved may still hold the names wanted.) Also puts each staged file's row at its hidden name, for
+    a crash that came between the two."""
+    started = False
+    for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND action='move'", (op_id,)).fetchall():
+        temp = _hidden(r["src"], op_id, r["seq"], "moving")
+        if r["done"] == FINISHED or (r["done"] == UNDER_WAY and not os.path.lexists(temp)):
+            started = True
+        elif r["done"] == PLANNED and os.path.lexists(temp):
+            db.execute("UPDATE photos SET path=? WHERE path=?", (temp, r["src"]))
+            _set(db, r, done=UNDER_WAY)
+    return started
+
+
+def _recover_move(db, op_id, r, started: bool) -> int:
+    """Finish (or take back) one move a crash interrupted. Returns 1 if it ends up done."""
+    src, dst = r["src"], r["dst"]
+    temp = _hidden(src, op_id, r["seq"], "moving")
+    if not os.path.lexists(temp):
+        if r["done"] == UNDER_WAY and os.path.lexists(dst):  # it arrived; only the bookkeeping was left
+            _finish(db, r)
+            return 1
+        db.execute("UPDATE photos SET path=? WHERE path=?", (src, temp))  # it was put back
+        _skip(db, r, "interrupted before it started")
+        return 0
+    if os.path.lexists(dst) and filecmp.cmp(temp, dst, shallow=False):  # copied across drives, not yet removed
+        os.unlink(temp)
+        _finish(db, r)
+        return 1
+    if not started and not os.path.lexists(src):  # take it back
+        rename_noreplace(temp, src)
+        db.execute("UPDATE photos SET path=? WHERE path=?", (src, temp))
+        _skip(db, r, "interrupted before it started")
+        return 0
+    dst = _free(db, r, dst)
+    move_file(temp, dst, _hidden(dst, op_id, r["seq"], "partial"))
+    _finish(db, r, dst)
+    return 1
+
+
+# --- undo and redo ----------------------------------------------------------------------------------
+
+def inverse(db, op_id: int) -> list[dict]:
+    """The steps that take an operation's finished steps back, last first."""
+    out = []
+    for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done=? ORDER BY seq DESC", (op_id, FINISHED)):
+        if r["action"] == "move":
+            out.append(("move", r["dst"], r["src"], None))
+        elif r["action"] in ("copy", "restore"):
+            out.append(("trash", r["dst"], None, None))
+        elif r["action"] == "trash":
+            before = json.loads(r["before"] or "{}")
+            out.append(("restore", r["dst"], r["src"], {"snapshot": before.get("snapshot")}))
+    moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"])
+    others = []
+    taken = {}
+    for a, s, d, before in out:
+        if a == "trash":
+            others.append({"action": "trash", "src": s, "dst": None})
+        elif a == "restore":
+            folder = os.path.dirname(d)
+            name = free_name(folder, os.path.basename(d), taken.setdefault(folder, set()))
+            taken[folder].add(name)
+            others.append({"action": "restore", "src": s, "dst": os.path.join(folder, name), "before": before})
+    return moves + others
+
+
+def can_undo(db):
+    """The operation Ctrl+Z would take back, or None."""
+    return db.execute("SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' "
+                      "ORDER BY id DESC LIMIT 1").fetchone()
+
+
+def can_redo(db):
+    """The undo that Ctrl+Shift+Z would take back, or None. Doing anything new clears it."""
+    newest = db.execute("SELECT MAX(id) FROM ops WHERE kind NOT IN ('undo', 'redo')").fetchone()[0] or 0
+    return db.execute("SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? "
+                      "ORDER BY id DESC LIMIT 1", (newest,)).fetchone()
+
+
+def undo(db, progress=None) -> Result | None:
+    op = can_undo(db)
+    if op is None:
+        return None
+    result = run(db, "undo", f"Undo: {op['summary']}", inverse(db, op["id"]), progress, undoes=op["id"])
+    db.execute("UPDATE ops SET state='undone' WHERE id=?", (op["id"],))
+    db.commit()
+    return result
+
+
+def redo(db, progress=None) -> Result | None:
+    u = can_redo(db)
+    if u is None:
+        return None
+    original = db.execute("SELECT * FROM ops WHERE id=?", (u["undoes"],)).fetchone()
+    result = run(db, "redo", original["summary"] if original else "Redo", inverse(db, u["id"]), progress,
+                 undoes=u["id"])
+    db.execute("UPDATE ops SET state='undone' WHERE id=?", (u["id"],))
+    db.commit()
+    return result

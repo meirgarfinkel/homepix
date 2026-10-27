@@ -109,7 +109,12 @@ def _m3_videos(db):
     db.execute("CREATE INDEX photos_kind ON photos(kind)")
 
 
-MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos]
+def _m4_undo(db):
+    """Undo and redo: an undo (or redo) operation records which operation it takes back."""
+    db.execute("ALTER TABLE ops ADD COLUMN undoes INTEGER REFERENCES ops(id)")
+
+
+MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo]
 LATEST = len(MIGRATIONS)
 
 

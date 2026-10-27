@@ -77,9 +77,22 @@ def cmd_index(args):
                 say(f"  {i['done']}/{i['todo']} photos")
 
     deadline = time.time() + args.max_minutes * 60 if args.max_minutes else None
+    from .core import fileops
+    from .core.indexer import LibraryBusy, library_lock
+
     try:
-        info = index_folder(args.folder, not args.no_faces, progress, deadline=deadline,
-                            forget_missing=args.forget_missing)
+        with library_lock(timeout=2):  # not while the app indexes or changes files
+            db = open_db()
+            try:
+                for note in fileops.recover(db):
+                    say(f"Finished what was interrupted: {note}")
+            finally:
+                db.close()
+            info = index_folder(args.folder, not args.no_faces, progress, deadline=deadline,
+                                forget_missing=args.forget_missing)
+    except LibraryBusy:
+        sys.exit("The Photo Finder app is updating the library right now. Try again when it's done "
+                 "(or close it).")
     except FileNotFoundError as e:
         sys.exit(str(e))
     except KeyboardInterrupt:

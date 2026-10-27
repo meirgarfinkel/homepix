@@ -55,6 +55,30 @@ class _IndexLock:
             self.f = None
 
 
+class LibraryBusy(RuntimeError):
+    """Another Photo Finder held the library for too long."""
+
+
+class library_lock:
+    """Hold the indexing lock for a file operation, so no index pass (in this app or another) runs
+    while files move. Waits up to timeout seconds for one to let go."""
+
+    def __init__(self, timeout: float = 30):
+        self.timeout = timeout
+        self._lock = _IndexLock()
+
+    def __enter__(self):
+        until = time.time() + self.timeout
+        while not self._lock.acquire():
+            if time.time() > until:
+                raise LibraryBusy("Another Photo Finder is busy with the library. Try again in a moment.")
+            time.sleep(0.1)
+        return self
+
+    def __exit__(self, *exc):
+        self._lock.release()
+
+
 class Indexer:
     """Runs index_folder over the library folders on a background thread.
 
@@ -88,6 +112,13 @@ class Indexer:
 
     def stop(self):
         self.stop_flag = True
+
+    def stop_and_wait(self, timeout: float = 60):
+        """Stop, and wait for the current photo to finish."""
+        self.stop()
+        t = self.thread
+        if t is not None:
+            t.join(timeout=timeout)
 
     def _progress(self, info):
         with self.lock:

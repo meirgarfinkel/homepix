@@ -44,6 +44,7 @@ class TimelineView(QAbstractScrollArea):
     activated = Signal(int)  # global item index: open it
     current_changed = Signal(int)  # global item index, or -1
     selection_changed = Signal()
+    menu_requested = Signal(QPoint)  # right-click (or the menu key), at this global position
 
     def __init__(self, loader, parent=None):
         super().__init__(parent)
@@ -358,6 +359,24 @@ class TimelineView(QAbstractScrollArea):
             self.set_current(i, "toggle")
         else:
             self.set_current(i, "only")
+
+    def contextMenuEvent(self, e):
+        """Right-click a photo that isn't selected: it alone is chosen. On a selected one: all of them."""
+        if e.reason() == e.Reason.Mouse:
+            i = self.item_at(self.viewport().mapFromGlobal(e.globalPos()))
+            if i >= 0 and i not in self.selected:
+                self.set_current(i, "only")
+        elif self.current >= 0:  # the menu key: at the current photo
+            r = self.item_rect(self.current)
+            self.menu_requested.emit(self.viewport().mapToGlobal(r.center()))
+            return
+        self.menu_requested.emit(e.globalPos())
+
+    def selected_items(self) -> list:
+        """The selected photos in display order (or the current one if none are selected)."""
+        if self.selected:
+            return [self.items[i] for i in sorted(self.selected)]
+        return [self.items[self.current]] if 0 <= self.current < len(self.items) else []
 
     def mouseDoubleClickEvent(self, e):
         i = self.item_at(e.position().toPoint())
