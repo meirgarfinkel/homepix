@@ -19,7 +19,10 @@ What's in it:
 
 - **Timeline:** every photo and video by date, newest first, in month sections, with a year scrubber down the side for jumping through the years. Ctrl + mouse wheel (or the Size slider) makes the thumbnails bigger or smaller.
 - **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show.
-- **People:** everyone you've named, as a page of faces. Click one to see their photos.
+- **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time. Untick any that aren't the same person, type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that match are named too. Skip a group for now, or say it's no one you know, and it isn't asked about again.
+- **People:** everyone you've named, as a page of faces. Click one to see their photos; right-click to rename them (a name someone else has makes them one person), say they're the same person as someone else, or forget them.
+- **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Select the wrong ones and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself.
+- **Faces in the viewer** (N): a box on each face with its name. Click one to name it, say it's someone else, or that it isn't a face.
 - **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
 - **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
 - **Info** (I): description, keywords, when it was taken and where that date came from, camera, size, place, people, folder.
@@ -29,7 +32,7 @@ What's in it:
 - **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, Photo Finder finishes the job next time it opens, with no photo lost or doubled.
 - **Settings** (Ctrl+,): which folders make up the library, and the app to edit photos in.
 
-Naming people and fixing faces comes in a later version (see [PLAN.md](PLAN.md)).
+Every change to who's who is undoable like a file operation, from the app or the command line.
 
 The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
 

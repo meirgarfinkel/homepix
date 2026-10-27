@@ -28,7 +28,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import dates, metadata
+from . import dates, metadata, people
 from . import trash as trashcan
 from .safefs import copy_file, free_name, move_file, rename_noreplace
 from .thumbs import thumbs_dir
@@ -77,10 +77,10 @@ def _insert_snapshot(db, snap, path: str) -> int:
     cur = db.execute(f"INSERT INTO photos ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
                      [photo[c] for c in cols])
     pid = cur.lastrowid
-    people = {r[0] for r in db.execute("SELECT id FROM people")} if snap["faces"] else set()
+    known = {r[0] for r in db.execute("SELECT id FROM people")} if snap["faces"] else set()
     for face in snap["faces"]:
         f = unplain(face) | {"photo_id": pid}
-        if f.get("person_id") not in people:  # (someone deleted meanwhile)
+        if f.get("person_id") not in known:  # (someone deleted meanwhile)
             f["person_id"] = None
         db.execute(f"INSERT INTO faces ({', '.join(f)}) VALUES ({', '.join('?' * len(f))})", list(f.values()))
     return pid
@@ -110,6 +110,8 @@ def _apply(db, step) -> dict:
         return {}
     if action == "meta":
         return _apply_meta(db, src, json.loads(step["before"]))
+    if action == "people":  # done in the index itself (see run)
+        return {}
     raise ValueError(f"unknown step {action}")
 
 
@@ -470,6 +472,9 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
                     raise FileNotFoundError
                 metadata.write(r["src"], json.loads(r["before"])["new"])
                 dst = r["src"]
+            elif r["action"] == "people":  # only the index changes: committed with being marked done
+                people.apply(db, json.loads(r["before"])["new"])
+                dst = None
         except FileNotFoundError:
             skipped(r, "it isn't there any more")
             continue
@@ -537,6 +542,8 @@ def recover(db) -> list[str]:
                     fixed += 1
                 else:
                     _skip(db, r, "interrupted before it was done")
+            elif action == "people":  # it and its being done are committed together: it wasn't
+                _skip(db, r, "interrupted before it was done")
             elif action == "meta":  # ExifTool replaces a file in one step: it holds either all or none
                 Path(metadata.leftover(src)).unlink(missing_ok=True)
                 if os.path.lexists(src) and metadata.written(src, json.loads(r["before"])["new"]):
@@ -611,6 +618,8 @@ def inverse(db, op_id: int) -> list[dict]:
             if c.get("orientation"):
                 back["orientation"] = c["orientation"][::-1]
             out.append(("meta", r["src"], r["src"], back))
+        elif r["action"] == "people":
+            out.append(("people", None, None, people.inverse(r["before"])))
     moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"])
     others = []
     taken = {}
@@ -624,6 +633,8 @@ def inverse(db, op_id: int) -> list[dict]:
             others.append({"action": "restore", "src": s, "dst": os.path.join(folder, name), "before": before})
         elif a == "meta":
             others.append({"action": "meta", "src": s, "dst": s, "before": before})
+        elif a == "people":
+            others.append({"action": "people", "src": None, "dst": None, "before": before})
     return moves + others
 
 

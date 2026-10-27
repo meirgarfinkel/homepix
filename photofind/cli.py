@@ -122,8 +122,38 @@ def cmd_index(args):
             say(f"{unnamed} faces don't have a name yet. Run `photofind people` to name them.")
 
 
+def _locked(work):
+    """work(db) with the library to ourselves (not while the app indexes or changes files)."""
+    from .core.indexer import LibraryBusy, library_lock
+
+    try:
+        with library_lock(timeout=2):
+            db = open_db()
+            try:
+                return work(db)
+            finally:
+                db.close()
+    except LibraryBusy:
+        sys.exit("The Photo Finder app is updating the library right now. Try again when it's done "
+                 "(or close it).")
+
+
+def _change(db, summary: str, step) -> bool:
+    """Make a change to who's who as an operation (the app's Undo takes it back). False if it
+    changes nothing."""
+    from .core import fileops
+
+    if step is None:
+        return False
+    fileops.run(db, "people", summary, [step])
+    return True
+
+
 def cmd_people(args):
-    db = open_db()
+    _locked(lambda db: _people(db, args))
+
+
+def _people(db, args):
     if db.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 0:
         sys.exit("No faces found yet. Run `photofind index <folder>` first.")
     auto_assign(db)
@@ -177,6 +207,8 @@ def cmd_people(args):
 
 
 def cmd_name(args):
+    from .core import people
+
     clusters, name_words = [], []
     for token in args.args:
         if not name_words and token.isdigit():
@@ -186,48 +218,59 @@ def cmd_name(args):
     name = " ".join(name_words).strip()
     if not clusters or not name:
         sys.exit("Usage: photofind name <group> [<group> ...] <name>    e.g.  photofind name 3 7 Grandma")
-    db = open_db()
-    db.execute("INSERT OR IGNORE INTO people (name) VALUES (?)", (name,))
-    pid = db.execute("SELECT id FROM people WHERE name = ?", (name,)).fetchone()[0]
-    marks = ",".join("?" * len(clusters))
-    n = db.execute(
-        f"UPDATE faces SET person_id=?, cluster=NULL, locked=0 WHERE person_id IS NULL AND cluster IN ({marks})",
-        (pid, *clusters),
-    ).rowcount
-    db.commit()
-    if n == 0:
-        sys.exit("Those group numbers weren't found. Run `photofind people` to see current groups.")
-    more = auto_assign(db)
-    say(f"Named {n} faces '{name}'" + (f", and recognized {more} more" if more else "") + ".")
+
+    def work(db):
+        marks = ",".join("?" * len(clusters))
+        faces = [r[0] for r in db.execute(
+            f"SELECT id FROM faces WHERE person_id IS NULL AND hidden = 0 AND cluster IN ({marks})", clusters)]
+        if not faces:
+            sys.exit("Those group numbers weren't found. Run `photofind people` to see current groups.")
+        step = people.plan_name(db, faces, name)
+        _change(db, f"Name {len(faces)} faces {name}", step)
+        return len(faces), len(step["before"]["new"]["faces"]) - len(faces) if step else 0
+
+    n, more = _locked(work)
+    say(f"Named {n} faces '{name}'" + (f", and recognized {more} more" if more > 0 else "") + ".")
     say(f"Try: photofind search --person \"{name}\"")
 
 
 def cmd_unname(args):
-    db = open_db()
-    marks = ",".join("?" * len(args.face_ids))
-    n = db.execute(
-        f"UPDATE faces SET person_id=NULL, cluster=NULL, locked=1 WHERE id IN ({marks})", args.face_ids
-    ).rowcount
-    db.commit()
+    from .core import people
+
+    def work(db):
+        found = [r[0] for r in db.execute(
+            f"SELECT id FROM faces WHERE id IN ({','.join('?' * len(args.face_ids))})", args.face_ids)]
+        _change(db, f"Unname {len(found)} faces", people.plan_not(db, found) if found else None)
+        return len(found)
+
+    n = _locked(work)
     say(f"Removed the name from {n} face(s). They won't be auto-tagged again, but you can still name them.")
 
 
 def cmd_rename(args):
-    db = open_db()
-    n = db.execute("UPDATE people SET name=? WHERE name=?", (args.new, args.old)).rowcount
-    db.commit()
-    say("Renamed." if n else f"No person called '{args.old}'.")
+    from .core import people
+
+    def work(db):
+        pid = people.person_id(db, args.old)
+        if pid is None:
+            sys.exit(f"No person called '{args.old}'.")
+        _change(db, f"Rename {args.old} to {args.new}", people.plan_rename(db, pid, args.new))
+
+    _locked(work)
+    say("Renamed (if that's someone else's name, they're one person now).")
 
 
 def cmd_forget(args):
-    db = open_db()
-    row = db.execute("SELECT id FROM people WHERE name=?", (args.name,)).fetchone()
-    if not row:
-        sys.exit(f"No person called '{args.name}'.")
-    db.execute("UPDATE faces SET person_id=NULL, cluster=NULL WHERE person_id=?", (row[0],))
-    db.execute("DELETE FROM people WHERE id=?", (row[0],))
-    db.commit()
-    say(f"Forgot '{args.name}'. Their faces are unnamed again.")
+    from .core import people
+
+    def work(db):
+        pid = people.person_id(db, args.name)
+        if pid is None:
+            sys.exit(f"No person called '{args.name}'.")
+        _change(db, f"Forget {args.name}", people.plan_forget(db, pid))
+
+    _locked(work)
+    say(f"Forgot '{args.name}'. Their faces are unnamed again (Undo in the app brings them back).")
 
 
 def page_head(title: str) -> str:

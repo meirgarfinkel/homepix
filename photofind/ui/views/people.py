@@ -1,7 +1,7 @@
 """The people page: everyone named, as round faces with how many photos they're in. Choosing one
-shows their photos."""
+shows their photos; right-click to rename, merge or forget them, or check their faces."""
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QIcon, QImage, QPainter, QPainterPath, QPalette, QPixmap
 from PySide6.QtWidgets import QListView, QListWidget, QListWidgetItem
 
@@ -34,6 +34,7 @@ def round_face(path: str, size: int, dpr: float) -> QPixmap:
 
 class PeopleView(QListWidget):
     chosen = Signal(int)  # person id
+    menu_requested = Signal(int, QPoint)  # person id, where (global)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -95,12 +96,22 @@ class PeopleView(QListWidget):
         else:
             super().keyPressEvent(e)
 
+    def current_person(self):
+        item = self.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item is not None and item.isSelected() else None
+
+    def contextMenuEvent(self, e):
+        item = self.itemAt(e.pos())
+        if item is not None:
+            self.setCurrentItem(item)
+            self.menu_requested.emit(item.data(Qt.ItemDataRole.UserRole), e.globalPos())
+
     def paintEvent(self, e):
         super().paintEvent(e)
         if self.count() == 0:
             p = QPainter(self.viewport())
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
             p.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter,
-                       "No one has been named yet.\nNaming people comes in a later version.")
+                       "No one has been named yet.\nChoose “Who is this?” in the sidebar to start.")
             p.end()
 
