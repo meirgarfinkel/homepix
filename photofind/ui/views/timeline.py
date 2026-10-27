@@ -262,6 +262,8 @@ class TimelineView(QAbstractScrollArea):
                             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "▶" if video else "Can't show\nthis photo")
                     if video:
                         self._video_badge(p, rect, it.duration, small_font)
+                    if it.rating and self._cell >= 72:
+                        self._pill(p, rect, "★" * it.rating, small_font, left=True)
                     if i in self.selected:
                         p.fillRect(rect, QColor(highlight.red(), highlight.green(), highlight.blue(), 70))
                         p.setPen(QPen(highlight, 3))
@@ -276,11 +278,16 @@ class TimelineView(QAbstractScrollArea):
     @staticmethod
     def _video_badge(p, rect, duration, font):
         """▶ and the length, bottom right, white on a dark pill."""
-        text = f"▶ {clock(duration)}".strip()
+        TimelineView._pill(p, rect, f"▶ {clock(duration)}".strip(), font)
+
+    @staticmethod
+    def _pill(p, rect, text, font, left=False):
+        """text in white on a dark pill, in the tile's bottom right (or left) corner."""
         p.setFont(font)
         fm = p.fontMetrics()
         w, h = fm.horizontalAdvance(text) + 10, fm.height() + 2
-        pill = QRect(rect.right() - w - 5, rect.bottom() - h - 5, w, h)
+        x = rect.left() + 5 if left else rect.right() - w - 5
+        pill = QRect(x, rect.bottom() - h - 5, w, h)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(0, 0, 0, 150))
         p.setRenderHint(QPainter.RenderHint.Antialiasing, True)

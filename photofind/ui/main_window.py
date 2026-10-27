@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
+    QComboBox,
     QDockWidget,
     QFileDialog,
     QInputDialog,
@@ -39,6 +40,7 @@ from ..core.timeline import Month, folder_counts, group_by_month, item_from_row,
 from . import desktop, workers
 from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
+from .photo_actions import PhotoActions
 from .thumbs import ThumbLoader
 from .views.banner import Banner
 from .views.file_dialogs import BatchRenameDialog, ExportDialog, RenameDialog
@@ -55,20 +57,21 @@ def _folder(place):
     return None if place in (ALL, PEOPLE) or person_of(place) is not None else place
 
 
-def load_library(place):
+def load_library(place, min_rating=0):
     """What the grid and the sidebar show: (months, {folder: count}, total photos, named people)."""
     db = open_db()
     try:
-        items = [] if place == PEOPLE else load_items(db, folder=_folder(place), person=person_of(place))
+        items = [] if place == PEOPLE else load_items(db, folder=_folder(place), person=person_of(place),
+                                                      min_rating=min_rating)
         counts = folder_counts(db)
         return group_by_month(items), counts, sum(counts.values()), named_people(db)
     finally:
         db.close()
 
 
-def run_search(index: SearchIndex, q: str, place):
+def run_search(index: SearchIndex, q: str, place, min_rating=0):
     start = time.perf_counter()
-    found = index.search(q, folder=_folder(place), person_id=person_of(place))
+    found = index.search(q, folder=_folder(place), person_id=person_of(place), min_rating=min_rating)
     sections = []
     for title, rows in (("Best matches", found["matches"]), ("Possibly related", found["related"])):
         if rows:
@@ -115,6 +118,7 @@ class MainWindow(QMainWindow):
         self.ops = FileOps(self)
         self._select_after = None  # after files went away: the index of the photo to select instead
         self.loaded = False  # the library has been read once
+        self.min_rating = 0  # show only photos with at least this many stars
         self.search_index = SearchIndex(settling=lambda: self.watcher.indexer.snapshot()["running"])
         self.place = ALL  # what the grid shows when not searching: ALL or a folder
         self.query = ""  # the search being shown, if any
@@ -223,6 +227,11 @@ class MainWindow(QMainWindow):
         self.search_box.focused.connect(self._warm_search)
         self.search_box.escaped.connect(self._leave_search_box)
         bar.addWidget(self.search_box)
+        self.rating_filter = QComboBox()
+        self.rating_filter.addItems(["Any rating"] + [f"{'★' * n} and up" if n < 5 else "★★★★★" for n in range(1, 6)])
+        self.rating_filter.setToolTip("Show only photos with at least this many stars")
+        self.rating_filter.currentIndexChanged.connect(self._rating_filter_changed)
+        bar.addWidget(self.rating_filter)
         find = QAction("Search", self)
         find.setShortcut(QKeySequence.StandardKey.Find)
         find.triggered.connect(lambda: (self.search_box.setFocus(), self.search_box.selectAll()))
@@ -246,7 +255,7 @@ class MainWindow(QMainWindow):
         settings.triggered.connect(self.open_settings)
         bar.addAction(settings)
         reload = self.reload_action = QAction("Reload", self)
-        reload.setShortcut(QKeySequence.StandardKey.Refresh)
+        reload.setShortcut(QKeySequence("F5"))  # (Ctrl+R turns a photo)
         reload.triggered.connect(self.reload)
         self.addAction(reload)
         full = self.full_action = QAction("Full screen", self)
@@ -279,9 +288,10 @@ class MainWindow(QMainWindow):
         self.export_action = self._action("Export...", self._export, ["Ctrl+E"])
         self.open_app_action = self._action("Open in another app", self._open_in_app, ["Ctrl+Return"])
         self.show_action = self._action("Show in folder", self._show_in_folder)
+        self.photo = PhotoActions(self)
         self._targeted = [self.cut_action, self.copy_action, self.rename_action, self.move_action,
                           self.new_folder_action, self.copy_to_action, self.trash_action, self.export_action,
-                          self.open_app_action, self.show_action]
+                          self.open_app_action, self.show_action, *self.photo.targeted]
 
     def _build_menus(self):
         bar = self.menuBar()
@@ -301,6 +311,7 @@ class MainWindow(QMainWindow):
         m.addActions([self.rename_action, self.move_action, self.new_folder_action, self.copy_to_action])
         m.addSeparator()
         m.addAction(self.trash_action)
+        bar.addMenu(self.photo.menu(self))
         m = bar.addMenu("&View")
         m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
 
@@ -358,7 +369,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(message, 12000)
         self.reload()
         if self.query:
-            self._searches.run(run_search, self._searched, self.search_index, self.query, self.place)
+            self._searches.run(run_search, self._searched, self.search_index, self.query, self.place,
+                               self.min_rating)
 
     def _sync_viewer(self):
         """After files changed under the viewer: keep showing the same photo, or the next one if it's gone."""
@@ -530,6 +542,8 @@ class MainWindow(QMainWindow):
         menu.addActions([self.rename_action, self.move_action, self.new_folder_action, self.copy_to_action,
                          self.export_action])
         menu.addSeparator()
+        self.photo.add_to(menu)
+        menu.addSeparator()
         menu.addAction(self.trash_action)
         menu.exec(pos)
 
@@ -550,7 +564,7 @@ class MainWindow(QMainWindow):
     def reload(self, fresh: bool = False):
         """Load what's shown again (after indexing, or a folder was added or removed)."""
         self._fresh |= fresh
-        self._library.run(load_library, self._loaded, self.place)
+        self._library.run(load_library, self._loaded, self.place, self.min_rating)
 
     def _loaded(self, res, err):
         if err is not None:
@@ -593,12 +607,23 @@ class MainWindow(QMainWindow):
         self._count_text()
         self._update_actions()
 
+    def _rating_filter_changed(self, n: int):
+        self.min_rating = n
+        if self.query:
+            self.search()
+        else:
+            self.reload(fresh=True)
+
     def _place_name(self) -> str:
         """" in 2023", " of Mom", or nothing for all photos."""
         pid = person_of(self.place)
         if pid is not None:
-            return f" of {self.people_names.get(pid, 'them')}"
-        return "" if self.place in (ALL, PEOPLE) else f" in {Path(self.place).name}"
+            where = f" of {self.people_names.get(pid, 'them')}"
+        else:
+            where = "" if self.place in (ALL, PEOPLE) else f" in {Path(self.place).name}"
+        if self.min_rating:
+            where += f" rated {'★' * self.min_rating}{' and up' if self.min_rating < 5 else ''}"
+        return where
 
     def _count_text(self):
         videos = sum(it.kind == "video" for it in self.timeline.items)
@@ -692,7 +717,7 @@ class MainWindow(QMainWindow):
         self.close_viewer()
         self.query = q
         self.count_label.setText("  Searching...")
-        self._searches.run(run_search, self._searched, self.search_index, q, self.place)
+        self._searches.run(run_search, self._searched, self.search_index, q, self.place, self.min_rating)
 
     def _searched(self, res, err):
         if not self.query:

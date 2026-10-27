@@ -1,5 +1,6 @@
 """Scanning folders and keeping the index in step with them."""
 
+import json
 import os
 import sqlite3
 import sys
@@ -209,6 +210,8 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
 
     if want_faces:
         info["tagged"] += auto_assign(db)
+    if not info.get("stopped"):
+        read_details(db, prefix, stop)
     if todo or removed or info["moved"]:
         link_motion(db)
         db.commit()
@@ -218,6 +221,33 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     info["phase"] = "done"
     report(info)
     return info
+
+
+def read_details(db, prefix: str, should_stop=lambda: False) -> int:
+    """Read the rating, keywords and description written in the files under prefix that haven't been
+    read since they last changed (ExifTool reads a few hundred a second). Returns how many."""
+    from . import metadata
+    from .exiftool import available
+
+    if not available():
+        return 0
+    rows = [r[0] for r in db.execute(
+        "SELECT path FROM photos WHERE details_done=0 AND error IS NULL AND substr(path, 1, ?) = ?",
+        (len(prefix), prefix))]
+    done = 0
+    for i in range(0, len(rows), 200):
+        if should_stop():
+            break
+        batch = rows[i:i + 200]
+        found = metadata.read(batch)
+        db.executemany(
+            "UPDATE photos SET rating=?, keywords=?, description=?, details_done=1 WHERE path=?",
+            [(d.rating, json.dumps(d.keywords) if d.keywords else None, d.description or None, p)
+             for p, d in found.items()]
+            + [(0, None, None, p) for p in batch if p not in found])  # nothing readable: nothing to show
+        db.commit()
+        done += len(batch)
+    return done
 
 
 def _index_one_photo(db, clip, faces, path, st, prev, info) -> int:
@@ -257,7 +287,7 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
             "VALUES (?,?,?,?,?,?,?,?,NULL,NULL) ON CONFLICT(path) DO UPDATE SET size=excluded.size, "
             "mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, "
             "taken_source=excluded.taken_source, clip=excluded.clip, "
-            "faces_done=excluded.faces_done, error=NULL, error_reader=NULL",
+            "faces_done=excluded.faces_done, error=NULL, error_reader=NULL, details_done=0",
             (path, st.st_size, st.st_mtime, qh, taken, source, to_blob(vec), int(bool(faces))),
         )
     else:
@@ -294,7 +324,7 @@ def _index_video(db, path, st):
         "error_reader) VALUES (?,?,?,?,?,?,'video',?,1,NULL,NULL) ON CONFLICT(path) DO UPDATE SET "
         "size=excluded.size, mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, "
         "taken_source=excluded.taken_source, kind='video', duration=excluded.duration, faces_done=1, clip=NULL, "
-        "error=NULL, error_reader=NULL",
+        "error=NULL, error_reader=NULL, details_done=0",
         (path, st.st_size, st.st_mtime, qh, taken.isoformat(sep=" ", timespec="seconds"), source, meta["duration"]),
     )
     db.execute("DELETE FROM faces WHERE photo_id = (SELECT id FROM photos WHERE path=?)", (path,))

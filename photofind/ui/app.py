@@ -138,7 +138,17 @@ def run_self_test(app) -> int:
             tile = ThumbLoader._decode("selftest", str(src), 64)
             if tile is None or tile.width() != 64:
                 raise RuntimeError("Qt couldn't decode a JPEG thumbnail (image plugins missing?)")
-        ok("thumbnails decode.")
+            ok("thumbnails decode.")
+            from ..core import exiftool, metadata
+
+            if getattr(sys, "frozen", False) and exiftool.bundled() is None:
+                raise RuntimeError("ExifTool is missing from this build")
+            metadata.write(src, {"XMP-xmp:Rating": 4, "XMP-dc:Description": "Photo Finder ✓"})
+            d = metadata.read([src])[str(src)]
+            if (d.rating, d.description) != (4, "Photo Finder ✓"):
+                raise RuntimeError(f"ExifTool didn't write what it should ({d.rating}, {d.description!r})")
+            exiftool.exiftool().close()
+        ok("details can be written into photos (ExifTool).")
         white = Image.new("RGB", (640, 480), "white")
         if model_path("face_detect.onnx").exists() and model_path("face_embed.onnx").exists():
             Faces().find(white)
