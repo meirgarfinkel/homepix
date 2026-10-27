@@ -65,8 +65,6 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
 
 **The "Windows protected your PC" warning:** because the installer isn't digitally signed, Windows shows this warning the first time. People can click **More info**, then **Run anyway**. Removing the warning requires a code-signing certificate, which comes with a yearly fee.
 
-The window uses Microsoft's Edge engine, which is built into Windows 10 and 11. On the rare PC without it, Photo Finder opens in an Edge window instead.
-
 ---
 
 ## Let GitHub build both
@@ -85,12 +83,11 @@ Change the code, build again, and share the new file. Each person's index, folde
 
 On Windows, also raise `AppVersion` in `packaging/photofind.iss` so the installer replaces the old version cleanly.
 
-## Why it's about 235 MB
+## Why it's about 140 MB
 
-Roughly half is the Chromium-based web engine that Qt uses to draw the window on Linux. OpenCV, used for face detection, is about a fifth. The search model is not included in that number; it downloads on first use. A possible later trim is running the two face models through onnxruntime (already included for search) instead of OpenCV, which would save roughly 50 MB.
+Unpacked it's about 400 MB, and the AppImage compresses that. The biggest parts are OpenCV (about 150 MB unpacked), used for face detection and video frames; Qt (about 95 MB), which draws the window; and onnxruntime (30 MB), which runs the search model. The AI models aren't included: they download on first use. A later trim could run the two face models through onnxruntime and read video frames another way, dropping OpenCV.
 
 ## If something goes wrong
 
-- Run the app with `--self-test`. It checks the window, the interface and the AI libraries, and says which part failed.
+- Run the app with `--self-test`. It checks the AI libraries, HEIC support, that Qt can decode thumbnails, and that the window opens and loads the library, and says which part failed.
 - The app writes a log to `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
-- If the app window can't be created at all, Photo Finder opens in a browser instead, so it still works.

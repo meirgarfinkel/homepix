@@ -15,7 +15,7 @@ is stopped before it leaves your computer. Run the same checks any time with
 
 ```bash
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
-.venv/bin/python -m photofind.ui        # the new desktop app
+.venv/bin/python -m photofind.ui        # the desktop app (or: python photofind_app.py)
 .venv/bin/python -m photofind status    # the command line
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 ```

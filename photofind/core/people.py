@@ -87,3 +87,38 @@ def cluster_unnamed(db):
     db.executemany("UPDATE faces SET cluster=? WHERE id=?", updates)
     db.commit()
     return [(num, [rows[i] for i in group]) for num, group in enumerate(members, start=1)]
+
+
+_portraits = {}  # (database, person id) -> (their face count, chosen face): chosen again when it changes
+
+
+def portrait(db, person_id: int, n_faces: int):
+    """The face that best shows someone: of their faces at a usual size, the one most like all of them
+    (an average face of theirs, rather than an odd angle or a screen-filling video call)."""
+    key = (db.execute("PRAGMA database_list").fetchone()[2], person_id)
+    hit = _portraits.get(key)
+    if hit and hit[0] == n_faces:
+        return hit[1]
+    rows, embs = load_faces(db, "f.person_id = ? AND p.error IS NULL AND p.qhash IS NOT NULL", (person_id,))
+    if not rows:
+        return None
+    sims = embs @ normalize(embs.mean(axis=0))
+    usual = np.array([0.06 <= r["w"] <= 0.4 and r["score"] >= 0.9 for r in rows])
+    if usual.any():
+        sims = np.where(usual, sims, -2.0)
+    face = rows[int(np.argmax(sims))]
+    _portraits[key] = (n_faces, face)
+    return face
+
+
+def named_people(db) -> list[dict]:
+    """Everyone named, most photographed first: id, name, photos, and a portrait (a face row for
+    face_thumb, or None)."""
+    people = [dict(r) for r in db.execute(
+        "SELECT pe.id, pe.name, COUNT(DISTINCT f.photo_id) AS photos, COUNT(f.id) AS faces FROM people pe "
+        "JOIN faces f ON f.person_id = pe.id JOIN photos p ON p.id = f.photo_id "
+        "WHERE p.error IS NULL AND p.qhash IS NOT NULL GROUP BY pe.id ORDER BY photos DESC, pe.name"
+    )]
+    for person in people:
+        person["face"] = portrait(db, person["id"], person.pop("faces"))
+    return people

@@ -86,7 +86,19 @@ Delivered in three steps; the current app keeps working until the last:
   Settings, the indexer and search moved into the core, shared by both apps; only one app indexes at a
   time. *Status: done. Search answers in about 100 ms on your library (30,000 photos).*
 - **M3c:** people page (read-only), video thumbnails, memory measured; then it replaces the current
-  app, in the AppImage and the installers too.
+  app, in the AppImage and the installers too. *Status: done.* The old web app is gone (you chose
+  not to keep it), and with it Qt's web engine. Videos are indexed without AI: date from the file
+  (Apple's local date, else the movie header's UTC time made local), then the name, then the file's
+  modified time. A video of 4 s or less taken within 2 s of a photo is that photo's motion (Live
+  Photo) and isn't shown separately: 1,071 of your 3,677 videos. Memory on your library: about
+  230 MB browsing, 480 MB at most with search and the viewer used.
+
+  Found along the way, for later milestones:
+  - **M7 (organizer):** your videos' file names are in UTC (the Sep 2026 pipeline named them by the
+    raw movie-header time), 2–3 hours behind the local time the app now shows, and many Live
+    Photo clips were named by the day they were copied. Organizing will want to rename most videos.
+  - **640 DNG photos aren't indexed** (DNG isn't a known photo type yet). Raw support belongs with
+    M5's DNG work.
 
 ### M4 — File operations
 - Selection, the right-click menu, toolbar and shortcuts.

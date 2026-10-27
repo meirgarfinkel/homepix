@@ -102,7 +102,14 @@ def _m2_photo_manager(db):
         db.execute(stmt)
 
 
-MIGRATIONS = [_m1_base, _m2_photo_manager]
+def _m3_videos(db):
+    """Videos: their length. kind can now also be 'motion': a Live Photo's (or motion photo's) moving
+    part, which belongs to the photo taken at the same moment and isn't shown on its own."""
+    db.execute("ALTER TABLE photos ADD COLUMN duration REAL")  # seconds, for videos
+    db.execute("CREATE INDEX photos_kind ON photos(kind)")
+
+
+MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos]
 LATEST = len(MIGRATIONS)
 
 

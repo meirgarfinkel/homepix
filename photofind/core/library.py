@@ -7,18 +7,21 @@ import time
 from pathlib import Path
 
 from .ai import ClipImage, Faces
-from .config import MISSING_MIN, MISSING_SHARE, data_dir
+from .config import MISSING_MIN, MISSING_SHARE, THUMB_SIZE, data_dir
 from .db import open_db, to_blob
-from .media import IMAGE_EXTS, READER, date_taken, load_photo
+from .media import IMAGE_EXTS, READER, date_taken, filename_date, load_photo
 from .people import auto_assign
-from .thumbs import photo_thumb, prune_thumbs
+from .thumbs import photo_thumb, prune_thumbs, save_thumb, thumbs_dir
 from .util import quick_hash
+from .video import VIDEO_EXTS, is_video, video_frame, video_meta
 
 IGNORE_MARKER = ".photofind-ignore"  # a folder holding this file is never indexed (e.g. the app's own copies)
+MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
+MOTION_MAX = 4.0  # seconds: a video this short, taken at the same moment as a photo, is that photo's motion
 
 
 def scan_folder(root: Path):
-    """Every photo under root with its stat, plus what index_folder needs to tell a deleted photo from
+    """Every photo and video under root with its stat, plus what index_folder needs to tell a deleted photo from
     one that's out of reach: paths that couldn't be read (folders or files), the folders that were looked
     through, the empty ones among them (an unmounted drive's mount point looks just like one) and folders
     marked to be ignored."""
@@ -34,7 +37,7 @@ def scan_folder(root: Path):
             empty.add(dirpath)
         dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and Path(dirpath, d).resolve() != skip)
         for name in sorted(filenames):
-            if not name.startswith(".") and Path(name).suffix.lower() in IMAGE_EXTS:
+            if not name.startswith(".") and Path(name).suffix.lower() in MEDIA_EXTS:
                 p = os.path.join(dirpath, name)
                 try:
                     files[p] = os.stat(p)
@@ -84,11 +87,14 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     known = {
         r["path"]: r
         for r in db.execute(
-            "SELECT id, path, size, mtime, qhash, clip IS NOT NULL AS has_clip, faces_done, error, error_reader "
+            "SELECT id, path, size, mtime, qhash, kind, clip IS NOT NULL AS has_clip, faces_done, error, error_reader "
             "FROM photos WHERE substr(path, 1, ?) = ?",
             (len(prefix), prefix),
         )
     }
+
+    def complete(r):  # indexed with everything it needs
+        return not r["error"] and (r["kind"] != "photo" or (r["has_clip"] and (r["faces_done"] or not want_faces)))
 
     todo = []
     for path, st in on_disk.items():
@@ -96,7 +102,7 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
         unchanged = r is not None and r["size"] == st.st_size and abs(r["mtime"] - st.st_mtime) < 1
         if unchanged and r["error"] and r["error_reader"] == READER:
             continue  # couldn't be read, and nothing has changed since
-        if unchanged and not r["error"] and r["has_clip"] and (r["faces_done"] or not want_faces):
+        if unchanged and complete(r):
             continue
         todo.append((path, st, r if unchanged else None))
 
@@ -129,7 +135,7 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
                     found_again.add(old["id"])
                     db.execute("UPDATE photos SET path=?, mtime=? WHERE id=?", (path, st.st_mtime, old["id"]))
                     info["moved"] += 1
-                    if old["has_clip"] and not old["error"] and (old["faces_done"] or not want_faces):
+                    if complete(old):
                         continue
             still_todo.append((path, st, r))
         todo = still_todo
@@ -161,10 +167,17 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     info.update(removed=len(removed), todo=len(todo))
 
     if todo:
-        info["phase"] = "loading"
-        report(info)
-        clip = ClipImage()
-        faces = Faces() if want_faces else None
+        models = {}
+
+        def ai():  # loaded on the first photo (a folder of videos needs none)
+            if not models:
+                info["phase"] = "loading"
+                report(info)
+                models["clip"], models["faces"] = ClipImage(), Faces() if want_faces else None
+                info["phase"] = "indexing"
+                report(info)
+            return models["clip"], models["faces"]
+
         info["phase"] = "indexing"
         report(info)
         start = time.time()
@@ -173,24 +186,16 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
                 if stop() or (deadline and time.time() > deadline):
                     info["stopped"] = True
                     break
-                try:
-                    img = load_photo(Path(path))
-                except Exception as e:  # the file itself can't be read: note why, and with which reader
-                    info["errors"] += 1
-                    db.execute(
-                        "INSERT INTO photos (path, size, mtime, error, error_reader) VALUES (?,?,?,?,?) "
-                        "ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime, "
-                        "error=excluded.error, error_reader=excluded.error_reader",
-                        (path, st.st_size, st.st_mtime, f"{type(e).__name__}: {e}"[:300], READER),
-                    )
-                else:
+                if is_video(path):
                     try:
-                        info["faces"] += _index_photo(db, clip, faces, path, st, prev, img)
+                        _index_video(db, path, st)
                     except sqlite3.Error:
-                        raise  # the database is in trouble: stop, rather than blame every photo
-                    except Exception as e:  # our side hiccuped, not the photo: not recorded, so it's retried next time
+                        raise
+                    except Exception as e:  # retried next time
                         info["errors"] += 1
                         print(f"index: {path}: {e!r}", file=sys.stderr)
+                else:
+                    info["faces"] += _index_one_photo(db, *ai(), path, st, prev, info)
                 info["done"] += 1
                 if info["done"] % 25 == 0:
                     db.commit()
@@ -204,12 +209,38 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
 
     if want_faces:
         info["tagged"] += auto_assign(db)
+    if todo or removed or info["moved"]:
+        link_motion(db)
+        db.commit()
     if todo or removed:
         prune_thumbs(db)
     db.close()
     info["phase"] = "done"
     report(info)
     return info
+
+
+def _index_one_photo(db, clip, faces, path, st, prev, info) -> int:
+    """Decode a photo and index it; a photo that can't be read is recorded as such. Returns its faces."""
+    try:
+        img = load_photo(Path(path))
+    except Exception as e:  # the file itself can't be read: note why, and with which reader
+        info["errors"] += 1
+        db.execute(
+            "INSERT INTO photos (path, size, mtime, error, error_reader) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime, "
+            "error=excluded.error, error_reader=excluded.error_reader",
+            (path, st.st_size, st.st_mtime, f"{type(e).__name__}: {e}"[:300], READER),
+        )
+        return 0
+    try:
+        return _index_photo(db, clip, faces, path, st, prev, img)
+    except sqlite3.Error:
+        raise  # the database is in trouble: stop, rather than blame every photo
+    except Exception as e:  # our side hiccuped, not the photo: not recorded, so it's retried next time
+        info["errors"] += 1
+        print(f"index: {path}: {e!r}", file=sys.stderr)
+        return 0
 
 
 def _index_photo(db, clip, faces, path, st, prev, img) -> int:
@@ -243,3 +274,57 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
     except OSError:
         pass  # not worth failing the photo over; it's made on demand later
     return len(found)
+
+
+def _index_video(db, path, st):
+    """Store a video: its date, length, fingerprint and a frame for its thumbnail (no AI)."""
+    p = Path(path)
+    meta = video_meta(p)
+    if meta["taken"]:
+        taken, source = meta["taken"], "video"
+    elif named := filename_date(p.name):
+        taken, source = named, "filename"
+    else:
+        import datetime as dt
+
+        taken, source = dt.datetime.fromtimestamp(st.st_mtime), "file-modified"
+    qh = quick_hash(p, st.st_size)
+    db.execute(
+        "INSERT INTO photos (path, size, mtime, qhash, taken, taken_source, kind, duration, faces_done, error, "
+        "error_reader) VALUES (?,?,?,?,?,?,'video',?,1,NULL,NULL) ON CONFLICT(path) DO UPDATE SET "
+        "size=excluded.size, mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, "
+        "taken_source=excluded.taken_source, kind='video', duration=excluded.duration, faces_done=1, clip=NULL, "
+        "error=NULL, error_reader=NULL",
+        (path, st.st_size, st.st_mtime, qh, taken.isoformat(sep=" ", timespec="seconds"), source, meta["duration"]),
+    )
+    db.execute("DELETE FROM faces WHERE photo_id = (SELECT id FROM photos WHERE path=?)", (path,))
+    try:  # a video that won't decode still shows, with a plain tile
+        frame = video_frame(p, THUMB_SIZE * 2)
+        if frame is not None:
+            save_thumb(frame, thumbs_dir("photos") / f"{qh}.jpg", THUMB_SIZE, 82)
+    except Exception as e:
+        print(f"index: {path}: no frame: {e!r}", file=sys.stderr)
+
+
+def link_motion(db) -> int:
+    """Mark the short videos taken at the same moment as a photo (within 2 seconds) as that photo's
+    motion (a Live Photo or motion photo), so they don't show as videos of their own; and unmark any
+    whose photo is gone. Returns how many are motion now."""
+    import bisect
+    import datetime as dt
+
+    def ts(text):
+        return dt.datetime.fromisoformat(text).timestamp()
+
+    photos = sorted(ts(r[0]) for r in db.execute(
+        "SELECT taken FROM photos WHERE kind='photo' AND taken IS NOT NULL AND error IS NULL"))
+    motion, video = [], []
+    for vid, taken in db.execute(
+            "SELECT id, taken FROM photos WHERE kind IN ('video', 'motion') AND duration <= ? AND taken IS NOT NULL",
+            (MOTION_MAX,)).fetchall():
+        t = ts(taken)
+        i = bisect.bisect_left(photos, t - 2)
+        (motion if i < len(photos) and photos[i] <= t + 2 else video).append((vid,))
+    db.executemany("UPDATE photos SET kind='motion' WHERE id=?", motion)
+    db.executemany("UPDATE photos SET kind='video' WHERE id=?", video)
+    return len(motion)

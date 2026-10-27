@@ -8,6 +8,16 @@ from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
 
 ALL = "all"
+PEOPLE = "people"
+
+
+def person_place(person_id: int) -> str:
+    return f"person:{person_id}"
+
+
+def person_of(place: str):
+    """The person id in a person_place, or None."""
+    return int(place[7:]) if place.startswith("person:") else None
 PATH_ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -39,7 +49,7 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
 
 
 class Sidebar(QTreeWidget):
-    chosen = Signal(str)  # ALL, or a folder's path
+    chosen = Signal(str)  # ALL, PEOPLE, a person_place, or a folder's path
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -55,8 +65,8 @@ class Sidebar(QTreeWidget):
         self._quiet = False
         self.set_folders([], {}, 0)
 
-    def set_folders(self, roots: list[str], counts: dict, total: int):
-        """Rebuild, keeping what was open and what was chosen."""
+    def set_folders(self, roots: list[str], counts: dict, total: int, people=()):
+        """Rebuild, keeping what was open and what was chosen. people: as from core.named_people."""
         opened = {it.data(0, PATH_ROLE) for it in self._all_items() if it.isExpanded()}
         chosen = self.current_path()
         first = not opened and self.topLevelItemCount() == 0
@@ -66,6 +76,16 @@ class Sidebar(QTreeWidget):
         everything.setData(0, PATH_ROLE, ALL)
         self._style_count(everything)
         self.addTopLevelItem(everything)
+        if people:
+            group = QTreeWidgetItem([" People", f"{len(people):,}"])
+            group.setData(0, PATH_ROLE, PEOPLE)
+            self._style_count(group)
+            self.addTopLevelItem(group)
+            for person in people:
+                item = QTreeWidgetItem([person["name"], f"{person['photos']:,}"])
+                item.setData(0, PATH_ROLE, person_place(person["id"]))
+                self._style_count(item)
+                group.addChild(item)
         heading = QTreeWidgetItem(["Folders", ""])
         heading.setFlags(Qt.ItemFlag.ItemIsEnabled)
         font = QFont(self.font())
