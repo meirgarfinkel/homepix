@@ -43,6 +43,8 @@ The AppImage runs on the Linux it was built on and on newer ones. Release builds
 
 **What's left to the computer it runs on:** graphics libraries (they must match its drivers), fonts, sound, and the C/C++ runtime. Every desktop Linux has these. Everything else is bundled.
 
+**ExifTool** (which writes details into photos) is bundled with a Perl of its own by `packaging/bundle_exiftool.sh`: the version is pinned and checked against its published checksum, only the Perl modules it uses are included (found by watching it read and write every kind of file), and the build checks that it works with nothing but the bundle. To update it, change `VERSION` and `SHA256` there together.
+
 If double-clicking does nothing on some computer, running it as `./PhotoFinder-x86_64.AppImage --appimage-extract-and-run` works without the FUSE support AppImages normally use.
 
 ---

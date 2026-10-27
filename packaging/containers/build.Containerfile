@@ -12,6 +12,8 @@ RUN dnf -y install epel-release \
       mesa-libGL mesa-libEGL mesa-libgbm libdrm \
       nss nspr alsa-lib libXcomposite libXdamage libXrandr libXtst libxshmfence libxkbfile \
       dbus-libs glib2 \
+      # ExifTool's Perl (only the parts it uses are bundled); curl-minimal is already there
+      perl \
  && dnf clean all
 
 # appimagetool runs from a temporary folder without FUSE inside the container

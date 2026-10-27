@@ -93,8 +93,14 @@ class FileOps(QObject):
         def work(progress, should_stop):
             db = open_db()
             try:
-                steps = plan(db)
-                return fileops.run(db, kind, summary, steps, progress, should_stop) if steps else None
+                steps, cant = plan(db), []
+                if isinstance(steps, tuple):  # (steps, [(path, why) left out])
+                    steps, cant = steps
+                if not steps:
+                    return fileops.Result(None, skipped=cant) if cant else None
+                result = fileops.run(db, kind, summary, steps, progress, should_stop)
+                result.skipped = cant + result.skipped
+                return result
             finally:
                 db.close()
 
@@ -170,6 +176,8 @@ class FileOps(QObject):
         text = past
         if result.stopped:
             text = f"Stopped partway: {plural(result.finished, 'file')} done"
+        elif not result.finished:
+            text = "Nothing was changed"
         if result.skipped:
             self._skipped("Photo Finder", text + ".", result.skipped)
         self.finished.emit(f"{text}. Ctrl+Z undoes it." if result.finished else "")

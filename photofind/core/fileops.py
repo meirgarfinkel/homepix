@@ -13,7 +13,8 @@ How a file is never lost:
 - The index changes in the same transaction that marks a step finished, and while a move is under
   way its row is at the file's hidden name too, so the index always matches the disk.
 
-Steps (op_steps.action): move, copy, trash, restore. op_steps.done: 0 planned, 1 under way (a move's
+Steps (op_steps.action): move, copy, trash, restore, and meta (details written into the file: the
+values before and after are in `before`, so undoing writes the old ones back). op_steps.done: 0 planned, 1 under way (a move's
 file is at its hidden name; a Trash name is reserved), 2 finished, 3 skipped (why: in `after`).
 An operation's state: running, done, interrupted (stopped or crashed partway: what finished stays
 finished and can be undone), undone.
@@ -23,11 +24,15 @@ import datetime as dt
 import filecmp
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
+from . import metadata
 from . import trash as trashcan
 from .safefs import copy_file, free_name, move_file, rename_noreplace
+from .thumbs import thumbs_dir
+from .util import quick_hash
 
 PLANNED, UNDER_WAY, FINISHED, SKIPPED = 0, 1, 2, 3
 
@@ -102,7 +107,59 @@ def _apply(db, step) -> dict:
         if before.get("snapshot") and db.execute("SELECT 1 FROM photos WHERE path=?", (dst,)).fetchone() is None:
             return {"new_id": _insert_snapshot(db, before["snapshot"], dst)}
         return {}
+    if action == "meta":
+        return _apply_meta(db, src, json.loads(step["before"]))
     raise ValueError(f"unknown step {action}")
+
+
+def taken_now(path, kind, st) -> tuple[str, str]:
+    """When the file says it was taken, worked out the way indexing does (so the two agree)."""
+    if kind in ("video", "motion"):
+        from .media import filename_date
+        from .video import video_meta
+
+        if when := video_meta(Path(path))["taken"]:
+            return when.isoformat(sep=" ", timespec="seconds"), "video"
+        if named := filename_date(os.path.basename(path)):
+            return named.isoformat(sep=" ", timespec="seconds"), "filename"
+        return dt.datetime.fromtimestamp(st.st_mtime).isoformat(sep=" ", timespec="seconds"), "file-modified"
+    from .media import date_taken
+
+    return date_taken(Path(path), st.st_mtime)
+
+
+def _apply_meta(db, path, change) -> dict:
+    """After writing details into a file: its new fingerprint (so it isn't indexed again from scratch,
+    which would lose who is in it), date, rating, keywords and description; the face boxes moved if
+    it was turned; its thumbnails kept unless it was."""
+    row = db.execute("SELECT id, qhash, kind, taken FROM photos WHERE path=?", (path,)).fetchone()
+    if row is None:
+        return {}
+    st = os.stat(path)
+    qh = quick_hash(Path(path), st.st_size)
+    d = metadata.read([path]).get(path)
+    fields = {"size": st.st_size, "mtime": st.st_mtime, "qhash": qh}
+    if any(t in change["new"] for t in metadata.PHOTO_DATES + metadata.VIDEO_DATES):
+        fields["taken"], fields["taken_source"] = taken_now(path, row["kind"], st)
+    if d is not None:
+        fields.update(rating=d.rating, keywords=json.dumps(d.keywords) if d.keywords else None,
+                      description=d.description or None, details_done=1)
+    db.execute(f"UPDATE photos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), row["id"]))
+    turn = change.get("orientation")
+    if turn and turn[0] != turn[1]:
+        for f in db.execute("SELECT id, x, y, w, h FROM faces WHERE photo_id=?", (row["id"],)).fetchall():
+            db.execute("UPDATE faces SET x=?, y=?, w=?, h=? WHERE id=?",
+                       (*metadata.move_box((f["x"], f["y"], f["w"], f["h"]), *turn), f["id"]))
+    elif row["qhash"] and row["qhash"] != qh:  # the picture is the same: so are its thumbnails
+        for kind in ("photos", "faces"):
+            for old in thumbs_dir(kind).glob(f"{row['qhash']}*.jpg"):
+                new = old.with_name(qh + old.name[len(row["qhash"]):])
+                if not new.exists():
+                    try:
+                        shutil.copyfile(old, new)  # (a copy, not a rename: an exact copy elsewhere shares them)
+                    except OSError:
+                        pass
+    return {}
 
 
 # Committing after every file would make a big operation slow (each commit waits for the disk), and
@@ -221,6 +278,32 @@ def plan_rename(db, renames) -> list[dict]:
             clip = clips[path]
             pairs.append((clip, os.path.join(os.path.dirname(clip), stem + os.path.splitext(clip)[1])))
     return plan_moves(pairs)
+
+
+def plan_details(db, paths, edit: "metadata.Edit"):
+    """Steps that write edit into each file, and [(path, why)] for those it can't be written to.
+    Changing the date changes a Live Photo's clip's date too, so they stay together."""
+    paths = with_companions(db, paths) if edit.touches_date() else [os.path.abspath(p) for p in paths]
+    found, steps, cant = {}, [], []
+    for i in range(0, len(paths), 200):
+        found.update(metadata.read(paths[i:i + 200]))
+    for p in paths:
+        d = found.get(p)
+        if d is None:
+            cant.append((p, "its details can't be read"))
+            continue
+        try:
+            new = metadata.changes(p, d, edit)
+        except metadata.CantChange as e:
+            cant.append((p, str(e)))
+            continue
+        if not new:
+            continue  # it already is that way
+        change = {"old": metadata.before(d, new), "new": new}
+        if edit.turn:
+            change["orientation"] = [d.orientation, metadata.turned(d.orientation, edit.turn)]
+        steps.append({"action": "meta", "src": p, "dst": p, "before": change})
+    return steps, cant
 
 
 def pattern_names(pattern: str, items) -> list[str]:
@@ -361,6 +444,11 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
             elif r["action"] == "restore":
                 dst = _free(db, r, r["dst"])
                 trashcan.restore(r["src"], dst)
+            elif r["action"] == "meta":
+                if not os.path.lexists(r["src"]):
+                    raise FileNotFoundError
+                metadata.write(r["src"], json.loads(r["before"])["new"])
+                dst = r["src"]
         except FileNotFoundError:
             skipped(r, "it isn't there any more")
             continue
@@ -428,6 +516,13 @@ def recover(db) -> list[str]:
                     fixed += 1
                 else:
                     _skip(db, r, "interrupted before it was done")
+            elif action == "meta":  # ExifTool replaces a file in one step: it holds either all or none
+                Path(metadata.leftover(src)).unlink(missing_ok=True)
+                if os.path.lexists(src) and metadata.written(src, json.loads(r["before"])["new"]):
+                    _finish(db, r)
+                    fixed += 1
+                else:
+                    _skip(db, r, "interrupted before it was done")
         db.execute("UPDATE ops SET state='interrupted', finished=? WHERE id=?", (_now(), op["id"]))
         db.commit()
         notes.append(f"{op['summary']}: interrupted; {fixed} file(s) finished on recovery")
@@ -489,6 +584,12 @@ def inverse(db, op_id: int) -> list[dict]:
         elif r["action"] == "trash":
             before = json.loads(r["before"] or "{}")
             out.append(("restore", r["dst"], r["src"], {"snapshot": before.get("snapshot")}))
+        elif r["action"] == "meta":
+            c = json.loads(r["before"])
+            back = {"old": c["new"], "new": c["old"]}
+            if c.get("orientation"):
+                back["orientation"] = c["orientation"][::-1]
+            out.append(("meta", r["src"], r["src"], back))
     moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"])
     others = []
     taken = {}
@@ -500,6 +601,8 @@ def inverse(db, op_id: int) -> list[dict]:
             name = free_name(folder, os.path.basename(d), taken.setdefault(folder, set()))
             taken[folder].add(name)
             others.append({"action": "restore", "src": s, "dst": os.path.join(folder, name), "before": before})
+        elif a == "meta":
+            others.append({"action": "meta", "src": s, "dst": s, "before": before})
     return moves + others
 
 

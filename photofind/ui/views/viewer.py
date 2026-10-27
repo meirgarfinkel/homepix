@@ -49,6 +49,7 @@ class Viewer(QWidget):
         self.items = []
         self.index = -1
         self._images = OrderedDict()  # (path, max_side) -> (QImage, original's longest side), a few around
+        self._decoded = {}  # path -> the fingerprint it had when decoded (it changes when the file does)
         self._pending = set()
         self._error = None
         self.zoom = None  # None: fit to window; else device pixels per image pixel
@@ -61,6 +62,12 @@ class Viewer(QWidget):
 
     def show_items(self, items, index: int):
         self.items = items
+        now = {it.path: it.qhash for it in items}
+        changed = {p for p, q in self._decoded.items() if now.get(p, q) != q}  # e.g. turned
+        for key in [k for k in self._images if k[0] in changed]:
+            del self._images[key]
+        for p in changed:
+            del self._decoded[p]
         self.go(index)
 
     def go(self, index: int):
@@ -84,6 +91,7 @@ class Viewer(QWidget):
 
     def _load(self, index: int, max_side: int):
         key = (self.items[index].path, max_side)
+        qhash = self.items[index].qhash
         if key in self._images or key in self._pending:
             return
         self._pending.add(key)
@@ -96,6 +104,7 @@ class Viewer(QWidget):
                     self.update()
                 return
             self._images[key] = res
+            self._decoded[key[0]] = qhash
             while len(self._images) > 5:
                 self._images.popitem(last=False)
             if self.index == index:

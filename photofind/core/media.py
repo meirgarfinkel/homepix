@@ -19,7 +19,7 @@ except ImportError:
 Image.MAX_IMAGE_PIXELS = 300_000_000  # allow big panoramas
 ImageFile.LOAD_TRUNCATED_IMAGES = True  # a photo cut short (e.g. by an interrupted copy) still shows what's there
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif", ".dng"}  # DNG: its preview
 if HEIF:
     IMAGE_EXTS |= {".heic", ".heif"}
 

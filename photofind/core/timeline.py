@@ -16,6 +16,7 @@ class Item:
     qhash: str
     kind: str = "photo"  # or "video"
     duration: float | None = None  # seconds, for videos
+    rating: int = 0  # stars, 0-5
 
 
 @dataclass(slots=True)
@@ -33,20 +34,23 @@ class Month:
         return int(self.key[5:7])
 
 
-def load_items(db, where: str = "1=1", params=(), folder=None, person=None) -> list[Item]:
+def load_items(db, where: str = "1=1", params=(), folder=None, person=None, min_rating=0) -> list[Item]:
     """Every showable item, newest first; folder: only those in it or below it; person (an id): only
-    photos they're in. Photos that couldn't be read have no thumbnail to show."""
+    photos they're in; min_rating: only those with at least that many stars. Photos that couldn't be
+    read have no thumbnail to show."""
+    if min_rating:
+        where, params = f"({where}) AND rating >= ?", (*params, min_rating)
     if person is not None:
         where, params = f"({where}) AND id IN (SELECT photo_id FROM faces WHERE person_id = ?)", (*params, person)
     if folder is not None:
         prefix = str(folder).rstrip(os.sep) + os.sep
         where, params = f"({where}) AND substr(path, 1, ?) = ?", (*params, len(prefix), prefix)
     rows = db.execute(
-        "SELECT id, path, taken, qhash, kind, duration FROM photos "
+        "SELECT id, path, taken, qhash, kind, duration, rating FROM photos "
         f"WHERE {SHOWN} AND ({where}) ORDER BY taken DESC, path DESC",
         params,
     )
-    return [Item(r[0], r[1], r[2] or "0000-00-00 00:00:00", r[3], r[4] or "photo", r[5]) for r in rows]
+    return [Item(r[0], r[1], r[2] or "0000-00-00 00:00:00", r[3], r[4] or "photo", r[5], r[6] or 0) for r in rows]
 
 
 def group_by_month(items: list[Item]) -> list[Month]:
@@ -61,8 +65,11 @@ def group_by_month(items: list[Item]) -> list[Month]:
 
 
 def item_from_row(r) -> Item:
-    duration = r["duration"] if "duration" in r.keys() else None
-    return Item(r["id"], r["path"], r["taken"] or "0000-00-00 00:00:00", r["qhash"], r["kind"] or "photo", duration)
+    keys = r.keys()
+    duration = r["duration"] if "duration" in keys else None
+    rating = (r["rating"] or 0) if "rating" in keys else 0
+    return Item(r["id"], r["path"], r["taken"] or "0000-00-00 00:00:00", r["qhash"], r["kind"] or "photo", duration,
+                rating)
 
 
 def folder_counts(db) -> Counter:

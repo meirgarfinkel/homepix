@@ -51,6 +51,10 @@ rm -rf "$BUILD/dist" "$BUILD/work"
 "$ENV/bin/pyinstaller" --noconfirm --clean --log-level ERROR \
   --distpath "$BUILD/dist" --workpath "$BUILD/work" "$HERE/photofind.spec"
 
+echo "     Adding ExifTool with its own Perl..."
+bash "$HERE/bundle_exiftool.sh" "$BUILD/exiftool" "$ENV/bin/python"
+cp -r "$BUILD/exiftool" "$BUILD/dist/PhotoFinder/_internal/exiftool"
+
 if [ -n "${GLIBC_MAX:-}" ]; then  # set by the release build: nothing may need a newer glibc than this
   need="$(find "$BUILD/dist/PhotoFinder" -type f -name "*.so*" -print0 | xargs -0 objdump -T 2>/dev/null \
           | grep -o "GLIBC_[0-9][0-9.]*" | sed "s/GLIBC_//" | sort -uV | tail -1)"

@@ -97,8 +97,7 @@ Delivered in three steps; the current app keeps working until the last:
   - **M7 (organizer):** your videos' file names are in UTC (the Sep 2026 pipeline named them by the
     raw movie-header time), 2–3 hours behind the local time the app now shows, and many Live
     Photo clips were named by the day they were copied. Organizing will want to rename most videos.
-  - **640 DNG photos aren't indexed** (DNG isn't a known photo type yet). Raw support belongs with
-    M5's DNG work.
+  - **640 DNG photos weren't indexed** (DNG wasn't a known photo type yet). Done in M5.
 
 ### M4 — File operations
 - Selection, the right-click menu, toolbar and shortcuts.
@@ -132,6 +131,19 @@ folders; Export makes copies for anywhere else. The Recycle Bin on Windows is le
 - Round-trip tests pass on JPEG, HEIC, DNG and PNG.
 - Names in a photo survive editing its metadata.
 - Undo restores the original values.
+
+*Status: done.* The AppImage bundles ExifTool 13.59 with only the Perl it uses (30 MB); its
+self-test writes and reads back details on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and
+Arch. ExifTool runs once per session (stay-open), so reading details costs about 1 ms a photo; they're read while
+indexing, so ratings, keywords and descriptions written by other apps show up too. Every change is
+an operation in the journal like a move: Undo writes back exactly the tags that were there, and a
+crash mid-write is finished or left untouched on the next start. Writes keep the file's modified
+time; the index, thumbnails and face boxes follow (boxes turn with the photo, so names stay). Each
+detail goes in the standard tag and in the others the file already has (XMP, EXIF, IPTC, Windows'
+rating), so other apps agree. Rotating changes only the orientation tag, never the pixels. HEIC
+photos turn with their rotation box, so they can't be flipped. Moving a batch's date moves their
+Live Photo clips' dates too. DNG photos are indexed and shown from their built-in preview. Round
+trips are tested on JPEG, PNG, HEIC, DNG, TIFF and GIF, including killing the app mid-write.
 
 ### M6 — Faces
 - Face boxes in the viewer.

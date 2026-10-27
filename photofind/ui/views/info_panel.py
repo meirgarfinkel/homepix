@@ -82,6 +82,12 @@ class InfoPanel(QScrollArea):
         if info.get("error"):
             head += f"<p style='color:#c0392b'>This file couldn't be read: {e(info['error'])}</p>"
         video = info.get("kind") == "video"
+        if info.get("description"):
+            rows.append(f"<p>{e(info['description']).replace(chr(10), '<br>')}</p>")
+        if info.get("rating"):
+            row("Rating", "<span style='color:#e0a000'>" + "★" * info["rating"] + "</span>"
+                + "<span style='color:gray'>" + "☆" * (5 - info["rating"]) + "</span>")
+        row("Keywords", e(", ".join(info.get("keywords", []))))
         row("Recorded" if video else "Taken", e(nice_date(info["taken"])), info["date_source"])
         if info.get("duration"):
             row("Length", e(clock(info["duration"])))

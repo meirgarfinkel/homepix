@@ -22,12 +22,14 @@ What's in it:
 - **People:** everyone you've named, as a page of faces. Click one to see their photos.
 - **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
 - **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
-- **Info** (I): when it was taken and where that date came from, camera, size, place, people, folder.
+- **Info** (I): description, rating, keywords, when it was taken and where that date came from, camera, size, place, people, folder.
+- **Details written into the photos** (the Photo menu, or right-click): description, keywords, star rating (Ctrl+1 to Ctrl+5; Ctrl+0 removes it) and location (Ctrl+I), for one photo or many at once; date and time, set or moved by some hours for a batch whose camera clock was wrong (Ctrl+Shift+D); rotate (Ctrl+R, Ctrl+Shift+R) and flip, without re-saving the picture; and every detail a file holds (Alt+Enter). They're written the standard way (XMP and EXIF, using the bundled ExifTool), so other photo apps see them too, and the file's modified time is kept. A Live Photo's clip gets its photo's new date. Undo works for all of it, and the people found in a photo stay named.
+- **Show only rated photos:** the rating box next to search (works with search, folders and people too).
 - **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
 - **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, Photo Finder finishes the job next time it opens, with no photo lost or doubled.
 - **Settings** (Ctrl+,): which folders make up the library, and the app to edit photos in.
 
-Naming people and fixing faces, and editing dates and other details, come in later versions (see [PLAN.md](PLAN.md)).
+Naming people and fixing faces comes in a later version (see [PLAN.md](PLAN.md)).
 
 The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
 
@@ -131,6 +133,8 @@ Constants in `photofind/core/config.py`:
 
 - Search is great for objects, scenes, colors and activities. It's weak at counting ("three dogs"), reading text in photos, and left/right relationships.
 - Photos are center-cropped to a square for search, so things at the far edges of wide panoramas can be missed.
-- RAW camera files aren't supported yet. HEIC needs `pip install pillow-heif`.
+- RAW camera files other than DNG aren't supported yet; DNG photos are shown from the preview inside them. HEIC needs `pip install pillow-heif`.
+- HEIC photos can be rotated but not flipped, and WebP files can't have details written into them with the ExifTool that comes with older Linux versions (the bundled one can).
+- From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl`.
 - On Windows, Move to Trash doesn't work yet (the Recycle Bin comes later); everything else does.
 - Very small faces in big group photos are often missed or not recognized.

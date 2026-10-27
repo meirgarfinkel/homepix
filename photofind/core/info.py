@@ -1,5 +1,6 @@
 """Everything the info panel shows about one photo: from the index, the file and its EXIF."""
 
+import json
 import os
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from .video import video_size
 GPS_IFD = 0x8825
 EXIF_IFD = 0x8769
 DATE_SOURCES = {
-    "exif": "from the camera (EXIF)",
+    "exif": "written in the photo (EXIF)",
     "file-modified": "guessed from when the file was last changed",
     "video": "recorded in the video",
     "filename": "from the file's name",
@@ -73,8 +74,8 @@ def human_size(n: int) -> str:
 
 def photo_info(db, photo_id: int) -> dict | None:
     """None if the photo isn't in the index. 'offline' is set when the file can't be reached right now."""
-    r = db.execute("SELECT id, path, size, taken, taken_source, kind, duration FROM photos WHERE id=?",
-                   (photo_id,)).fetchone()
+    r = db.execute("SELECT id, path, size, taken, taken_source, kind, duration, rating, keywords, description "
+                   "FROM photos WHERE id=?", (photo_id,)).fetchone()
     if r is None:
         return None
     path = Path(r["path"])
@@ -92,6 +93,9 @@ def photo_info(db, photo_id: int) -> dict | None:
     }
     if r["duration"]:
         info["duration"] = r["duration"]
+    info["rating"] = r["rating"] or 0
+    info["keywords"] = json.loads(r["keywords"]) if r["keywords"] else []
+    info["description"] = r["description"] or ""
     try:
         info["size"] = human_size(os.stat(path).st_size)
         if r["kind"] == "photo":

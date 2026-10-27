@@ -114,7 +114,21 @@ def _m4_undo(db):
     db.execute("ALTER TABLE ops ADD COLUMN undoes INTEGER REFERENCES ops(id)")
 
 
-MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo]
+def _m5_details(db):
+    """Details written in the files themselves, kept in the index to show and filter by: the star
+    rating (0-5), keywords (a JSON list) and description. details_done: read from the file since it
+    last changed."""
+    for stmt in (
+        "ALTER TABLE photos ADD COLUMN rating INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE photos ADD COLUMN keywords TEXT",
+        "ALTER TABLE photos ADD COLUMN description TEXT",
+        "ALTER TABLE photos ADD COLUMN details_done INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX photos_rating ON photos(rating) WHERE rating > 0",
+    ):
+        db.execute(stmt)
+
+
+MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details]
 LATEST = len(MIGRATIONS)
 
 
