@@ -30,7 +30,7 @@ import webbrowser
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageFile, ImageOps
 
 try:  # optional: iPhone .heic photos
     from pillow_heif import register_heif_opener
@@ -41,6 +41,7 @@ except ImportError:
     HEIF = False
 
 Image.MAX_IMAGE_PIXELS = 300_000_000  # allow big panoramas
+ImageFile.LOAD_TRUNCATED_IMAGES = True  # a photo cut short (e.g. by an interrupted copy) still shows what's there
 
 # --------------------------------------------------------------------------
 # Settings
@@ -62,6 +63,13 @@ MATCH_STRICTNESS = 2.0    # search: how far above a typical photo's score counts
                           # (raise if unrelated photos show up as matches, lower if real ones are missed)
 NEAR_STRICTNESS = 1.0     # search: lower bar for the "possibly related" section
 MAX_NEAR = 8              # search: at most this many "possibly related" photos
+MISSING_SHARE = 0.25      # index: if more than this share of a folder's photos vanish at once...
+MISSING_MIN = 50          # ...(and at least this many), keep them: more likely an unplugged drive than a deletion
+
+# Photos that couldn't be read are tried again once the photo changes, or once we can read more than we
+# could when it failed. Bump READER_VERSION whenever reading improves (a new format, a decoder fix).
+READER_VERSION = 2
+READER = f"{READER_VERSION}{'+heif' if HEIF else ''}"
 
 HF = "https://huggingface.co/Xenova/mobileclip_s0/resolve/main/"
 GH = "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/"
@@ -320,7 +328,8 @@ CREATE TABLE IF NOT EXISTS photos (
     taken TEXT,
     clip BLOB,
     faces_done INTEGER DEFAULT 0,
-    error TEXT
+    error TEXT,
+    error_reader TEXT
 );
 CREATE INDEX IF NOT EXISTS photos_qhash ON photos(qhash);
 CREATE TABLE IF NOT EXISTS people (
@@ -341,18 +350,20 @@ CREATE INDEX IF NOT EXISTS faces_person ON faces(person_id);
 """
 
 
-_db_ready = False
+_ready_dbs = set()
 
 
 def open_db() -> sqlite3.Connection:
-    global _db_ready
-    db = sqlite3.connect(data_dir() / "photofind.db", timeout=30, check_same_thread=False)
+    path = data_dir() / "photofind.db"
+    db = sqlite3.connect(path, timeout=30, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")  # per connection
-    if not _db_ready:  # WAL mode and the tables persist in the file: set them up once per run
+    if path not in _ready_dbs:  # WAL mode and the tables persist in the file: set them up once per run
         db.execute("PRAGMA journal_mode = WAL")
         db.executescript(SCHEMA)
-        _db_ready = True
+        if "error_reader" not in {r["name"] for r in db.execute("PRAGMA table_info(photos)")}:
+            db.execute("ALTER TABLE photos ADD COLUMN error_reader TEXT")  # databases from before M0
+        _ready_dbs.add(path)
     return db
 
 
@@ -393,53 +404,78 @@ def date_taken(path: Path, fallback_mtime: float) -> str:
 IGNORE_MARKER = ".photofind-ignore"  # a folder holding this file is never indexed (e.g. the app's own copies)
 
 
-def iter_images(root: Path):
+def scan_folder(root: Path):
+    """Every photo under root with its stat, plus what index_folder needs to tell a deleted photo from
+    one that's out of reach: paths that couldn't be read (folders or files), the folders that were looked
+    through, the empty ones among them (an unmounted drive's mount point looks just like one) and folders
+    marked to be ignored."""
     skip = data_dir().resolve()
-    for dirpath, dirnames, filenames in os.walk(root):
+    files, unreadable, seen, empty, ignored = {}, set(), set(), set(), set()
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: unreadable.add(os.path.normpath(e.filename))):
         if IGNORE_MARKER in filenames:
+            ignored.add(dirpath)
             dirnames[:] = []
             continue
+        seen.add(dirpath)
+        if not dirnames and not filenames:
+            empty.add(dirpath)
         dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and Path(dirpath, d).resolve() != skip)
         for name in sorted(filenames):
             if not name.startswith(".") and Path(name).suffix.lower() in IMAGE_EXTS:
-                yield Path(dirpath, name)
+                p = os.path.join(dirpath, name)
+                try:
+                    files[p] = os.stat(p)
+                except OSError:
+                    unreadable.add(p)
+    return files, unreadable, seen, empty, ignored
+
+
+def _inside(path: str, folders: set) -> bool:
+    """Is path one of folders, or anywhere inside one?"""
+    while folders:
+        if path in folders:
+            return True
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+    return False
 
 
 # --------------------------------------------------------------------------
 # index
 # --------------------------------------------------------------------------
 
-def index_folder(root, want_faces=True, on_progress=None, should_stop=None, deadline=None) -> dict:
+def index_folder(root, want_faces=True, on_progress=None, should_stop=None, deadline=None,
+                 forget_missing=False) -> dict:
     """Index (or update) one folder. Safe to stop and resume any time.
 
     on_progress(info) is called with a dict:
       phase: "scanning" | "loading" | "indexing" | "done"
-      found, todo, done, faces, errors, moved, removed, rate (photos/s), eta (seconds)
+      found, todo, done, faces, errors, moved, removed, rate (photos/s), eta (seconds),
+      unreachable (kept: in folders that couldn't be read), missing (kept: see forget_missing)
     should_stop() is polled between photos; return True to stop early.
+    forget_missing: remove photos that can't be found even when so many vanished at once that it
+      looks like an unplugged drive (normally they're kept and reported as "missing").
     """
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"Folder not found: {root}")
-    info = dict(phase="scanning", root=str(root), found=0, todo=0, done=0, faces=0,
-                errors=0, moved=0, removed=0, rate=0.0, eta=None, stopped=False, tagged=0)
+    info = dict(phase="scanning", root=str(root), found=0, todo=0, done=0, faces=0, errors=0, moved=0,
+                removed=0, unreachable=0, missing=0, rate=0.0, eta=None, stopped=False, tagged=0)
     report = on_progress or (lambda i: None)
     stop = should_stop or (lambda: False)
     report(info)
 
     db = open_db()
-    on_disk = {}
-    for p in iter_images(root):
-        try:
-            on_disk[str(p)] = p.stat()
-        except OSError:
-            pass
+    on_disk, unreadable, seen, empty, ignored = scan_folder(root)
     info["found"] = len(on_disk)
 
     prefix = str(root).rstrip(os.sep) + os.sep
     known = {
         r["path"]: r
         for r in db.execute(
-            "SELECT id, path, size, mtime, qhash, clip IS NOT NULL AS has_clip, faces_done, error "
+            "SELECT id, path, size, mtime, qhash, clip IS NOT NULL AS has_clip, faces_done, error, error_reader "
             "FROM photos WHERE substr(path, 1, ?) = ?",
             (len(prefix), prefix),
         )
@@ -449,27 +485,68 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     for path, st in on_disk.items():
         r = known.get(path)
         unchanged = r is not None and r["size"] == st.st_size and abs(r["mtime"] - st.st_mtime) < 1
-        if unchanged and (r["error"] or (r["has_clip"] and (r["faces_done"] or not want_faces))):
+        if unchanged and r["error"] and r["error_reader"] == READER:
+            continue  # couldn't be read, and nothing has changed since
+        if unchanged and not r["error"] and r["has_clip"] and (r["faces_done"] or not want_faces):
             continue
         todo.append((path, st, r if unchanged else None))
 
-    # Photos that disappeared: maybe they were moved/renamed (same content, new path).
-    gone = {r["qhash"]: r for p, r in known.items() if p not in on_disk and r["qhash"]}
+    # Photos no longer where we last saw them. Sort out which really are gone:
+    excluded, vanished = [], []
+    for p, r in known.items():
+        if p in on_disk:
+            continue
+        if _inside(p, ignored):
+            excluded.append(r)          # its folder is now marked to be ignored: drop it
+        elif _inside(p, unreadable):
+            info["unreachable"] += 1    # its folder couldn't be read right now: keep it
+        else:
+            vanished.append(r)
+
+    # Vanished photos may have been moved or renamed: same content at a path we haven't seen before.
+    # Several can share a fingerprint (exact copies), so match them one by one.
+    gone = {}
+    for r in vanished:
+        if r["qhash"]:
+            gone.setdefault(r["qhash"], []).append(r)
+    found_again = set()
     if gone:
         still_todo = []
         for path, st, r in todo:
-            if path not in known:  # a brand-new path: is it a photo we already know, moved here?
-                qh = quick_hash(Path(path), st.st_size)
-                old = gone.pop(qh, None)
-                if old is not None:
+            if path not in known:
+                same = gone.get(quick_hash(Path(path), st.st_size))
+                if same:
+                    old = same.pop()
+                    found_again.add(old["id"])
                     db.execute("UPDATE photos SET path=?, mtime=? WHERE id=?", (path, st.st_mtime, old["id"]))
                     info["moved"] += 1
-                    if old["has_clip"] and (old["faces_done"] or not want_faces):
+                    if old["has_clip"] and not old["error"] and (old["faces_done"] or not want_faces):
                         continue
             still_todo.append((path, st, r))
         todo = still_todo
-    removed = [r["id"] for p, r in known.items() if p not in on_disk and r["qhash"] in gone]
-    removed += [r["id"] for p, r in known.items() if p not in on_disk and not r["qhash"]]
+    vanished = [r for r in vanished if r["id"] not in found_again]
+
+    # A lot vanishing at once looks more like an unplugged drive or a glitch than a deletion, so those
+    # are kept (and reported as missing) until the user says to forget them: a whole folder of
+    # MISSING_MIN or more that emptied or disappeared, more than MISSING_SHARE of everything, or every
+    # photo in the folder. Smaller deletions, even of a whole small folder, are simply removed.
+    if vanished and not forget_missing:
+        def gone_folder(path):  # the outermost folder (below root) that has emptied or disappeared
+            top, d = None, os.path.dirname(path)
+            while len(d) > len(prefix) - 1 and (d not in seen or d in empty):
+                top, d = d, os.path.dirname(d)
+            return top
+
+        by_folder = {}
+        for r in vanished:
+            by_folder.setdefault(gone_folder(r["path"]), []).append(r)
+        keep = [r for top, rs in by_folder.items() if top and len(rs) >= MISSING_MIN for r in rs]
+        if (len(vanished) >= MISSING_MIN and len(vanished) > MISSING_SHARE * len(known)) or not on_disk:
+            keep = vanished
+        info["missing"] = len(keep)
+        kept = {r["id"] for r in keep}
+        vanished = [r for r in vanished if r["id"] not in kept]
+    removed = [r["id"] for r in excluded + vanished]
     db.executemany("DELETE FROM photos WHERE id=?", [(i,) for i in removed])
     db.commit()
     info.update(removed=len(removed), todo=len(todo))
@@ -487,43 +564,24 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
                 if stop() or (deadline and time.time() > deadline):
                     info["stopped"] = True
                     break
-                p = Path(path)
                 try:
-                    img = load_photo(p)
-                    need_clip = prev is None or not prev["has_clip"]
-                    vec = clip.embed(img) if need_clip else None
-                    found = faces.find(img) if faces else []
-                    taken = date_taken(p, st.st_mtime)
-                    qh = quick_hash(p, st.st_size)
-                    if need_clip:
-                        db.execute(
-                            "INSERT INTO photos (path, size, mtime, qhash, taken, clip, faces_done, error) "
-                            "VALUES (?,?,?,?,?,?,?,NULL) ON CONFLICT(path) DO UPDATE SET size=excluded.size, "
-                            "mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, clip=excluded.clip, "
-                            "faces_done=excluded.faces_done, error=NULL",
-                            (path, st.st_size, st.st_mtime, qh, taken, to_blob(vec), int(bool(faces))),
-                        )
-                    else:
-                        db.execute("UPDATE photos SET faces_done=1 WHERE path=?", (path,))
-                    pid = db.execute("SELECT id FROM photos WHERE path=?", (path,)).fetchone()[0]
-                    if faces:
-                        db.execute("DELETE FROM faces WHERE photo_id=?", (pid,))
-                        db.executemany(
-                            "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?,?,?,?,?,?,?)",
-                            [(pid, x, y, w, h, s, to_blob(v)) for x, y, w, h, s, v in found],
-                        )
-                        info["faces"] += len(found)
-                    try:  # the photo is already decoded, so its thumbnail is nearly free now
-                        photo_thumb(qh, path, img)
-                    except OSError:
-                        pass  # not worth failing the photo over; it's made on demand later
-                except Exception as e:
+                    img = load_photo(Path(path))
+                except Exception as e:  # the file itself can't be read: note why, and with which reader
                     info["errors"] += 1
                     db.execute(
-                        "INSERT INTO photos (path, size, mtime, error) VALUES (?,?,?,?) "
-                        "ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime, error=excluded.error",
-                        (path, st.st_size, st.st_mtime, f"{type(e).__name__}: {e}"[:300]),
+                        "INSERT INTO photos (path, size, mtime, error, error_reader) VALUES (?,?,?,?,?) "
+                        "ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime, "
+                        "error=excluded.error, error_reader=excluded.error_reader",
+                        (path, st.st_size, st.st_mtime, f"{type(e).__name__}: {e}"[:300], READER),
                     )
+                else:
+                    try:
+                        info["faces"] += _index_photo(db, clip, faces, path, st, prev, img)
+                    except sqlite3.Error:
+                        raise  # the database is in trouble: stop, rather than blame every photo
+                    except Exception as e:  # our side hiccuped, not the photo: not recorded, so it's retried next time
+                        info["errors"] += 1
+                        print(f"index: {path}: {e!r}", file=sys.stderr)
                 info["done"] += 1
                 if info["done"] % 25 == 0:
                     db.commit()
@@ -543,6 +601,38 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     info["phase"] = "done"
     report(info)
     return info
+
+
+def _index_photo(db, clip, faces, path, st, prev, img) -> int:
+    """Store one decoded photo's search vector, date, fingerprint and faces. Returns the number of faces."""
+    p = Path(path)
+    need_clip = prev is None or not prev["has_clip"] or bool(prev["error"])
+    vec = clip.embed(img) if need_clip else None
+    found = faces.find(img) if faces else []
+    taken = date_taken(p, st.st_mtime)
+    qh = quick_hash(p, st.st_size)
+    if need_clip:
+        db.execute(
+            "INSERT INTO photos (path, size, mtime, qhash, taken, clip, faces_done, error, error_reader) "
+            "VALUES (?,?,?,?,?,?,?,NULL,NULL) ON CONFLICT(path) DO UPDATE SET size=excluded.size, "
+            "mtime=excluded.mtime, qhash=excluded.qhash, taken=excluded.taken, clip=excluded.clip, "
+            "faces_done=excluded.faces_done, error=NULL, error_reader=NULL",
+            (path, st.st_size, st.st_mtime, qh, taken, to_blob(vec), int(bool(faces))),
+        )
+    else:
+        db.execute("UPDATE photos SET faces_done=1 WHERE path=?", (path,))
+    pid = db.execute("SELECT id FROM photos WHERE path=?", (path,)).fetchone()[0]
+    if faces:
+        db.execute("DELETE FROM faces WHERE photo_id=?", (pid,))
+        db.executemany(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?,?,?,?,?,?,?)",
+            [(pid, x, y, w, h, s, to_blob(v)) for x, y, w, h, s, v in found],
+        )
+    try:  # the photo is already decoded, so its thumbnail is nearly free now
+        photo_thumb(qh, path, img)
+    except OSError:
+        pass  # not worth failing the photo over; it's made on demand later
+    return len(found)
 
 
 def cmd_index(args):
@@ -573,7 +663,8 @@ def cmd_index(args):
 
     deadline = time.time() + args.max_minutes * 60 if args.max_minutes else None
     try:
-        info = index_folder(args.folder, not args.no_faces, progress, deadline=deadline)
+        info = index_folder(args.folder, not args.no_faces, progress, deadline=deadline,
+                            forget_missing=args.forget_missing)
     except FileNotFoundError as e:
         sys.exit(str(e))
     except KeyboardInterrupt:
@@ -581,6 +672,11 @@ def cmd_index(args):
         return
     if tty and info["todo"]:
         say()
+    if info["unreachable"]:
+        say(f"{info['unreachable']} indexed photos are in folders that couldn't be read right now; they're kept.")
+    if info["missing"]:
+        say(f"{info['missing']} indexed photos can't be found. They're kept in case a drive is unplugged or a folder "
+            f"is out of reach.\nIf you deleted them, run:  photofind.py index \"{args.folder}\" --forget-missing")
     if not info["todo"]:
         say(f"{info['found']} photos found, all already indexed"
             + (f" ({info['moved']} moved, {info['removed']} removed)" if info["moved"] or info["removed"] else "") + ".")
@@ -1040,6 +1136,8 @@ def main():
     p.add_argument("folder")
     p.add_argument("--no-faces", action="store_true", help="skip face recognition (faster)")
     p.add_argument("--max-minutes", type=float, help="stop after this many minutes (handy for overnight runs)")
+    p.add_argument("--forget-missing", action="store_true",
+                   help="remove photos that can't be found, even if so many are gone that it looks like an unplugged drive")
     p.set_defaults(func=cmd_index)
 
     p = sub.add_parser("search", help="find photos by description and/or person")

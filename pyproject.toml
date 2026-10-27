@@ -3,6 +3,10 @@ line-length = 120
 target-version = "py311"
 extend-exclude = ["build"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+
 [tool.ruff.lint]
 # pycodestyle errors/warnings, pyflakes, bugbear (likely bugs), pyupgrade, import order
 select = ["E", "W", "F", "B", "UP", "I"]
