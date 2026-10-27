@@ -768,6 +768,11 @@ def self_test():
             _ort_session(pf.model_path("face_detect.onnx"))
             pf.Faces().find(_I.new("RGB", (640, 480), "white"))
             print("SELF-TEST: face recognition runs.", flush=True)
+        if all(pf.model_path(n).exists() for n in ("clip_vision.onnx", "clip_text.onnx", "clip_tokenizer.json")):
+            from PIL import Image as _I
+            pf.ClipImage().embed(_I.new("RGB", (640, 480), "white"))
+            pf.ClipText().embed("a dog on the beach")
+            print("SELF-TEST: photo search runs.", flush=True)
     except Exception as e:
         print(f"SELF-TEST FAILED: {e!r}", flush=True)
         WINDOW.destroy()

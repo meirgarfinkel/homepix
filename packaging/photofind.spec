@@ -90,6 +90,18 @@ if LINUX:
     a.datas = [d for d in a.datas if keep(d[0])]
     print(f"photofind.spec: kept {len(needed)} Qt libraries, dropped {before - len(a.binaries) - len(a.datas)} files")
 
+    # Libraries every Linux desktop has, which must come from that computer rather than the build
+    # machine: graphics libraries match its drivers, and a newer system's drivers or fonts need its
+    # own newer C++ runtime and font libraries. (A subset of the AppImage project's excludelist.)
+    HOST_LIBS = {
+        "libgcc_s.so.1", "libstdc++.so.6", "libmvec.so.1", "libz.so.1", "libexpat.so.1",
+        "libGL.so.1", "libEGL.so.1", "libGLX.so.0", "libGLdispatch.so.0", "libOpenGL.so.0", "libglapi.so.0",
+        "libgbm.so.1", "libdrm.so.2", "libX11.so.6", "libX11-xcb.so.1", "libxcb.so.1",
+        "libfontconfig.so.1", "libfreetype.so.6", "libharfbuzz.so.0", "libfribidi.so.0", "libthai.so.0",
+        "libasound.so.2",
+    }
+    a.binaries = [b for b in a.binaries if b[0].replace("\\", "/").rsplit("/", 1)[-1] not in HOST_LIBS]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
