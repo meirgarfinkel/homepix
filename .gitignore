@@ -1,0 +1,11 @@
+build/
+*.AppImage
+PhotoFinderSetup.exe
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+dist/
+*.egg-info/

@@ -1,0 +1,11 @@
+numpy>=1.24
+pillow>=10.0
+onnxruntime>=1.17
+opencv-python-headless>=4.8
+tokenizers>=0.15
+# The app window (Photo Finder). Windows uses its built-in Edge engine; Linux uses Qt.
+pywebview>=5.0
+QtPy>=2.0; sys_platform == "linux"
+PySide6>=6.5; sys_platform == "linux"
+# Optional: iPhone .heic photos
+# pillow-heif>=0.16

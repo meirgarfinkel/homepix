@@ -1,0 +1,41 @@
+# Builds the Linux AppImage and the Windows installer on GitHub's machines,
+# so you don't need a Windows computer. Run it from the repository's Actions tab
+# ("Build Photo Finder" > Run workflow), or push a tag like v0.1.
+name: Build Photo Finder
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  linux:
+    # Built on an older Ubuntu so the AppImage also runs on older systems.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y libxcb-cursor0
+      - run: bash packaging/build_linux.sh
+      - run: QT_QPA_PLATFORM=offscreen ./PhotoFinder-x86_64.AppImage --appimage-extract-and-run --self-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoFinder-Linux
+          path: PhotoFinder-x86_64.AppImage
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: choco install innosetup --no-progress -y
+      - run: packaging\build_windows.bat
+        shell: cmd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoFinder-Windows
+          path: PhotoFinderSetup.exe
