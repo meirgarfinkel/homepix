@@ -11,6 +11,18 @@ From then on, every `git push` first runs the linter (`ruff`) and a few file che
 is stopped before it leaves your computer. Run the same checks any time with
 `pre-commit run --all-files --hook-stage pre-push`.
 
+## Running and testing
+
+```bash
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
+.venv/bin/python -m photofind.ui        # the new desktop app
+.venv/bin/python -m photofind status    # the command line
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
+```
+
+`PHOTOFIND_HOME=/some/folder` points any of these at a separate library, so you can try things
+without touching your own.
+
 ## Branches
 
 - **`main`** always works. Nobody pushes to it directly; changes arrive through pull requests that

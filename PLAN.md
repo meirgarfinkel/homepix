@@ -78,6 +78,14 @@ faces and 27 named people.
 under 200 ms, memory is measured, and it does everything the current app does. Then it replaces the
 current app.
 
+Delivered in three steps; the current app keeps working until the last:
+- **M3a:** window, timeline (month headers, year scrubber, selection, keyboard), thumbnail loading,
+  viewer, info panel. Run it with `python -m photofind.ui`; the installer adds "Photo Finder (new,
+  preview)" to the menu. *Status: done.*
+- **M3b:** folders, search, background indexing with progress and the missing-photos notice, settings.
+- **M3c:** people page (read-only), video thumbnails, memory measured; then it replaces the current
+  app, in the AppImage and the installers too.
+
 ### M4 — File operations
 - Selection, the right-click menu, toolbar and shortcuts.
 - Copy, cut, paste and move; rename (single and batch); delete to Trash; undo and redo.
