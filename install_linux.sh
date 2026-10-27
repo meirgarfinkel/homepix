@@ -17,7 +17,11 @@ if ! python3 -c "import ensurepip, venv" 2>/dev/null; then
 fi
 
 mkdir -p "$APP" "$MENU"
-for f in photofind.py photofind_app.py photofind_ui.html photofind-icon.png requirements.txt; do
+rm -f "$APP/photofind.py" "$APP/photofind_ui.html"  # from before the code became a package
+rm -rf "$APP/photofind"
+cp -r "$SRC/photofind" "$APP/"
+find "$APP/photofind" -name __pycache__ -prune -exec rm -rf {} +
+for f in photofind_app.py photofind-icon.png requirements.txt; do
   cp "$SRC/$f" "$APP/"
 done
 

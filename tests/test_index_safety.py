@@ -8,6 +8,8 @@ import sqlite3
 import pytest
 from conftest import copy, photo, rows
 
+from photofind.core import library
+
 # --- #9: deleted vs. out of reach ------------------------------------------------------------------
 
 
@@ -154,7 +156,7 @@ def test_unreadable_photo_is_retried_only_when_reading_improves(pf, lib, monkeyp
     info = pf.index_folder(lib)
     assert info["errors"] == 1 and rows(pf, lib)["broken.jpg"]["error"]
     assert pf.index_folder(lib)["todo"] == 0      # nothing changed: not tried again
-    monkeypatch.setattr(pf, "READER", "99")
+    monkeypatch.setattr(library, "READER", "99")
     assert pf.index_folder(lib)["todo"] == 1      # better reader: tried again
     assert rows(pf, lib)["broken.jpg"]["error_reader"] == "99"
 
@@ -177,16 +179,16 @@ def test_heic_is_indexed(pf, lib):
 
 def test_model_hiccup_is_not_blamed_on_the_photo(pf, lib, monkeypatch):
     photo(lib / "p.jpg")
-    working = pf.ClipImage
+    working = library.ClipImage
 
     class Hiccup(working):
         def embed(self, img):
             raise RuntimeError("model hiccup")
 
-    monkeypatch.setattr(pf, "ClipImage", Hiccup)
+    monkeypatch.setattr(library, "ClipImage", Hiccup)
     info = pf.index_folder(lib)
     assert info["errors"] == 1 and "p.jpg" not in rows(pf, lib)  # nothing recorded against it
-    monkeypatch.setattr(pf, "ClipImage", working)
+    monkeypatch.setattr(library, "ClipImage", working)
     pf.index_folder(lib)
     assert rows(pf, lib)["p.jpg"]["clip"] is not None
 

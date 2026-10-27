@@ -7,7 +7,7 @@ from conftest import photo, rows
 
 
 def test_missing_photos_are_reported_then_forgotten_on_request(pf, lib):
-    app = importlib.import_module("photofind_app")
+    app = importlib.import_module("photofind.webapp.server")
     for i in range(60):
         photo(lib / "drive" / f"{i}.jpg")
     for i in range(20):

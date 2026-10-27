@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
       - run: pip install numpy pillow pillow-heif pytest
       - name: Byte-compile every module
-        run: python -m compileall -q photofind.py photofind_app.py
+        run: python -m compileall -q photofind photofind_app.py
       - name: Tests
         run: |
           if [ -d tests ]; then pytest -q; else echo "No tests yet (they arrive with M0)."; fi
