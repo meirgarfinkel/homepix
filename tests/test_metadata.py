@@ -112,10 +112,10 @@ def test_details_round_trip(home, lib, ext):
     assert d.gps == pytest.approx((31.778, -35.235), abs=1e-5)
     assert abs(os.stat(p).st_mtime - mtime) < 1  # its modified time is kept
 
-    from photofind.core.media import date_taken
+    from photofind.core import dates
     from photofind.core.util import quick_hash
 
-    assert date_taken(p, 0) == ("2019-05-06 07:08:09", "exif")  # what indexing reads agrees
+    assert dates.of_file(p, "photo", 0)[:2] == ("2019-05-06 07:08:09", "exif")  # what indexing reads agrees
     r = row(db, p)
     assert r["qhash"] == quick_hash(p, os.path.getsize(p)) and r["size"] == os.path.getsize(p)
     assert (r["taken"], json.loads(r["keywords"]), r["description"]) == (
@@ -181,7 +181,9 @@ def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
     result, cant = edit_and_run(db, fo, [a, b], md.Edit(shift=dt.timedelta(hours=-3, minutes=-15)))
     assert result.finished == 3 and not cant
     assert row(db, a)["taken"] == "2021-03-04 06:45:00" and row(db, b)["taken"] == "2021-03-05 15:15:00"
-    assert row(db, clip)["taken"] == "2021-03-04 06:45:01"
+    clock = dt.datetime.strptime(utc, "%Y:%m:%d %H:%M:%S") - dt.timedelta(hours=3, minutes=15)
+    assert row(db, clip)["taken"] == str(clock)  # a video's date is its clock, as stored (like its name)
+    assert row(db, clip)["moment"] == "2021-03-04 06:45:01"  # its local time, to stay with its photo
     index(pf, lib)
     assert row(db, clip)["kind"] == "motion"  # still its photo's clip
 

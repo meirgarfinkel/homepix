@@ -28,7 +28,7 @@ import shutil
 import time
 from pathlib import Path
 
-from . import metadata
+from . import dates, metadata
 from . import trash as trashcan
 from .safefs import copy_file, free_name, move_file, rename_noreplace
 from .thumbs import thumbs_dir
@@ -95,6 +95,7 @@ def _apply(db, step) -> dict:
         temp = _hidden(src, step["op_id"], step["seq"], "moving")
         if db.execute("UPDATE photos SET path=? WHERE path=?", (dst, temp)).rowcount == 0:
             db.execute("UPDATE photos SET path=? WHERE path=?", (dst, src))
+        _renamed(db, dst, os.path.basename(src))
         return {}
     if action == "copy":
         snap = snapshot(db, src)
@@ -112,20 +113,20 @@ def _apply(db, step) -> dict:
     raise ValueError(f"unknown step {action}")
 
 
-def taken_now(path, kind, st) -> tuple[str, str]:
-    """When the file says it was taken, worked out the way indexing does (so the two agree)."""
-    if kind in ("video", "motion"):
-        from .media import filename_date
-        from .video import video_meta
-
-        if when := video_meta(Path(path))["taken"]:
-            return when.isoformat(sep=" ", timespec="seconds"), "video"
-        if named := filename_date(os.path.basename(path)):
-            return named.isoformat(sep=" ", timespec="seconds"), "filename"
-        return dt.datetime.fromtimestamp(st.st_mtime).isoformat(sep=" ", timespec="seconds"), "file-modified"
-    from .media import date_taken
-
-    return date_taken(Path(path), st.st_mtime)
+def _renamed(db, path, old_name: str):
+    """A file's name counts towards its date (dates.py): after a rename, work it out again if it may
+    have changed (not when a real date in the file itself is still the earliest)."""
+    new, old = dates.in_name(os.path.basename(path)), dates.in_name(old_name)
+    if new == old:
+        return
+    row = db.execute("SELECT id, kind, taken, taken_source, mtime FROM photos WHERE path=?", (path,)).fetchone()
+    if row is None or row["taken"] is None:
+        return
+    if row["taken_source"] in ("exif", "video") and (new is None or dates.is_placeholder(new)
+                                                     or new.isoformat(sep=" ") >= row["taken"]):
+        return
+    taken, source, moment = dates.of_file(path, row["kind"] or "photo", row["mtime"] or 0)
+    db.execute("UPDATE photos SET taken=?, taken_source=?, moment=? WHERE id=?", (taken, source, moment, row["id"]))
 
 
 def _apply_meta(db, path, change) -> dict:
@@ -139,11 +140,10 @@ def _apply_meta(db, path, change) -> dict:
     qh = quick_hash(Path(path), st.st_size)
     d = metadata.read([path]).get(path)
     fields = {"size": st.st_size, "mtime": st.st_mtime, "qhash": qh}
-    if any(t in change["new"] for t in metadata.PHOTO_DATES + metadata.VIDEO_DATES):
-        fields["taken"], fields["taken_source"] = taken_now(path, row["kind"], st)
     if d is not None:
-        fields.update(keywords=json.dumps(d.keywords) if d.keywords else None,
-                      description=d.description or None, details_done=1)
+        taken, source, moment = dates.from_tags(path, d.tags, st.st_mtime)
+        fields.update(taken=taken, taken_source=source, moment=moment, details_done=1,
+                      keywords=json.dumps(d.keywords) if d.keywords else None, description=d.description or None)
     db.execute(f"UPDATE photos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), row["id"]))
     turn = change.get("orientation")
     if turn and turn[0] != turn[1]:
@@ -229,14 +229,15 @@ def companions(db, paths) -> dict[str, str]:
     the same folder taken within 2 seconds (the one with the same name first, then the closest)."""
     wanted = {}
     for p in paths:
-        row = db.execute("SELECT taken FROM photos WHERE path=? AND kind='photo' AND taken IS NOT NULL",
-                         (os.path.abspath(p),)).fetchone()
+        row = db.execute("SELECT COALESCE(moment, taken) FROM photos WHERE path=? AND kind='photo' "
+                         "AND taken IS NOT NULL", (os.path.abspath(p),)).fetchone()
         if row:
             wanted[os.path.abspath(p)] = dt.datetime.fromisoformat(row[0])
     if not wanted:
         return {}
     clips = {}
-    for path, taken in db.execute("SELECT path, taken FROM photos WHERE kind='motion' AND taken IS NOT NULL"):
+    for path, taken in db.execute(  # a clip's local time, as its photo's date is
+            "SELECT path, COALESCE(moment, taken) FROM photos WHERE kind='motion' AND taken IS NOT NULL"):
         clips.setdefault(os.path.dirname(path), []).append((path, dt.datetime.fromisoformat(taken)))
     out, used = {}, set()
     for p, taken in wanted.items():
@@ -282,7 +283,8 @@ def plan_rename(db, renames) -> list[dict]:
 
 def plan_details(db, paths, edit: "metadata.Edit"):
     """Steps that write edit into each file, and [(path, why)] for those it can't be written to.
-    Changing the date changes a Live Photo's clip's date too, so they stay together."""
+    Changing the date changes a Live Photo's clip's date too, so they stay together; and a file named
+    by its date (2022_04_01_07_32_31.jpg) is renamed to its new one, so the two never disagree."""
     paths = with_companions(db, paths) if edit.touches_date() else [os.path.abspath(p) for p in paths]
     found, steps, cant = {}, [], []
     for i in range(0, len(paths), 200):
@@ -292,8 +294,12 @@ def plan_details(db, paths, edit: "metadata.Edit"):
         if d is None:
             cant.append((p, "its details can't be read"))
             continue
+        row = db.execute("SELECT taken, taken_source FROM photos WHERE path=?", (p,)).fetchone()
+        shown = None  # a date from its name counts; a guess from when the file changed doesn't
+        if row and row["taken"] and row["taken_source"] not in (None, "file-modified"):
+            shown = dt.datetime.fromisoformat(row["taken"])
         try:
-            new = metadata.changes(p, d, edit)
+            new = metadata.changes(p, d, edit, shown)
         except metadata.CantChange as e:
             cant.append((p, str(e)))
             continue
@@ -303,6 +309,15 @@ def plan_details(db, paths, edit: "metadata.Edit"):
         if edit.turn:
             change["orientation"] = [d.orientation, metadata.turned(d.orientation, edit.turn)]
         steps.append({"action": "meta", "src": p, "dst": p, "before": change})
+    if edit.touches_date():
+        renames = []
+        for s in steps:
+            stem, ext = os.path.splitext(os.path.basename(s["src"]))
+            new = s["before"]["new"]
+            when = dates.parse(new.get("ExifIFD:DateTimeOriginal") or new.get("QuickTime:CreateDate"))
+            if when is not None and dates.ORGANIZED.match(stem):
+                renames.append((s["src"], os.path.join(os.path.dirname(s["src"]), when.strftime(dates.FORMAT) + ext)))
+        steps = plan_moves(renames) + steps  # moves go first anyway; each write follows its file (see run)
     return steps, cant
 
 
@@ -390,6 +405,7 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
         staged.append(r)
     db.commit()
     # moves, phase 2: each staged file to its destination (always finished once started)
+    moved_to = {}
     for r in staged:
         temp = _hidden(r["src"], op_id, r["seq"], "moving")
         try:
@@ -404,6 +420,7 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
             skipped(r, e.strerror or str(e))
             continue
         finished(r, dst)
+        moved_to[r["src"]] = dst
 
     # Trash: every name in it is chosen (and reserved) first
     trashing = []
@@ -445,6 +462,10 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
                 dst = _free(db, r, r["dst"])
                 trashcan.restore(r["src"], dst)
             elif r["action"] == "meta":
+                if r["src"] in moved_to and not os.path.lexists(r["src"]):  # renamed just now: follow it
+                    r = dict(r) | {"src": moved_to[r["src"]], "dst": moved_to[r["src"]]}
+                    _set(db, r, src=r["src"], dst=r["dst"])
+                    db.commit()  # (recovery and undo need to know where it went)
                 if not os.path.lexists(r["src"]):
                     raise FileNotFoundError
                 metadata.write(r["src"], json.loads(r["before"])["new"])

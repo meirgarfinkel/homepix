@@ -15,6 +15,7 @@ DATE_SOURCES = {
     "file-modified": "guessed from when the file was last changed",
     "video": "recorded in the video",
     "filename": "from the file's name",
+    "placeholder": "a stand-in date (1 January at midnight, or the like): only the year may be right",
     None: "unknown (indexed before this was recorded)",
 }
 
