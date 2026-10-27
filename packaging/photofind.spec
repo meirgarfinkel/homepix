@@ -10,10 +10,10 @@ WINDOWS = sys.platform == "win32"
 LINUX = sys.platform.startswith("linux")
 
 datas = [
-    (str(ROOT / "photofind_ui.html"), "."),
+    (str(ROOT / "photofind" / "webapp" / "ui.html"), "photofind/webapp"),
     (str(ROOT / "photofind-icon.png"), "."),
 ]
-hiddenimports = ["photofind"]
+hiddenimports = ["photofind.core", "photofind.webapp.server"]
 if LINUX:
     hiddenimports += ["webview.platforms.qt", "qtpy", "PySide6.QtWebEngineWidgets",
                       "PySide6.QtWebEngineCore", "PySide6.QtWebChannel"]

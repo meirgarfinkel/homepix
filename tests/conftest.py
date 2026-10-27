@@ -23,10 +23,10 @@ class FakeFaces:
 def pf(tmp_path, monkeypatch):
     """photofind with its data folder in tmp_path and fake models (no downloads, fast)."""
     monkeypatch.setenv("PHOTOFIND_HOME", str(tmp_path / "data"))
-    module = importlib.import_module("photofind")
-    monkeypatch.setattr(module, "ClipImage", FakeClip)
-    monkeypatch.setattr(module, "Faces", FakeFaces)
-    return module
+    library = importlib.import_module("photofind.core.library")
+    monkeypatch.setattr(library, "ClipImage", FakeClip)
+    monkeypatch.setattr(library, "Faces", FakeFaces)
+    return importlib.import_module("photofind.core")
 
 
 @pytest.fixture

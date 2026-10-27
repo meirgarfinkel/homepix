@@ -39,7 +39,7 @@ python3 -m venv ~/photofind-env
 To make the commands below shorter, add an alias to `~/.bashrc`:
 
 ```bash
-alias photofind="$HOME/photofind-env/bin/python $HOME/photofind/photofind.py"
+alias photofind="PYTHONPATH=$HOME/photofind $HOME/photofind-env/bin/python -m photofind"
 ```
 
 ### Use
@@ -69,7 +69,7 @@ Run `index` again whenever you add photos. It only processes new or changed file
 `index` already runs at low priority and uses half your CPU cores. To run it every night at 2 am, add this with `crontab -e`:
 
 ```
-0 2 * * * ionice -c3 $HOME/photofind-env/bin/python $HOME/photofind/photofind.py index $HOME/Pictures --max-minutes 300 >> $HOME/.local/share/photofind/index.log 2>&1
+0 2 * * * cd $HOME/photofind && ionice -c3 $HOME/photofind-env/bin/python -m photofind index $HOME/Pictures --max-minutes 300 >> $HOME/.local/share/photofind/index.log 2>&1
 ```
 
 `--max-minutes` stops it after that long; the next night continues where it left off.
@@ -81,7 +81,7 @@ Same code. Install Python from python.org, then:
 ```
 py -m venv %USERPROFILE%\photofind-env
 %USERPROFILE%\photofind-env\Scripts\pip install -r requirements.txt
-%USERPROFILE%\photofind-env\Scripts\python photofind.py index C:\Users\you\Pictures
+%USERPROFILE%\photofind-env\Scripts\python -m photofind index C:\Users\you\Pictures
 ```
 
 Use Task Scheduler for nightly runs. Data is stored in `%LOCALAPPDATA%\photofind`.
@@ -115,7 +115,7 @@ Read the Apple license yourself before shipping a commercial product. The newer 
 
 ## Tuning
 
-Constants at the top of `photofind.py`:
+Constants in `photofind/core/config.py`:
 
 - `MATCH_STRICTNESS`: raise it if unrelated photos show up as search matches; lower it if real matches end up under "possibly related". `NEAR_STRICTNESS` and `MAX_NEAR` control the "possibly related" section.
 - `CLUSTER_SIM`: raise it if different people end up in one group; lower it if one person is split across many groups.

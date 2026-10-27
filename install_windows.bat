@@ -20,7 +20,10 @@ if errorlevel 1 (
 )
 
 if not exist "%APP%" mkdir "%APP%"
-for %%f in (photofind.py photofind_app.py photofind_ui.html photofind-icon.png photofind-icon.ico requirements.txt) do (
+if exist "%APP%\photofind.py" del /q "%APP%\photofind.py" "%APP%\photofind_ui.html"
+if exist "%APP%\photofind" rmdir /s /q "%APP%\photofind"
+xcopy /e /i /q /y "%SRC%photofind" "%APP%\photofind" >nul
+for %%f in (photofind_app.py photofind-icon.png photofind-icon.ico requirements.txt) do (
   copy /y "%SRC%%%f" "%APP%\" >nul
 )
 
