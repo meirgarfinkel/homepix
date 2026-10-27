@@ -3,15 +3,16 @@ button; playing it opens the system's video player.
 
 Photos are decoded with the core's reader (so HEIC and EXIF rotation work like everywhere else),
 first at screen size; zooming in past that loads the full resolution. The next and previous photos
-are decoded ahead, so flicking through is instant.
+are decoded ahead, so flicking through is instant. N shows who's in it: a box on each face, with
+their name; clicking one is how to name it or say it's someone else.
 """
 
 from collections import OrderedDict
 from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QPointF, QRectF, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPalette, QPolygonF
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFontMetrics, QImage, QPainter, QPalette, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 from ...core import load_photo
@@ -43,11 +44,14 @@ def decode(path: str, max_side: int, video: bool = False):
 class Viewer(QWidget):
     closed = Signal()
     current_changed = Signal(int)  # global item index
+    face_clicked = Signal(dict, QPoint)  # a face (as from core.people.face_rows), where (global)
+    faces_toggled = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.items = []
         self.index = -1
+        self._shown_id = None
         self._images = OrderedDict()  # (path, max_side) -> (QImage, original's longest side), a few around
         self._decoded = {}  # path -> the fingerprint it had when decoded (it changes when the file does)
         self._pending = set()
@@ -55,6 +59,9 @@ class Viewer(QWidget):
         self.zoom = None  # None: fit to window; else device pixels per image pixel
         self._center = QPointF(0.5, 0.5)  # the image point (0-1) at the window's center
         self._drag_from = None
+        self.show_faces = False
+        self.faces = []  # the faces in the photo shown, when show_faces
+        self._faces_of = None  # whose: the photo's id
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
 
@@ -68,15 +75,19 @@ class Viewer(QWidget):
             del self._images[key]
         for p in changed:
             del self._decoded[p]
-        self.go(index)
+        same = 0 <= self.index < len(self.items) and 0 <= index < len(items) and items[index].id == self._shown_id
+        self.go(index, keep_view=same and not changed)
 
-    def go(self, index: int):
+    def go(self, index: int, keep_view: bool = False):
+        """keep_view: the same photo again (after a change): stay zoomed where it was."""
         if not self.items:
             return
         index = max(0, min(len(self.items) - 1, index))
         self.index = index
-        self.zoom = None
-        self._center = QPointF(0.5, 0.5)
+        self._shown_id = self.items[index].id
+        if not keep_view:
+            self.zoom = None
+            self._center = QPointF(0.5, 0.5)
         self._error = None
         self._load(index, self._screen_side())
         for n in (index + 1, index - 1):  # read ahead
@@ -84,6 +95,52 @@ class Viewer(QWidget):
                 self._load(n, self._screen_side())
         self.update()
         self.current_changed.emit(index)
+
+    def set_faces(self, photo_id, faces):
+        """The faces in a photo (shown if it's still the one being looked at)."""
+        self._faces_of, self.faces = photo_id, faces
+        self.update()
+
+    def toggle_faces(self):
+        self.show_faces = not self.show_faces
+        self.faces_toggled.emit(self.show_faces)
+        self.update()
+
+    def _current_faces(self):
+        here = 0 <= self.index < len(self.items) and self.items[self.index].id == self._faces_of
+        return self.faces if self.show_faces and here else []
+
+    def _face_rect(self, f, rect: QRectF) -> QRectF:
+        return QRectF(rect.x() + f["x"] * rect.width(), rect.y() + f["y"] * rect.height(),
+                      f["w"] * rect.width(), f["h"] * rect.height())
+
+    def _face_at(self, pos):
+        shown = self._image()
+        if shown is None:
+            return None
+        rect = self._target_rect(shown)
+        hits = [f for f in self._current_faces() if self._face_rect(f, rect).contains(pos)]
+        return min(hits, key=lambda f: f["w"]) if hits else None  # the smallest: a face behind another
+
+    def _draw_faces(self, p, rect: QRectF):
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        metrics = QFontMetrics(p.font())
+        for f in self._current_faces():
+            box = self._face_rect(f, rect)
+            named = f["name"] is not None
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(0, 0, 0, 120), 4))
+            p.drawRoundedRect(box, 6, 6)
+            p.setPen(QPen(QColor(255, 255, 255, 235) if named else QColor(255, 210, 90, 235), 2))
+            p.drawRoundedRect(box, 6, 6)
+            label = f["name"] or "Who is this?"
+            w, h = metrics.horizontalAdvance(label) + 12, metrics.height() + 4
+            tag = QRectF(box.center().x() - w / 2, box.bottom() + 4, w, h)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(0, 0, 0, 170))
+            p.drawRoundedRect(tag, 4, 4)
+            p.setPen(QColor(255, 255, 255))
+            p.drawText(tag, Qt.AlignmentFlag.AlignCenter, label)
 
     def _screen_side(self) -> int:
         screen = self.screen().size() * self.devicePixelRatioF()
@@ -138,7 +195,9 @@ class Viewer(QWidget):
             p.end()
             return
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        p.drawImage(self._target_rect(shown), shown[0])
+        rect = self._target_rect(shown)
+        p.drawImage(rect, shown[0])
+        self._draw_faces(p, rect)
         if self._is_video():
             self._draw_play(p)
         p.end()
@@ -220,12 +279,18 @@ class Viewer(QWidget):
             self.go(self.index + (1 if e.angleDelta().y() < 0 else -1))
 
     def mouseDoubleClickEvent(self, e):
+        if self._face_at(e.position()) is not None:
+            return
         if self._is_video():
             return self.play()
         self.set_zoom(None if self.zoom is not None else 1.0, e.position())
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton and self._is_video() and self._play_rect().contains(e.position()):
+        face = self._face_at(e.position()) if e.button() in (Qt.MouseButton.LeftButton,
+                                                              Qt.MouseButton.RightButton) else None
+        if face is not None:
+            self.face_clicked.emit(face, e.globalPosition().toPoint())
+        elif e.button() == Qt.MouseButton.LeftButton and self._is_video() and self._play_rect().contains(e.position()):
             self.play()
         elif e.button() == Qt.MouseButton.LeftButton and self.zoom is not None:
             self._drag_from = e.position()
@@ -236,6 +301,10 @@ class Viewer(QWidget):
     def mouseMoveEvent(self, e):
         shown = self._image()
         if self._drag_from is None or shown is None:
+            if self._face_at(e.position()) is not None:
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.unsetCursor()
             return
         rect = self._target_rect(shown)
         d = e.position() - self._drag_from
@@ -273,6 +342,8 @@ class Viewer(QWidget):
                 self.window().showNormal()
             else:
                 self.closed.emit()
+        elif key == Qt.Key.Key_N:
+            self.toggle_faces()
         elif key in (Qt.Key.Key_F, Qt.Key.Key_F11):
             w = self.window()
             w.showNormal() if w.isFullScreen() else w.showFullScreen()

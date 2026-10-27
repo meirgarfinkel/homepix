@@ -157,6 +157,17 @@ a date renames a file named by it. Live Photo clips pair on the local time the f
 
 **Done when:** it works on your library's 41,000 faces without waiting on regrouping.
 
+*Status: done.* Every change to who's who (naming, "not them", "not a face", rename, merge, forget,
+moving faces to someone else) is a step in the same journal as file operations, so Undo, Redo and
+crash recovery work the same way, from the app and the command line. Naming a group tags the faces
+it makes recognizable in the same step, so one Undo takes it all back. "Who is this?" asks about one
+group of look-alike unnamed faces at a time, worked out on a background thread. On a copy of your
+library (912 groups, 10,966 unnamed faces) the groups take 0.25 s, someone's 7,440 faces 0.06 s
+and planning a name 0.29 s; a test with 42,000 faces names and undoes in under two seconds.
+Someone's faces are shown least alike first, where the wrong matches are. A face taken away from
+someone is never auto-tagged again; one marked "not a face" is never asked about again. The
+viewer shows face boxes with names (N), and clicking one names or corrects it.
+
 ### M7 — Organizer
 - Both modes, with preview and apply through fileops.
 - Videos, sidecars and Live Photos included.

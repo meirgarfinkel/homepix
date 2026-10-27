@@ -1,4 +1,13 @@
-"""Faces to people: recognizing named people and grouping the unnamed."""
+"""Faces to people: recognizing named people, grouping the unnamed, and the changes people make
+(naming, "that isn't them", "not a face", renaming, merging, forgetting).
+
+A change is planned as the faces' and people's values before and after it ({"faces": {face id:
+[person id, locked, hidden]}, "people": {person id: name, or None when there's no such person}}),
+and done as a step of an operation in the journal (core/fileops.py), so Undo puts the values back.
+Naming someone recognizes them in more photos too: those faces are part of the same change.
+"""
+
+import json
 
 import numpy as np
 
@@ -27,14 +36,13 @@ def person_centroids(db):
     return people, cents
 
 
-def auto_assign(db) -> int:
-    """Tag unnamed faces that clearly match someone already named."""
+def auto_assign(db, write: bool = True):
+    """Tag unnamed faces that clearly match someone already named. Returns how many; with
+    write=False, the [(person id, face id)] it would tag instead, changing nothing."""
     people, cents = person_centroids(db)
-    if not people:
-        return 0
-    rows, embs = load_faces(db, "f.person_id IS NULL AND f.locked = 0")
+    rows, embs = load_faces(db, "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0") if people else ([], None)
     if not rows:
-        return 0
+        return 0 if write else []
     sims = embs @ cents.T
     order = np.argsort(-sims, axis=1)
     best = sims[np.arange(len(rows)), order[:, 0]]
@@ -50,14 +58,17 @@ def auto_assign(db) -> int:
         if best[i] >= ASSIGN_SIM and best[i] - second[i] >= ASSIGN_MARGIN and key not in taken:
             taken.add(key)  # one person can't appear twice in the same photo
             updates.append((pid, rows[i]["id"]))
+    if not write:
+        return updates
     db.executemany("UPDATE faces SET person_id=?, cluster=NULL WHERE id=?", updates)
     db.commit()
     return len(updates)
 
 
-def cluster_unnamed(db):
-    """Group unnamed faces that look like the same person. Group 1 is the biggest."""
-    rows, embs = load_faces(db, "f.person_id IS NULL")
+def cluster_unnamed(db, save: bool = True):
+    """Group unnamed faces that look like the same person. Group 1 is the biggest. save: keep the
+    group numbers in the index (the command line names groups by them)."""
+    rows, embs = load_faces(db, "f.person_id IS NULL AND f.hidden = 0")
     if not rows:
         return []
     quality = np.array([r["score"] * min(r["w"], r["h"]) for r in rows])
@@ -81,11 +92,12 @@ def cluster_unnamed(db):
         members.append([i])
         groups_in.setdefault(photo, []).append(n)
     members.sort(key=len, reverse=True)
-    updates = []
-    for num, group in enumerate(members, start=1):
-        updates += [(num, rows[i]["id"]) for i in group]
-    db.executemany("UPDATE faces SET cluster=? WHERE id=?", updates)
-    db.commit()
+    if save:
+        updates = []
+        for num, group in enumerate(members, start=1):
+            updates += [(num, rows[i]["id"]) for i in group]
+        db.executemany("UPDATE faces SET cluster=? WHERE id=?", updates)
+        db.commit()
     return [(num, [rows[i] for i in group]) for num, group in enumerate(members, start=1)]
 
 
@@ -122,3 +134,138 @@ def named_people(db) -> list[dict]:
     for person in people:
         person["face"] = portrait(db, person["id"], person.pop("faces"))
     return people
+
+
+# --- changes -----------------------------------------------------------------------------------------
+
+def _faces_now(db, face_ids) -> dict:
+    marks = ",".join("?" * len(face_ids))
+    return {str(r[0]): [r[1], r[2] or 0, r[3]] for r in db.execute(
+        f"SELECT id, person_id, locked, hidden FROM faces WHERE id IN ({marks})", list(face_ids))}
+
+
+def _change(db, faces: dict, people: dict | None = None, recognize: bool = False) -> dict | None:
+    """The step that sets these faces ({face id: [person id, locked, hidden]}) and people ({person id:
+    name or None}); recognize: and tags the faces that naming makes recognizable. None if it changes
+    nothing."""
+    people = {str(k): v for k, v in (people or {}).items()}
+    faces = {str(k): v for k, v in faces.items()}
+    if recognize:  # see what auto-tagging would do once this is done, without doing either
+        db.execute("SAVEPOINT plan")
+        try:
+            apply(db, {"faces": faces, "people": people})
+            faces.update({str(fid): [pid, 0, 0] for pid, fid in auto_assign(db, write=False)})
+        finally:
+            db.execute("ROLLBACK TO plan")
+            db.execute("RELEASE plan")
+    old_faces = _faces_now(db, faces) if faces else {}
+    faces = {k: v for k, v in faces.items() if k in old_faces and old_faces[k] != v}
+    old_people = {k: (r[0] if (r := db.execute("SELECT name FROM people WHERE id=?", (int(k),)).fetchone()) else None)
+                  for k in people}
+    people = {k: v for k, v in people.items() if old_people[k] != v}
+    if not faces and not people:
+        return None
+    old = {"faces": {k: old_faces[k] for k in faces}, "people": {k: old_people[k] for k in people}}
+    return {"action": "people", "src": None, "dst": None, "before": {"old": old, "new": {"faces": faces, "people": people}}}
+
+
+def apply(db, state: dict):
+    """Set the values a change (or its undoing) leaves: people first, so faces can point at them, and
+    those that go last, once no face does."""
+    for pid, name in state.get("people", {}).items():
+        if name is not None:
+            db.execute("INSERT INTO people (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name",
+                       (int(pid), name))
+    db.executemany("UPDATE faces SET person_id=?, locked=?, hidden=?, cluster=NULL WHERE id=?",
+                   [(pid, locked, hidden, int(fid)) for fid, (pid, locked, hidden) in state.get("faces", {}).items()])
+    for pid, name in state.get("people", {}).items():
+        if name is None:
+            db.execute("DELETE FROM people WHERE id=?", (int(pid),))
+
+
+def person_id(db, name: str):
+    r = db.execute("SELECT id FROM people WHERE name=?", (name.strip(),)).fetchone()
+    return r[0] if r else None
+
+
+def _new_person(db, name: str) -> tuple[int, dict]:
+    """(their id, the people part of a change): an existing person's, or one made for this name."""
+    pid = person_id(db, name)
+    if pid is not None:
+        return pid, {}
+    pid = (db.execute("SELECT MAX(id) FROM people").fetchone()[0] or 0) + 1
+    return pid, {pid: name.strip()}
+
+
+def plan_name(db, face_ids, name: str):
+    """These faces are name (someone known, or someone new). Faces it then recognizes are named too."""
+    pid, people = _new_person(db, name)
+    return _change(db, {f: [pid, 1, 0] for f in face_ids}, people, recognize=True)
+
+
+def plan_not(db, face_ids):
+    """"That isn't them": unnamed, and never recognized again (it can still be named)."""
+    return _change(db, {f: [None, 1, 0] for f in face_ids})
+
+
+def plan_hide(db, face_ids):
+    """Not a face, or no one to name: never asked about or recognized again."""
+    return _change(db, {f: [None, 1, 1] for f in face_ids})
+
+
+def plan_rename(db, pid: int, name: str):
+    """A new name; the name of someone else merges the two."""
+    other = person_id(db, name)
+    if other is not None and other != pid:
+        return plan_merge(db, [pid], other)
+    return _change(db, {}, {pid: name.strip()})
+
+
+def plan_merge(db, pids, into: int):
+    """Everyone in pids is the person into."""
+    pids = [p for p in pids if p != into]
+    marks = ",".join("?" * len(pids))
+    faces = {r[0]: [into, r[1] or 0, 0] for r in db.execute(
+        f"SELECT id, locked FROM faces WHERE person_id IN ({marks})", pids)} if pids else {}
+    return _change(db, faces, {p: None for p in pids}, recognize=True)
+
+
+def plan_forget(db, pid: int):
+    """No such person: their faces are unnamed again (and may be recognized as someone else)."""
+    faces = {r[0]: [None, 0, 0] for r in db.execute("SELECT id FROM faces WHERE person_id=?", (pid,))}
+    return _change(db, faces, {pid: None})
+
+
+def inverse(step_before: str) -> dict:
+    c = json.loads(step_before)
+    return {"old": c["new"], "new": c["old"]}
+
+
+# --- for the app -----------------------------------------------------------------------------------
+
+def face_rows(db, where: str, params=()) -> list[dict]:
+    """Faces to show, with what face_thumb needs."""
+    return [dict(r) for r in db.execute(
+        "SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.person_id, pe.name, p.path, p.qhash FROM faces f "
+        f"JOIN photos p ON p.id = f.photo_id LEFT JOIN people pe ON pe.id = f.person_id WHERE ({where}) "
+        "AND p.error IS NULL AND p.qhash IS NOT NULL", params)]
+
+
+def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
+    """Unnamed faces in groups of look-alikes, biggest first, clearest face first in each: who to ask
+    about. Changes nothing (it takes about a second for 40,000 faces)."""
+    groups = [g for _, g in cluster_unnamed(db, save=False) if len(g) >= min_faces]
+    keep = ("id", "photo_id", "x", "y", "w", "h", "score", "path", "qhash")
+    return [[{k: r[k] for k in keep} for r in sorted(g, key=lambda r: -r["score"] * r["w"])] for g in groups]
+
+
+def person_faces(db, pid: int) -> list[dict]:
+    """Someone's faces, least like the rest of theirs first: where wrong matches are."""
+    rows = face_rows(db, "f.person_id = ?", (pid,))
+    if len(rows) < 2:
+        return rows
+    embs = {r["id"]: r for r in rows}
+    found, vecs = load_faces(db, "f.person_id = ?", (pid,))
+    sims = vecs @ normalize(vecs.mean(axis=0))
+    order = [found[i]["id"] for i in np.argsort(sims)]
+    return [embs[i] for i in order if i in embs]

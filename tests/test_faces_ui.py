@@ -1,0 +1,185 @@
+"""M6 in the app: the "who is this?" page, someone's faces, renaming people, and face boxes in the
+viewer. Every change goes through the journal, so Undo takes it back."""
+
+import os
+
+import numpy as np
+import pytest
+from conftest import photo
+from test_faces import look
+
+from photofind.core.db import to_blob
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6 import QtWidgets  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def app():
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+def wait_until(app, cond, timeout=20.0):
+    import time
+
+    end = time.time() + timeout
+    while not cond() and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    assert cond()
+
+
+@pytest.fixture
+def library(pf, lib):
+    """Eight photos, one face each: five of one person, three of another."""
+    for i in range(8):
+        photo(lib / f"{i}.jpg")
+    pf.add_folder(lib)
+    pf.index_folder(lib, want_faces=False)
+    db = pf.open_db()
+    rng = np.random.default_rng(3)
+    ids = [r[0] for r in db.execute("SELECT id FROM photos ORDER BY path")]
+    for i, pid in enumerate(ids):
+        db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .3, .3, .4, .4, .99, ?)",
+                   (pid, to_blob(look(1 if i < 5 else 2, rng))))
+    db.commit()
+    db.close()
+    return ids
+
+
+@pytest.fixture
+def window(pf, app, library):
+    from photofind.ui.main_window import MainWindow
+
+    w = MainWindow(index=False)
+    w.resize(1000, 700)
+    w.show()
+    wait_until(app, lambda: w.loaded)
+    yield w
+    w.close()
+
+
+def names(pf):
+    db = pf.open_db()
+    try:
+        return [r[0] for r in db.execute(
+            "SELECT pe.name FROM faces f LEFT JOIN people pe ON pe.id = f.person_id ORDER BY f.photo_id")]
+    finally:
+        db.close()
+
+
+def settle(app, window):
+    wait_until(app, lambda: not window.ops.busy)
+    for _ in range(20):
+        app.processEvents()
+
+
+def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
+    from photofind.ui.views.sidebar import WHO
+
+    wait_until(app, lambda: window.sidebar.select(WHO))  # it's in the sidebar
+    window.show_place(WHO)
+    wait_until(app, lambda: window.stack.currentWidget() is window.who and window.who.grid.count() == 5)
+    assert window.who.remaining() == 2
+    assert len(window.who.grid.selected_faces()) == 5  # all ticked to start with
+    window.who.grid.item(4).setSelected(False)  # one isn't them (they're named once it's recognized)
+    window.who.name.setText("Ann")
+    assert window.who.name_button.text() == "Name 4 faces"
+    window.who.name_button.click()
+    assert window.who.grid.count() == 3  # on to the next group at once
+    settle(app, window)
+    assert names(pf) == ["Ann"] * 5 + [None] * 3  # the one left out was recognized, being so alike
+    wait_until(app, lambda: window.who.remaining() == 1)
+    assert "Ann" in window.people_names.values()
+
+    window.who.hide_button.click()  # strangers: don't ask again
+    settle(app, window)
+    wait_until(app, lambda: window.who.remaining() == 0)
+    assert window.who.title.text() == "No one to ask about"
+
+    window.ops.undo()
+    settle(app, window)
+    wait_until(app, lambda: window.who.remaining() == 1)
+    window.ops.undo()
+    settle(app, window)
+    assert names(pf) == [None] * 8
+    wait_until(app, lambda: window.who.remaining() == 2)
+
+
+def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
+    from photofind.core import people
+    from photofind.ui.views.sidebar import faces_place, person_place
+
+    db = pf.open_db()
+    ann = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY photo_id")]
+    db.close()
+    window.naming.name(ann[:6], "Ann")  # one of them is really someone else
+    settle(app, window)
+    db = pf.open_db()
+    pid = people.person_id(db, "Ann")
+    db.close()
+    window.show_place(person_place(pid))
+    wait_until(app, lambda: len(window.timeline.items) == 6)
+    assert window.faces_action.isVisible()
+    window.faces_action.trigger()
+    wait_until(app, lambda: window.place == faces_place(pid) and window.person_faces.grid.count() == 6)
+    assert window.stack.currentWidget() is window.person_faces
+    first = window.person_faces.grid.faces[0]
+    assert first["id"] == ann[5]  # the odd one out comes first
+    window.person_faces.grid.item(0).setSelected(True)
+    window.person_faces.not_button.click()
+    settle(app, window)
+    wait_until(app, lambda: window.person_faces.grid.count() == 5)
+    assert names(pf)[5] is None
+    window.person_faces.back.emit()
+    wait_until(app, lambda: len(window.timeline.items) == 5)
+
+
+def test_rename_and_forget_from_the_people_page(window, pf, app, monkeypatch):
+    from photofind.ui import people_actions
+    from photofind.ui.views.sidebar import PEOPLE
+
+    db = pf.open_db()
+    faces = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY photo_id")]
+    db.close()
+    window.naming.name(faces[:5], "Ann")
+    settle(app, window)
+    window.show_place(PEOPLE)
+    wait_until(app, lambda: window.people.count() == 1)
+    pid = window.people.item(0).data(256)
+    monkeypatch.setattr(people_actions, "ask_name", lambda *a, **k: "Anna")
+    window.naming.rename(pid)
+    settle(app, window)
+    wait_until(app, lambda: window.people.count() == 1 and window.people.item(0).text().startswith("Anna"))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))
+    window.naming.forget(pid)
+    settle(app, window)
+    assert names(pf) == [None] * 8
+    wait_until(app, lambda: window.people.count() == 0)
+    window.ops.undo()
+    settle(app, window)
+    assert names(pf)[:5] == ["Anna"] * 5
+
+
+def test_face_boxes_in_the_viewer(window, pf, app):
+    from PySide6.QtCore import QPointF
+
+    window.open_viewer(0)
+    v = window.viewer
+    wait_until(app, lambda: v._image() is not None)
+    v.show_faces = False
+    v.toggle_faces()
+    wait_until(app, lambda: v._current_faces())
+    rect = v._target_rect(v._image())
+    face = v._face_at(QPointF(rect.center()))  # the face is in the middle of the photo
+    assert face is not None and face["name"] is None
+    assert v._face_at(QPointF(rect.x() + 2, rect.y() + 2)) is None
+    v.grab()  # the boxes draw
+    window.naming.name([face["id"]], "Bo")
+    settle(app, window)
+    wait_until(app, lambda: v._current_faces() and v._current_faces()[0]["name"] == "Bo")
+    assert window.stack.currentWidget() is v  # still looking at it
+    v.toggle_faces()
+    assert not v._current_faces()
+    assert window.settings.value("viewer/faces") == "false"

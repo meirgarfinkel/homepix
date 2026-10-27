@@ -1,5 +1,6 @@
-"""The main window: the library sidebar, the photo grid (the timeline, a folder, or search results),
-the viewer opening over it, the info panel at the side, and indexing in the status bar."""
+"""The main window: the library sidebar, the photo grid (the timeline, a folder, someone's photos, or
+search results), the people pages, the viewer opening over them, the info panel at the side, and
+indexing in the status bar."""
 
 import os
 import time
@@ -35,34 +36,77 @@ from ..core import (
     remove_folder,
 )
 from ..core import fileops as files
+from ..core import people as known_people
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
 from . import desktop, workers
 from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
+from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
 from .thumbs import ThumbLoader
 from .views.banner import Banner
+from .views.faces import PersonFaces, WhoView
 from .views.file_dialogs import BatchRenameDialog, ExportDialog, RenameDialog
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
-from .views.sidebar import ALL, PEOPLE, Sidebar, person_of, person_place
+from .views.sidebar import ALL, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
 from .views.timeline import MAX_TILE, MIN_TILE, TimelineView
 from .views.viewer import Viewer
 from .views.welcome import Welcome
 
 
 def _folder(place):
-    return None if place in (ALL, PEOPLE) or person_of(place) is not None else place
+    return place if os.path.isabs(place) else None
+
+
+def shows_photos(place) -> bool:
+    """Is it a place shown as a grid of photos (rather than a page of people or faces)?"""
+    return place == ALL or person_of(place) is not None or _folder(place) is not None
 
 
 def load_library(place):
-    """What the grid and the sidebar show: (months, {folder: count}, total photos, named people)."""
+    """What the grid and the sidebar show: (months, {folder: count}, total photos, named people,
+    whether there are unnamed faces to ask about)."""
     db = open_db()
     try:
-        items = [] if place == PEOPLE else load_items(db, folder=_folder(place), person=person_of(place))
+        items = load_items(db, folder=_folder(place), person=person_of(place)) if shows_photos(place) else []
         counts = folder_counts(db)
-        return group_by_month(items), counts, sum(counts.values()), named_people(db)
+        unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
+        return group_by_month(items), counts, sum(counts.values()), named_people(db), bool(unnamed)
+    finally:
+        db.close()
+
+
+def load_who():
+    """The "who is this?" groups, and everyone's names."""
+    db = open_db()
+    try:
+        return known_people.who_groups(db), [r[0] for r in db.execute("SELECT name FROM people")]
+    finally:
+        db.close()
+
+
+def load_person_faces(pid):
+    db = open_db()
+    try:
+        return known_people.person_faces(db, pid)
+    finally:
+        db.close()
+
+
+def load_photo_faces(photo_id):
+    db = open_db()
+    try:
+        return known_people.face_rows(db, "f.photo_id = ? AND f.hidden = 0", (photo_id,))
+    finally:
+        db.close()
+
+
+def load_item(photo_id):
+    db = open_db()
+    try:
+        return load_items(db, "id = ?", (photo_id,))
     finally:
         db.close()
 
@@ -131,8 +175,15 @@ class MainWindow(QMainWindow):
         self.welcome = Welcome()
         self.people = PeopleView()
         self.people_names = {}  # person id -> name
+        self.who = WhoView()
+        self.who_count = ""  # groups to ask about, once worked out
+        self.unnamed = False  # there are faces to ask about
+        self.person_faces = PersonFaces()
+        self._faces_jobs = workers.Latest()  # the who groups, someone's faces, or a photo's
+        self._viewer_faces = workers.Latest()
+        self._viewer_from = None  # the page the viewer opened over
         self.stack = QStackedWidget()
-        for w in (self.welcome, self.timeline, self.people, self.viewer):
+        for w in (self.welcome, self.timeline, self.people, self.who, self.person_faces, self.viewer):
             self.stack.addWidget(w)
         self.stack.setCurrentWidget(self.timeline)
         self.banner = Banner()
@@ -149,6 +200,7 @@ class MainWindow(QMainWindow):
         self.info = InfoPanel()
         self.info_dock = self._dock("Info", "info", self.info, Qt.DockWidgetArea.RightDockWidgetArea)
 
+        self.naming = PeopleActions(self)
         self._build_toolbar()
         self._build_file_actions()
         self._build_menus()
@@ -163,6 +215,18 @@ class MainWindow(QMainWindow):
         self.viewer.current_changed.connect(lambda i: self.info.show_photo(self.viewer.items[i].id))
         self.sidebar.chosen.connect(self.show_place)
         self.people.chosen.connect(lambda pid: self.show_place(person_place(pid)))
+        self.people.menu_requested.connect(self._person_menu)
+        self.who.named.connect(lambda ids, name: self._answer_who(ids, lambda: self.naming.name(ids, name)))
+        self.who.hidden.connect(lambda ids: self._answer_who(ids, lambda: self.naming.hide(ids)))
+        self.who.opened.connect(self._open_face_photo)
+        self.person_faces.opened.connect(self._open_face_photo)
+        self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
+        self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is it?"))
+        self.person_faces.hidden.connect(self.naming.hide)
+        self.person_faces.back.connect(lambda: self.show_place(person_place(self.person_faces.person["id"])))
+        self.viewer.current_changed.connect(lambda i: self._load_viewer_faces())
+        self.viewer.faces_toggled.connect(self._faces_toggled)
+        self.viewer.face_clicked.connect(self._face_menu)
         self.welcome.folder_chosen.connect(self.add_library_folder)
         self.banner.forget_missing.connect(self._forget_missing)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
@@ -183,6 +247,7 @@ class MainWindow(QMainWindow):
         if state is not None:
             self.restoreState(state)
         self.timeline.set_tile_size(int(self.settings.value("tile", self.timeline.tile)))
+        self.viewer.show_faces = self.settings.value("viewer/faces", "false") == "true"
         self.zoom.setValue(self.timeline.tile)
         self._recover()
         self.reload()
@@ -191,6 +256,7 @@ class MainWindow(QMainWindow):
         self._editor_changed()
         if index:
             QTimer.singleShot(1500, self.watcher.start)  # look for new photos once the window is up
+        QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -236,6 +302,12 @@ class MainWindow(QMainWindow):
         self.zoom.setToolTip("Thumbnail size (Ctrl + mouse wheel, Ctrl + / Ctrl -)")
         self.zoom.valueChanged.connect(self.timeline.set_tile_size)
         bar.addWidget(self.zoom)
+        self.faces_action = QAction("Their faces", self)
+        self.faces_action.setCheckable(True)
+        self.faces_action.setToolTip("See the faces taken to be them, to take out any that aren't")
+        self.faces_action.triggered.connect(self._toggle_person_faces)
+        self.faces_action.setVisible(False)
+        bar.addAction(self.faces_action)
         info = self.info_action = self.info_dock.toggleViewAction()
         info.setText("Info")
         info.setShortcut(QKeySequence("I"))
@@ -306,6 +378,10 @@ class MainWindow(QMainWindow):
         bar.addMenu(self.photo.menu(self))
         m = bar.addMenu("&View")
         m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
+        m.addSeparator()
+        m.addAction(self._action("Who is this?", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]))
+        m.addAction(self._action("Show faces in the viewer", self.viewer.toggle_faces,
+                                 tip="Boxes around faces, with their names (N in the viewer)"))
 
     # --- working with files ----------------------------------------------------------------------------
 
@@ -329,6 +405,7 @@ class MainWindow(QMainWindow):
         has = bool(self.targets())
         for a in self._targeted:
             a.setEnabled(has)
+        self.rename_action.setEnabled(has or self.stack.currentWidget() is self.people)
         mime = QGuiApplication.clipboard().mimeData()
         self.paste_action.setEnabled(bool(self._open_folder()) and mime is not None and mime.hasUrls())
 
@@ -366,6 +443,11 @@ class MainWindow(QMainWindow):
     def _sync_viewer(self):
         """After files changed under the viewer: keep showing the same photo, or the next one if it's gone."""
         if self.stack.currentWidget() is not self.viewer:
+            return
+        if self._viewer_from is not self.timeline:  # one photo, opened from a face: is it still there?
+            shown = self.viewer.items[self.viewer.index]
+            workers.run(load_item, lambda items, err: (self.viewer.show_items(items, 0) if items
+                                                       else self.close_viewer()) if err is None else None, shown.id)
             return
         if not self.timeline.items:
             return self.close_viewer()
@@ -425,6 +507,9 @@ class MainWindow(QMainWindow):
                      lambda db: files.plan_trash(files.with_companions(db, paths)))
 
     def _rename(self):
+        if self.stack.currentWidget() is self.people:
+            pid = self.people.current_person()
+            return self.naming.rename(pid) if pid is not None else None
         items = self.targets()
         if not items:
             return
@@ -539,6 +624,8 @@ class MainWindow(QMainWindow):
         menu.exec(pos)
 
     def _folder_menu(self, path, pos):
+        if person_of(path) is not None:
+            return self._person_menu(person_of(path), pos)
         menu = QMenu(self)
         mime = QGuiApplication.clipboard().mimeData()
         paste = menu.addAction("Paste here", lambda: self._paste(path))
@@ -549,6 +636,86 @@ class MainWindow(QMainWindow):
         menu.addSeparator()
         menu.addAction("Show in file manager", lambda: desktop.open_file(path))
         menu.exec(pos)
+
+    # --- people ---------------------------------------------------------------------------------------
+
+    def _person_menu(self, pid, pos):
+        name = self.people_names.get(pid, "them")
+        menu = QMenu(self)
+        menu.addAction(f"{name}'s photos", lambda: self.show_place(person_place(pid)))
+        menu.addAction(f"{name}'s faces", lambda: self.show_place(faces_place(pid)))
+        menu.addSeparator()
+        menu.addAction("Rename...", lambda: self.naming.rename(pid))
+        merge = menu.addAction("Same person as...", lambda: self.naming.merge(pid))
+        merge.setEnabled(len(self.people_names) > 1)
+        menu.addSeparator()
+        menu.addAction(f"Forget {name}...", lambda: self.naming.forget(pid))
+        menu.exec(pos)
+
+    def _face_menu(self, face, pos):
+        menu = QMenu(self)
+        ids, name, pid = [face["id"]], face["name"], face["person_id"]
+        if name is None:
+            menu.addAction("Who is this?...", lambda: self.naming.ask_and_name(ids))
+        else:
+            menu.addAction(f"{name}'s photos", lambda: self.show_place(person_place(pid)))
+            menu.addSeparator()
+            menu.addAction(f"Not {name}", lambda: self.naming.not_them(ids, pid))
+            menu.addAction("Someone else...", lambda: self.naming.ask_and_name(ids, "Who is it?", name))
+        menu.addAction("Not a face", lambda: self.naming.hide(ids))
+        menu.exec(pos)
+
+    def _answer_who(self, ids, do):
+        """Named (or ignored) on the who page: on to the next group at once."""
+        if self.ops.busy:
+            self.statusBar().showMessage("Still busy with the last one. A moment...", 4000)
+            return
+        self.who.drop(ids)
+        do()
+
+    def _toggle_person_faces(self, on):
+        pid = person_of(self.place) if person_of(self.place) is not None else faces_of(self.place)
+        if pid is not None:
+            self.show_place(faces_place(pid) if on else person_place(pid))
+
+    def _load_who(self):
+        def done(res, err):
+            if err is not None:
+                self.who.grid.empty_text = f"Couldn't find the faces to ask about:\n{err}"
+                return
+            groups, names = res
+            self.who.set_groups(groups, names)
+            self.who_count = self.who.remaining()
+            self.sidebar.set_count(WHO, f"{self.who_count:,}")
+        self._faces_jobs.run(load_who, done)
+
+    def _load_person_faces(self, pid):
+        def done(res, err):
+            if err is None and faces_of(self.place) == pid:
+                self.person_faces.set_faces({"id": pid, "name": self.people_names.get(pid, "them")}, res)
+        self._faces_jobs.run(load_person_faces, done, pid)
+
+    def _load_viewer_faces(self):
+        v = self.viewer
+        if not v.show_faces or not 0 <= v.index < len(v.items):
+            return
+        photo_id = v.items[v.index].id
+        self._viewer_faces.run(load_photo_faces, lambda res, err: err is None and v.set_faces(photo_id, res), photo_id)
+
+    def _faces_toggled(self, on):
+        self.settings.setValue("viewer/faces", "true" if on else "false")
+        self._load_viewer_faces()
+        if on:
+            self.statusBar().showMessage("Click a face to name it, or to say it's someone else. N hides them.", 8000)
+
+    def _open_face_photo(self, face):
+        def done(items, err):
+            if err is None and items:
+                self._viewer_from = self.stack.currentWidget()
+                self.viewer.show_items(items, 0)
+                self._show(self.viewer)
+                self.viewer.setFocus()
+        workers.run(load_item, done, face["photo_id"])
 
     # --- the library ---------------------------------------------------------------------------------
 
@@ -562,23 +729,36 @@ class MainWindow(QMainWindow):
             self.timeline.empty_text = f"Couldn't open the photo library:\n{err}"
             self.timeline.viewport().update()
             return
-        months, counts, total, people = res
+        months, counts, total, people, self.unnamed = res
         self.loaded = True
         roots = library_folders()
         self.people_names = {p["id"]: p["name"] for p in people}
-        self.sidebar.set_folders(roots, counts, total, people)
-        if self.place != ALL and self.sidebar.current_path() != self.place:  # that folder or person is gone
+        self.sidebar.set_folders(roots, counts, total, people, self.who_count if self.unnamed else None)
+        if not self.sidebar.select(self.place) and self.place != WHO:  # that folder or person is gone
             self.place = ALL
             return self.reload(fresh=True)
         if not roots and not total:
             self._show(self.welcome)
             return
         self.people.set_people(people)
-        if self.place == PEOPLE and not self.query:
-            self._show(self.people)
-            self.count_label.setText(f"  {len(people):,} people")
+        self.faces_action.setVisible(person_of(self.place) is not None or faces_of(self.place) is not None)
+        self.faces_action.setChecked(faces_of(self.place) is not None)
+        if not shows_photos(self.place):
+            page = {PEOPLE: self.people, WHO: self.who}.get(self.place, self.person_faces)
+            if self.place == WHO:
+                self._load_who()
+                self.count_label.setText("")
+            elif self.place == PEOPLE:
+                self.count_label.setText(f"  {len(people):,} people")
+            else:
+                self._load_person_faces(faces_of(self.place))
+                self.count_label.setText("")
+            if self.stack.currentWidget() is self.viewer:
+                self._sync_viewer()  # (the page shows again when the viewer closes)
+            else:
+                self._show(page)
             return
-        if self.stack.currentWidget() in (self.welcome, self.people):
+        if self.stack.currentWidget() in (self.welcome, self.people, self.who, self.person_faces):
             self._show(self.timeline)
         if self.query:
             if self._fresh:
@@ -616,8 +796,10 @@ class MainWindow(QMainWindow):
         self.close_viewer()
         self.place = place
         self.sidebar.select(place)
-        if self.query and place == PEOPLE:  # the people page isn't something to search
+        if self.query and not shows_photos(place):  # the people pages aren't something to search
+            self.query = ""
             self.search_box.clear()
+            self.reload(fresh=True)
         elif self.query:
             self.search()  # the search now looks in here
         else:
@@ -710,7 +892,10 @@ class MainWindow(QMainWindow):
             self.count_label.setText("")
             return
         sections, n, took = res
-        if self.stack.currentWidget() is self.people:
+        if not shows_photos(self.place):
+            self.place = ALL  # searching from a people page: search everything
+            self.sidebar.select(ALL)
+        if self.stack.currentWidget() in (self.people, self.who, self.person_faces):
             self._show(self.timeline)
         where = self._place_name()
         self.timeline.empty_text = f"No photos{where} look like “{self.query}”."
@@ -748,6 +933,7 @@ class MainWindow(QMainWindow):
         self._update_actions()
 
     def open_viewer(self, index: int):
+        self._viewer_from = self.timeline
         self.viewer.show_items(self.timeline.items, index)
         self._show(self.viewer)
         self.viewer.setFocus()
@@ -757,11 +943,12 @@ class MainWindow(QMainWindow):
             return
         if self.isFullScreen():
             self.showNormal()
-        i = self.viewer.index
-        self._show(self.timeline)
-        if i >= 0:
-            self.timeline.set_current(i)  # come back to the photo you were looking at
-        self.timeline.setFocus()
+        i, back = self.viewer.index, self._viewer_from or self.timeline
+        self._show(back)
+        if back is self.timeline:
+            if i >= 0:
+                self.timeline.set_current(i)  # come back to the photo you were looking at
+            self.timeline.setFocus()
 
     def _timeline_current(self, *_):
         t = self.timeline

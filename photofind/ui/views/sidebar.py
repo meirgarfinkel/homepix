@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
 
 ALL = "all"
 PEOPLE = "people"
+WHO = "who"  # unnamed faces to name
 
 
 def person_place(person_id: int) -> str:
@@ -18,6 +19,17 @@ def person_place(person_id: int) -> str:
 def person_of(place: str):
     """The person id in a person_place, or None."""
     return int(place[7:]) if place.startswith("person:") else None
+
+
+def faces_place(person_id: int) -> str:
+    """Someone's faces (rather than their photos)."""
+    return f"faces:{person_id}"
+
+
+def faces_of(place: str):
+    return int(place[6:]) if place.startswith("faces:") else None
+
+
 PATH_ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -49,8 +61,8 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
 
 
 class Sidebar(QTreeWidget):
-    chosen = Signal(str)  # ALL, PEOPLE, a person_place, or a folder's path
-    menu_requested = Signal(str, QPoint)  # right-click on a folder: its path, and where (global)
+    chosen = Signal(str)  # ALL, PEOPLE, WHO, a person_place, or a folder's path
+    menu_requested = Signal(str, QPoint)  # right-click on a folder or person: its place, and where (global)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -66,9 +78,12 @@ class Sidebar(QTreeWidget):
         self._quiet = False
         self.set_folders([], {}, 0)
 
-    def set_folders(self, roots: list[str], counts: dict, total: int, people=()):
-        """Rebuild, keeping what was open and what was chosen. people: as from core.named_people."""
+    def set_folders(self, roots: list[str], counts: dict, total: int, people=(), who=None):
+        """Rebuild, keeping what was open and what was chosen. people: as from core.named_people;
+        who: None if there are no unnamed faces, else how many groups of them to ask about ("" if
+        not known yet)."""
         opened = {it.data(0, PATH_ROLE) for it in self._all_items() if it.isExpanded()}
+        had_people = any(it.data(0, PATH_ROLE) == PEOPLE for it in self._all_items())
         chosen = self.current_path()
         first = not opened and self.topLevelItemCount() == 0
         self._quiet = True
@@ -87,6 +102,14 @@ class Sidebar(QTreeWidget):
                 item.setData(0, PATH_ROLE, person_place(person["id"]))
                 self._style_count(item)
                 group.addChild(item)
+            if not had_people:  # new: open, to show who's there
+                opened.add(PEOPLE)
+        if who is not None:
+            ask = QTreeWidgetItem([" Who is this?", f"{who:,}" if isinstance(who, int) else ""])
+            ask.setData(0, PATH_ROLE, WHO)
+            ask.setToolTip(0, "Name the people in your photos")
+            self._style_count(ask)
+            self.addTopLevelItem(ask)
         heading = QTreeWidgetItem(["Folders", ""])
         heading.setFlags(Qt.ItemFlag.ItemIsEnabled)
         font = QFont(self.font())
@@ -137,21 +160,32 @@ class Sidebar(QTreeWidget):
         items = self.selectedItems()
         return items[0].data(0, PATH_ROLE) if items else None
 
-    def select(self, path: str):
-        """Choose ALL or a folder without saying so (no chosen signal)."""
+    def set_count(self, place: str, text: str):
+        for it in self._all_items():
+            if it.data(0, PATH_ROLE) == place:
+                it.setText(1, text)
+
+    def select(self, place: str) -> bool:
+        """Choose a place without saying so (no chosen signal). False if it isn't here (All photos
+        is chosen instead)."""
+        if faces_of(place) is not None:  # their faces: still them
+            place = person_place(faces_of(place))
         was, self._quiet = self._quiet, True
         for it in self._all_items():
-            if it.data(0, PATH_ROLE) == path:
+            if it.data(0, PATH_ROLE) == place:
                 self.setCurrentItem(it)
+                found = True
                 break
         else:
             self.setCurrentItem(self.topLevelItem(0))
+            found = place == ALL
         self._quiet = was
+        return found
 
     def contextMenuEvent(self, e):
         item = self.itemAt(self.viewport().mapFromGlobal(e.globalPos()))
         path = item.data(0, PATH_ROLE) if item else None
-        if path and os.path.isabs(path):
+        if path and (os.path.isabs(path) or person_of(path) is not None):
             self.menu_requested.emit(path, e.globalPos())
 
     def _picked(self):

@@ -143,7 +143,14 @@ def _m7_dates(db):
     db.execute("UPDATE photos SET details_done = 0")
 
 
-MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates]
+def _m8_faces(db):
+    """hidden: a face not to name (not a face at all, or a stranger): never grouped, asked about or
+    recognized. locked keeps its meaning: someone said who this isn't, so it's never recognized."""
+    db.execute("ALTER TABLE faces ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+
+
+MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates,
+              _m8_faces]
 LATEST = len(MIGRATIONS)
 
 

@@ -49,14 +49,16 @@ class FileOps(QObject):
 
     # --- running --------------------------------------------------------------------------------------
 
-    def _go(self, title: str, work, finished, exclusive: bool = True):
+    def _go(self, title: str, work, finished, exclusive: bool = True, files: bool = True):
         """work(progress, should_stop) on a worker thread, then finished(result, error) here.
-        exclusive: no indexing meanwhile (anything that changes the library)."""
+        exclusive: no indexing meanwhile (anything that changes the library); files: and it changes
+        files, so look through the folders again afterwards."""
         if self.busy:
             self.window.statusBar().showMessage("Still busy with the last one. A moment...", 4000)
             return
         self.busy, self._stop = True, False
         watcher = self.window.watcher
+        was_indexing = watcher.indexer.snapshot()["running"]
         if exclusive:
             watcher.hold()
         dlg = QProgressDialog(title, "Stop", 0, 0, self.window)
@@ -81,7 +83,7 @@ class FileOps(QObject):
             dlg.deleteLater()
             self.busy = False
             if exclusive:
-                watcher.release(rescan=self.window.indexing)
+                watcher.release(rescan=self.window.indexing and (files or was_indexing))
             finished(res, err)
             self.history_changed.emit()
 
@@ -104,7 +106,7 @@ class FileOps(QObject):
             finally:
                 db.close()
 
-        self._go(f"{summary}...", work, lambda res, err: self._report(past, res, err))
+        self._go(f"{summary}...", work, lambda res, err: self._report(past, res, err), files=kind != "people")
 
     def undo(self):
         self._go("Undoing...", lambda p, s: self._history(fileops.can_undo, fileops.undo, p),
