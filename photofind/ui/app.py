@@ -143,10 +143,10 @@ def run_self_test(app) -> int:
 
             if getattr(sys, "frozen", False) and exiftool.bundled() is None:
                 raise RuntimeError("ExifTool is missing from this build")
-            metadata.write(src, {"XMP-xmp:Rating": 4, "XMP-dc:Description": "Photo Finder ✓"})
+            metadata.write(src, {"XMP-dc:Description": "Photo Finder ✓", "XMP-dc:Subject": ["a", "b"]})
             d = metadata.read([src])[str(src)]
-            if (d.rating, d.description) != (4, "Photo Finder ✓"):
-                raise RuntimeError(f"ExifTool didn't write what it should ({d.rating}, {d.description!r})")
+            if (d.description, d.keywords) != ("Photo Finder ✓", ["a", "b"]):
+                raise RuntimeError(f"ExifTool didn't write what it should ({d.description!r}, {d.keywords})")
             exiftool.exiftool().close()
         ok("details can be written into photos (ExifTool).")
         white = Image.new("RGB", (640, 480), "white")

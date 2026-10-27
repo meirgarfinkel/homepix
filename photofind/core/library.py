@@ -224,7 +224,7 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
 
 
 def read_details(db, prefix: str, should_stop=lambda: False) -> int:
-    """Read the rating, keywords and description written in the files under prefix that haven't been
+    """Read the keywords and description written in the files under prefix that haven't been
     read since they last changed (ExifTool reads a few hundred a second). Returns how many."""
     from . import metadata
     from .exiftool import available
@@ -241,10 +241,10 @@ def read_details(db, prefix: str, should_stop=lambda: False) -> int:
         batch = rows[i:i + 200]
         found = metadata.read(batch)
         db.executemany(
-            "UPDATE photos SET rating=?, keywords=?, description=?, details_done=1 WHERE path=?",
-            [(d.rating, json.dumps(d.keywords) if d.keywords else None, d.description or None, p)
+            "UPDATE photos SET keywords=?, description=?, details_done=1 WHERE path=?",
+            [(json.dumps(d.keywords) if d.keywords else None, d.description or None, p)
              for p, d in found.items()]
-            + [(0, None, None, p) for p in batch if p not in found])  # nothing readable: nothing to show
+            + [(None, None, p) for p in batch if p not in found])  # nothing readable: nothing to show
         db.commit()
         done += len(batch)
     return done

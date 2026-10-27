@@ -66,7 +66,7 @@ exercise() {  # $@: how to run ExifTool. Reads and writes everything the app doe
   for f in "$s"/*; do
     "$@" -j -a -G1 -s -struct -n "$f" >/dev/null
     "$@" -m -P -overwrite_original '-XMP-dc:Description=héllo\nworld' -XMP-dc:Subject=a -XMP-dc:Subject=b \
-      -XMP-xmp:Rating#=3 '-ExifIFD:DateTimeOriginal=2020:01:02 03:04:05' -GPS:GPSLatitude#=31.5 \
+      '-ExifIFD:DateTimeOriginal=2020:01:02 03:04:05' -GPS:GPSLatitude#=31.5 \
       -GPS:GPSLatitudeRef=N -IFD0:Orientation#=6 -IPTC:Keywords=k "$f" >/dev/null 2>&1 || true
     "$@" -m -P -overwrite_original -QuickTime:Rotation#=90 "$f" >/dev/null 2>&1 || true
   done
@@ -137,9 +137,9 @@ done
 # Check: with nothing but the bundle, ExifTool reads and writes every kind of file
 run_bundled() { env -i PATH=/usr/bin:/bin LD_LIBRARY_PATH="$OUT/perl/so" "$OUT/perl/bin/perl" "$OUT/run.pl" "$@"; }
 exercise run_bundled
-got="$(run_bundled -s3 -XMP-dc:Description -XMP-xmp:Rating "$WORK/samples/a.jpg" | tr '\n' ' ')"
+got="$(run_bundled -s3 -XMP-dc:Description -XMP-dc:Subject "$WORK/samples/a.jpg" | tr '\n' ' ')"
 case "$got" in
-  "héllo"*"3 "*) ;;
+  "héllo"*"a, b"*) ;;
   *) echo "The bundled ExifTool didn't write what it should (got: $got)"; exit 1 ;;
 esac
 if run_bundled -ver 2>&1 | grep -q "Can't locate"; then echo "The bundled Perl is missing a module"; exit 1; fi

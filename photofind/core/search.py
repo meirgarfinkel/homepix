@@ -57,10 +57,10 @@ class SearchIndex:
             version = self.db.execute("PRAGMA data_version").fetchone()[0]
             if version != self.version and not (self.settling() and time.time() - self.built < 10):
                 rows = self.db.execute(
-                    "SELECT id, path, taken, qhash, kind, rating, clip FROM photos WHERE clip IS NOT NULL AND error IS NULL"
+                    "SELECT id, path, taken, qhash, kind, clip FROM photos WHERE clip IS NOT NULL AND error IS NULL"
                 ).fetchall()
                 self.rows = [{"id": r["id"], "path": r["path"], "taken": r["taken"], "qhash": r["qhash"],
-                              "kind": r["kind"] or "photo", "rating": r["rating"] or 0} for r in rows]
+                              "kind": r["kind"] or "photo"} for r in rows]
                 self.ids = np.array([r["id"] for r in rows], np.int64)
                 if rows:
                     blob = b"".join(r["clip"] for r in rows)
@@ -83,14 +83,11 @@ class SearchIndex:
         self.vectors()
         self.text_model()
 
-    def search(self, q: str, person_id=None, folder=None, db=None, min_rating=0) -> dict:
+    def search(self, q: str, person_id=None, folder=None, db=None) -> dict:
         """{"total": photos searched, "matches": [row + "score"], "related": [...]}, best first.
-        person_id: only photos with that person in them. folder: only photos in it or below it.
-        min_rating: only photos with at least that many stars."""
+        person_id: only photos with that person in them. folder: only photos in it or below it."""
         rows, ids, mat = self.vectors()
         sel = np.arange(len(rows))
-        if min_rating:
-            sel = np.array([i for i in sel if rows[i]["rating"] >= min_rating], np.int64)
         if person_id is not None or folder is not None:
             own = db is None
             db = db or open_db()
@@ -103,7 +100,7 @@ class SearchIndex:
                 if folder is not None:
                     prefix = str(folder).rstrip(os.sep) + os.sep
                     keep &= np.array([r["path"].startswith(prefix) for r in rows], bool)
-                sel = np.intersect1d(sel, np.flatnonzero(keep))
+                sel = np.flatnonzero(keep)
             finally:
                 if own:
                     db.close()
