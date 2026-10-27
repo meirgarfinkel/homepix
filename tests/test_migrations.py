@@ -146,13 +146,15 @@ def test_real_database_upgrades_without_loss(pf):
 
 def test_ratings_from_0_5_are_cleared(pf, monkeypatch):
     """0.5.0 had star ratings (database version 5); they were dropped in the next one."""
-    monkeypatch.setattr(dbmod, "MIGRATIONS", dbmod.MIGRATIONS[:5])
+    every, latest = dbmod.MIGRATIONS, dbmod.LATEST
+    monkeypatch.setattr(dbmod, "MIGRATIONS", every[:5])
     monkeypatch.setattr(dbmod, "LATEST", 5)
     db = pf.open_db()
     db.execute("INSERT INTO photos (path, rating) VALUES ('/p/a.jpg', 5)")
     db.commit()
     db.close()
-    monkeypatch.undo()
+    monkeypatch.setattr(dbmod, "MIGRATIONS", every)
+    monkeypatch.setattr(dbmod, "LATEST", latest)
     monkeypatch.setattr(dbmod, "_ready_dbs", set())
     db = pf.open_db()
     assert db.execute("PRAGMA user_version").fetchone()[0] == dbmod.LATEST
