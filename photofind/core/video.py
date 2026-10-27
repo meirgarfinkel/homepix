@@ -75,9 +75,10 @@ def _apple_date(f, meta_start, meta_end):
 
 
 def video_meta(path) -> dict:
-    """{"taken": datetime (local, naive) or None, "duration": seconds or None}. Never raises on a bad
-    file; it just knows less."""
-    out = {"taken": None, "duration": None}
+    """{"clock": the date the video holds, as stored (usually UTC), "taken": the local time where it
+    was recorded, "duration": seconds}, each None if unknown. Never raises on a bad file; it just
+    knows less."""
+    out = {"clock": None, "taken": None, "duration": None}
     try:
         with open(path, "rb") as f:
             f.seek(0, 2)
@@ -97,6 +98,7 @@ def video_meta(path) -> dict:
                     out["duration"] = length / scale
                 if created > 86400 * 365 * 86:  # after 1990: 0 or tiny means "not set"
                     utc = _EPOCH_1904 + dt.timedelta(seconds=created)
+                    out["clock"] = utc.replace(tzinfo=None)
                     out["taken"] = utc.astimezone().replace(tzinfo=None)
             meta = _find(f, *moov, b"meta")
             if meta:

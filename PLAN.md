@@ -146,6 +146,11 @@ Live Photo clips' dates too. DNG photos are indexed and shown from their built-i
 trips are tested on JPEG, PNG, HEIC, DNG, TIFF and GIF, including killing the app mid-write. Star ratings were
 built too, then dropped in 0.5.1 as not needed.
 
+*0.5.2:* the date everything is sorted and shown by is the library's rename rule (`core/dates.py`,
+the earliest real date among the name, EXIF and the video's clock), so 31,769 of 31,828 date-named
+files show the date in their name (the rest are seconds off), against about 21,000 before. Changing
+a date renames a file named by it. Live Photo clips pair on the local time the files recorded.
+
 ### M6 — Faces
 - Face boxes in the viewer.
 - Name, rename, merge and split people; fix wrong matches; the "who is this" flow.

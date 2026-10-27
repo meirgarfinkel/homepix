@@ -135,7 +135,15 @@ def _m6_no_rating(db):
     db.execute("UPDATE photos SET rating = 0 WHERE rating != 0")
 
 
-MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating]
+def _m7_dates(db):
+    """Dates are worked out by the library's rename rule now (core/dates.py): every file's details are
+    read again, dates with them. moment: the local time it happened, where its date is another (a
+    video's UTC clock, or a phone's UTC name), to match a Live Photo's clip with its photo."""
+    db.execute("ALTER TABLE photos ADD COLUMN moment TEXT")
+    db.execute("UPDATE photos SET details_done = 0")
+
+
+MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates]
 LATEST = len(MIGRATIONS)
 
 

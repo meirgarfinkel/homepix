@@ -60,19 +60,19 @@ def test_a_broken_or_empty_video_tells_nothing(tmp_path):
 
     (tmp_path / "junk.mp4").write_bytes(b"\0\0\0\x10ftypisom" + os.urandom(200))
     (tmp_path / "unset.mp4").write_bytes(tiny_mp4(0))  # some cameras leave the date at 0
-    assert video_meta(tmp_path / "junk.mp4") == {"taken": None, "duration": None}
+    assert video_meta(tmp_path / "junk.mp4") == {"clock": None, "taken": None, "duration": None}
     assert video_meta(tmp_path / "unset.mp4")["taken"] is None
 
 
 def test_dates_in_file_names():
-    from photofind.core.media import filename_date
+    from photofind.core.dates import in_name, is_placeholder
 
-    assert filename_date("2023_05_28_23_07_00_82.jpg") == dt.datetime(2023, 5, 28, 23, 7)
-    assert filename_date("VID_20230528_230700.mp4") == dt.datetime(2023, 5, 28, 23, 7)
-    assert filename_date("Screenshot 2026-01-18 at 14-54-55.png") == dt.datetime(2026, 1, 18, 14, 54, 55)
-    assert filename_date("IMG_2023-05-28.jpg") == dt.datetime(2023, 5, 28)
-    assert filename_date("2023_01_01_00_00_00.jpg") is None  # a placeholder, not a date
-    assert filename_date("IMG_4411.MOV") is None
+    assert in_name("2023_05_28_23_07_00_82.jpg") == dt.datetime(2023, 5, 28, 23, 7)
+    assert in_name("VID_20230528_230700.mp4") == dt.datetime(2023, 5, 28, 23, 7)
+    assert in_name("Screenshot 2026-01-18 at 14-54-55.png") == dt.datetime(2026, 1, 18, 14, 54, 55)
+    assert in_name("IMG_2023-05-28.jpg") == dt.datetime(2023, 5, 28)
+    assert is_placeholder(in_name("2023_01_01_00_00_00.jpg"))  # a placeholder: only the year's likely right
+    assert in_name("IMG_4411.MOV") is None
 
 
 def make_video(path, seconds: float, fps=10):
@@ -115,13 +115,27 @@ def test_videos_are_indexed_without_ai_and_get_a_thumbnail(pf, lib, monkeypatch)
     assert pf.SearchIndex().vectors()[0] == []  # no search for videos
 
 
+def recorded(path, local: str):
+    """Give a video the clock a camera would: when it was recorded, in UTC."""
+    import subprocess
+
+    from photofind.core.exiftool import available
+
+    if not available():
+        pytest.skip("needs ExifTool")
+    utc = dt.datetime.fromisoformat(local).astimezone(dt.UTC)
+    subprocess.run(["exiftool", "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
+                    str(path)], check=True)
+    return path
+
+
 def test_a_short_clip_taken_with_a_photo_is_its_motion(pf, lib):
     from photofind.core.timeline import folder_counts, load_items
 
     photo_taken(lib / "live.jpg", "2024:05:01 12:00:01")
-    make_video(lib / "2024_05_01_12_00_00.mp4", 2.5)  # the Live Photo's moving part
-    make_video(lib / "2024_05_01_12_00_02.mp4", 8)  # a real video, though taken just then
-    make_video(lib / "2024_06_01_09_00_00.mp4", 2)  # short, but no photo with it
+    recorded(make_video(lib / "2024_05_01_12_00_00.mp4", 2.5), "2024-05-01 12:00:00")  # the Live Photo's motion
+    recorded(make_video(lib / "2024_05_01_12_00_02.mp4", 8), "2024-05-01 12:00:02")  # a real video, taken then
+    recorded(make_video(lib / "2024_06_01_09_00_00.mp4", 2), "2024-06-01 09:00:00")  # short, but no photo with it
     pf.index_folder(lib, want_faces=False)
     kinds = {name: r["kind"] for name, r in rows(pf, lib).items()}
     assert kinds == {"live.jpg": "photo", "2024_05_01_12_00_00.mp4": "motion",

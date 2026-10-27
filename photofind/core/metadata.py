@@ -23,7 +23,7 @@ DESCRIPTION = ("XMP-dc:Description", "IPTC:Caption-Abstract", "IFD0:ImageDescrip
 KEYWORDS = ("XMP-dc:Subject", "IPTC:Keywords")
 PHOTO_DATES = ("ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate", "XMP-exif:DateTimeOriginal",
                "XMP-xmp:CreateDate", "XMP-photoshop:DateCreated")
-VIDEO_DATES = ("QuickTime:CreateDate", "Keys:CreationDate")  # UTC; local with its offset
+VIDEO_DATES = ("QuickTime:CreateDate", "Keys:CreationDate")  # its clock (the date, see dates.py); local
 GPS = ("GPS:GPSLatitude", "GPS:GPSLatitudeRef", "GPS:GPSLongitude", "GPS:GPSLongitudeRef")
 ORIENTATION = ("IFD0:Orientation", "QuickTime:Rotation")
 NUMERIC = {"GPS:GPSLatitude", "GPS:GPSLongitude", "IFD0:Orientation", "QuickTime:Rotation"}
@@ -81,7 +81,7 @@ def move_box(box, old: int, new: int):
 class Details:
     description: str = ""
     keywords: list = field(default_factory=list)
-    taken: dt.datetime | None = None  # as shown: local time
+    taken: dt.datetime | None = None  # the date written in it (for a video, its clock, as stored)
     gps: tuple | None = None  # (latitude, longitude)
     orientation: int = 1
     kind: str = ""  # ExifTool's file type: JPEG, PNG, HEIC, DNG, MOV, ...
@@ -121,10 +121,7 @@ def details(path, tags: dict) -> Details:
             d.keywords = _listed(tags[t])
             break
     if is_video(path):
-        if local := parse_date(tags.get("Keys:CreationDate")):
-            d.taken = local
-        elif utc := parse_date(tags.get("QuickTime:CreateDate")):
-            d.taken = utc.replace(tzinfo=dt.UTC).astimezone().replace(tzinfo=None)
+        d.taken = parse_date(tags.get("QuickTime:CreateDate"))
     else:
         d.taken = next((x for x in (parse_date(tags.get(t)) for t in PHOTO_DATES) if x), None)
     try:
@@ -180,14 +177,12 @@ def _fmt(d: dt.datetime) -> str:
     return d.strftime("%Y:%m:%d %H:%M:%S")
 
 
-def _moved_date(value, edit: Edit, utc: bool = False):
+def _moved_date(value, edit: Edit):
     """A date tag's new value: the date set (or the old one shifted), keeping any offset it had."""
     text = str(value or "")
     old = parse_date(text)
     if edit.date is not None:
         new = edit.date
-        if utc:
-            new = new.astimezone(dt.UTC).replace(tzinfo=None)
     elif old is not None:
         new = old + edit.shift
     else:
@@ -202,8 +197,10 @@ class CantChange(ValueError):
     """This file can't take this change (a reason to show)."""
 
 
-def changes(path, d: Details, edit: Edit) -> dict:
-    """{tag: new value} to make edit to the file with details d (None: remove the tag)."""
+def changes(path, d: Details, edit: Edit, shown: dt.datetime | None = None) -> dict:
+    """{tag: new value} to make edit to the file with details d (None: remove the tag). shown: the
+    date the app shows for it, when that's a real one (it may come from the name): what moving the
+    date moves when the file holds none itself."""
     has, out = d.tags, {}
 
     def also(names, value):  # the first is always written; the others only where the file has them
@@ -228,20 +225,22 @@ def changes(path, d: Details, edit: Edit) -> dict:
         also(KEYWORDS, words or None)
     if edit.touches_date():
         if video:
-            for t, utc in (("QuickTime:CreateDate", True), ("Keys:CreationDate", False)):
+            # The clock gets the date as it's shown (dates.py), so setting one shows that one.
+            for t in VIDEO_DATES:
                 if t in has or t == "QuickTime:CreateDate":
-                    value = has.get(t)
+                    value = has.get(t) or (_fmt(shown) if t == "QuickTime:CreateDate" and shown else None)
                     if t == "QuickTime:CreateDate" and edit.date is None and not parse_date(value):
                         continue
-                    new = _moved_date(value, edit, utc=utc)
+                    new = _moved_date(value, edit)
                     if new:
                         out[t] = new
         else:
-            if edit.date is None and d.taken is None:
+            base = d.taken or shown
+            if edit.date is None and base is None:
                 raise CantChange("it has no date to move")
             for t in PHOTO_DATES:
                 if t == PHOTO_DATES[0] or t in has:
-                    new = _moved_date(has.get(t) if t in has else (_fmt(d.taken) if d.taken else ""), edit)
+                    new = _moved_date(has.get(t) if t in has else (_fmt(base) if base else ""), edit)
                     if new:
                         out[t] = new
     if edit.gps is not None and not video and tuple(edit.gps or ()) != tuple(d.gps or ()):
