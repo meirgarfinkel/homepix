@@ -1,12 +1,16 @@
 # Builds the Linux AppImage and the Windows installer on GitHub's machines,
 # so you don't need a Windows computer. Run it from the repository's Actions tab
-# ("Build Photo Finder" > Run workflow), or push a tag like v0.1.
+# ("Build Photo Finder" > Run workflow), or push a tag like v0.1.0 to also publish
+# a GitHub Release with both files attached.
 name: Build Photo Finder
 
 on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+
+permissions:
+  contents: read
 
 jobs:
   linux:
@@ -39,3 +43,20 @@ jobs:
         with:
           name: PhotoFinder-Windows
           path: PhotoFinderSetup.exe
+
+  release:
+    # Only for version tags: publish both builds as a GitHub Release.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - run: >
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
+          dist/PhotoFinder-Linux/PhotoFinder-x86_64.AppImage dist/PhotoFinder-Windows/PhotoFinderSetup.exe
+        env:
+          GH_TOKEN: ${{ github.token }}

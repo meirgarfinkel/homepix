@@ -1,0 +1,20 @@
+# Checks that run automatically before every `git push` (and in CI).
+# One-time setup per clone:  pipx install pre-commit && pre-commit install
+# Run by hand:               pre-commit run --all-files --hook-stage pre-push
+default_install_hook_types: [pre-push]
+default_stages: [pre-push]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.10
+    hooks:
+      - id: ruff-check
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files  # keeps AppImages, models and photos out of git
+        args: ["--maxkb=1024"]
