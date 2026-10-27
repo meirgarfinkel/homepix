@@ -23,9 +23,11 @@ What's in it:
 - **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
 - **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
 - **Info** (I): when it was taken and where that date came from, camera, size, place, people, folder.
-- **Settings** (Ctrl+,): which folders make up the library. Photo Finder only reads them.
+- **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
+- **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, Photo Finder finishes the job next time it opens, with no photo lost or doubled.
+- **Settings** (Ctrl+,): which folders make up the library, and the app to edit photos in.
 
-Naming people and fixing faces, file operations (copy, move, rename, delete) and editing dates come in later versions (see [PLAN.md](PLAN.md)).
+Naming people and fixing faces, and editing dates and other details, come in later versions (see [PLAN.md](PLAN.md)).
 
 The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
 
@@ -130,4 +132,5 @@ Constants in `photofind/core/config.py`:
 - Search is great for objects, scenes, colors and activities. It's weak at counting ("three dogs"), reading text in photos, and left/right relationships.
 - Photos are center-cropped to a square for search, so things at the far edges of wide panoramas can be missed.
 - RAW camera files aren't supported yet. HEIC needs `pip install pillow-heif`.
+- On Windows, Move to Trash doesn't work yet (the Recycle Bin comes later); everything else does.
 - Very small faces in big group photos are often missed or not recognized.

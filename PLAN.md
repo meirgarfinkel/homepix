@@ -111,6 +111,18 @@ Delivered in three steps; the current app keeps working until the last:
 - The index matches the disk after every operation.
 - Copy and paste works in Files, Dolphin, Nemo and Thunar.
 
+*Status: done, except trying the clipboard by hand in each file manager.* Every change is journaled
+before a file moves; moves go in two phases (every file to a hidden name beside itself, then to its
+destination), so chains and swaps are safe in any order; nothing is ever overwritten (renameat2
+with RENAME_NOREPLACE, falling back to a hard link). Killing the app at every point of an operation
+(31 tests) loses nothing, doubles nothing, and leaves the index matching the disk once it reopens.
+Commits are batched where recovery can tell from the disk what happened: 5,000 photos move, rename
+or undo in about 0.4 s, and go to the Trash in 1 s. The Trash is the desktop's own (freedesktop.org),
+so trashed photos show up in the file manager's Trash; undoing puts them back with their faces and
+names. Undo history is kept in the database, so it survives closing the app. A Live Photo's clip
+moves, renames and goes to the Trash with its photo. Moving and copying stay within the library
+folders; Export makes copies for anywhere else. The Recycle Bin on Windows is left for later.
+
 ### M5 — Metadata
 - exiftool bundled with its own Perl.
 - View all metadata.

@@ -91,6 +91,8 @@ class ThumbLoader(QObject):
                 pass
             with self._lock:
                 self._busy.discard(qhash)
+                if self._stop:
+                    return  # the window is closing: nobody to tell
                 if size != self._size:
                     continue  # the tile size changed meanwhile
                 if img is None:
@@ -101,7 +103,10 @@ class ThumbLoader(QObject):
                     while self._bytes > self._budget and len(self._cache) > 1:
                         _, old = self._cache.popitem(last=False)
                         self._bytes -= old.sizeInBytes()
-            self.ready.emit(qhash)
+            try:
+                self.ready.emit(qhash)
+            except RuntimeError:  # the app quit between the check above and now
+                return
 
     @staticmethod
     def _decode(qhash: str, path: str, size: int):

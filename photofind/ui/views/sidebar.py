@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
 
@@ -50,6 +50,7 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
 
 class Sidebar(QTreeWidget):
     chosen = Signal(str)  # ALL, PEOPLE, a person_place, or a folder's path
+    menu_requested = Signal(str, QPoint)  # right-click on a folder: its path, and where (global)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -146,6 +147,12 @@ class Sidebar(QTreeWidget):
         else:
             self.setCurrentItem(self.topLevelItem(0))
         self._quiet = was
+
+    def contextMenuEvent(self, e):
+        item = self.itemAt(self.viewport().mapFromGlobal(e.globalPos()))
+        path = item.data(0, PATH_ROLE) if item else None
+        if path and os.path.isabs(path):
+            self.menu_requested.emit(path, e.globalPos())
 
     def _picked(self):
         path = self.current_path()

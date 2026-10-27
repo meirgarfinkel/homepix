@@ -1,4 +1,4 @@
-"""Settings: the folders that make up the library."""
+"""Settings: the folders that make up the library, and the app to edit photos in."""
 
 from pathlib import Path
 
@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -16,7 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ...core import library_folders, pictures_folder
+from ...core import library_folders, load_settings, pictures_folder, save_settings
 
 
 class SettingsDialog(QDialog):
@@ -31,7 +32,7 @@ class SettingsDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("<b>Library folders</b>"))
         note = QLabel("Photo Finder shows and searches the photos in these folders and the folders inside "
-                      "them. It only reads them: nothing is changed on its own.")
+                      "them. It changes files only when you ask (and Edit > Undo takes a change back).")
         note.setWordWrap(True)
         lay.addWidget(note)
         self.list = QListWidget()
@@ -49,10 +50,30 @@ class SettingsDialog(QDialog):
         row.addStretch()
         row.addWidget(rescan)
         lay.addLayout(row)
+        lay.addSpacing(10)
+        lay.addWidget(QLabel("<b>Editing photos</b>"))
+        self.editor = QLineEdit(load_settings().get("editor", ""))
+        self.editor.setPlaceholderText("The usual app for each kind of file")
+        self.editor.setToolTip("The app that Open in... uses, e.g. gimp or darktable (the photo is added at "
+                               "the end, or where %f is). Leave it empty for the usual app.")
+        self.editor.editingFinished.connect(self._save_editor)
+        form = QHBoxLayout()
+        form.addWidget(QLabel("Open photos in:"))
+        form.addWidget(self.editor, 1)
+        lay.addLayout(form)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
         self.refresh()
+
+    def _save_editor(self):
+        s = load_settings()
+        s["editor"] = self.editor.text().strip()
+        save_settings(s)
+
+    def done(self, r):
+        self._save_editor()
+        super().done(r)
 
     def refresh(self):
         self.list.clear()

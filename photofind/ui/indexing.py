@@ -25,6 +25,8 @@ class IndexWatcher(QObject):
         super().__init__(parent)
         self.indexer = Indexer()
         self._closed = False
+        self._held = 0  # file operations under way: no indexing until they're done
+        self._wanted = None  # a start asked for while held: forget_missing
         self._changes = 0
         self._was_running = False
         self._refreshed = time.time()
@@ -38,12 +40,29 @@ class IndexWatcher(QObject):
             self._rescan.start(RESCAN_EVERY * 1000)
 
     def start(self, forget_missing=False):
+        if self._held:
+            self._wanted = bool(self._wanted) or forget_missing
+            return
         if library_folders() and not self._closed:
             self.indexer.start(forget_missing=forget_missing)
             self._tick()
 
     def stop(self):
         self.indexer.stop()
+
+    def hold(self):
+        """Keep indexing off until release() (call from the UI thread); the caller then waits for a pass
+        under way with indexer.stop_and_wait()."""
+        self._held += 1
+        self.indexer.stop()
+
+    def release(self, rescan: bool = True):
+        """Indexing may run again; rescan: look for new photos now (e.g. files pasted in from elsewhere)."""
+        self._held = max(0, self._held - 1)
+        if not self._held:
+            wanted, self._wanted = self._wanted, None
+            if rescan or wanted is not None:
+                self.start(forget_missing=bool(wanted))
 
     def shutdown(self, wait: float = 3.0):
         """Stop for good, waiting a little for the current photo to finish (the index is safe either way)."""
