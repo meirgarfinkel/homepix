@@ -192,7 +192,7 @@ def _set(db, step, **fields):
 def plan_moves(pairs) -> list[dict]:
     """[(src, wanted dst)] -> move steps. A wanted name that's taken (and not being vacated by another
     file in the same operation) gets _1, _2, ...; files already where they're wanted are left out."""
-    srcs = {os.path.abspath(s) for s, _ in pairs}
+    srcs = {os.path.abspath(s) for s, d in pairs if os.path.abspath(s) != os.path.abspath(d)}  # leaving
     planned, steps = set(), []
     for src, dst in pairs:
         src, dst = os.path.abspath(src), os.path.abspath(dst)
