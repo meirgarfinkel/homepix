@@ -218,7 +218,7 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     from test_faces_ui import wait_until
 
     from photofind.ui.main_window import MainWindow
-    from photofind.ui.views import organize_dialog
+    from photofind.ui.views import changes_dialog
 
     app = _app.__wrapped__()
     shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")
@@ -232,7 +232,7 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
         shown.append([model.data(model.index(0, c)) for c in range(3)])
         return 1  # Organize
 
-    monkeypatch.setattr(organize_dialog.OrganizeDialog, "exec", exec_)
+    monkeypatch.setattr(changes_dialog.ChangesDialog, "exec", exec_)
     w = MainWindow(index=False)
     w.show()
     wait_until(app, lambda: w.loaded)

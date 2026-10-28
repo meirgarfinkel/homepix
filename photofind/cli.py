@@ -13,6 +13,7 @@ Commands:
     photofind     name 3 Mom                    give face group 3 the name "Mom"
     photofind     organize                      preview naming files by date into year folders
     photofind     organize --apply ~/Pictures/new   do it (undo from the app's Edit menu)
+    photofind     duplicates                    copies found, and those set aside in Duplicates/
     photofind     status                        what has been indexed so far
 
 Run any command with -h for its options.
@@ -445,6 +446,34 @@ def cmd_organize(args):
     _locked(work)
 
 
+def cmd_duplicates(args):
+    from collections import Counter
+
+    from .core import duplicates, library_folders
+
+    folders = library_folders()
+    if not folders:
+        sys.exit("No library folders yet. Add one in the app first.")
+
+    def work(db):
+        for f in folders:
+            duplicates.fill_looks(db, str(Path(f)).rstrip("/") + "/")
+        known = duplicates.known(db, folders)
+        how = Counter(h for _, h in known.values())
+        found = sum(1 for k, _ in known.values() if k is not None)
+        say(f"Set aside in Duplicates/: {len(known):,}; the photo each duplicates found for {found:,} "
+            f"({how['exact']:,} the same bytes, {how['near']:,} look the same, {how['mapping']:,} from "
+            f"{duplicates.MAPPING}, {how['name']:,} by name)")
+        groups = duplicates.find(db, folders)
+        say(f"Still in the library: {duplicates.summary(groups)} (review them in the app)")
+        for g in groups[:args.show]:
+            say(f"  {'same bytes' if g.how == 'exact' else 'looks the same'}: keep {g.keeper.path}")
+            for c in g.extras:
+                say(f"      copy {c.path}")
+
+    _locked(work)
+
+
 def cmd_status(args):
     db = open_db()
     q = lambda sql: db.execute(sql).fetchone()[0]
@@ -522,6 +551,10 @@ def main():
     p.add_argument("--all", action="store_true", help="list every change")
     p.add_argument("--show", type=int, default=20, help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_organize)
+
+    p = sub.add_parser("duplicates", help="find copies of photos and videos (nothing is moved)")
+    p.add_argument("--show", type=int, default=10, help="how many groups to list")
+    p.set_defaults(func=cmd_duplicates)
 
     p = sub.add_parser("status", help="show what has been indexed")
     p.set_defaults(func=cmd_status)

@@ -37,8 +37,10 @@ from ..core import (
 )
 from ..core import fileops as files
 from ..core import people as known_people
+from ..core.duplicates import set_aside
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
 from . import desktop, workers
+from .dedupe import Dedupe
 from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
 from .organizer import Organizer
@@ -46,12 +48,13 @@ from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
 from .thumbs import ThumbLoader
 from .views.banner import Banner
+from .views.duplicates import DuplicatesView
 from .views.faces import PersonFaces, WhoView
 from .views.file_dialogs import BatchRenameDialog, ExportDialog, RenameDialog
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
-from .views.sidebar import ALL, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
+from .views.sidebar import ALL, DUPES, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
 from .views.timeline import MAX_TILE, MIN_TILE, TimelineView
 from .views.viewer import Viewer
 from .views.welcome import Welcome
@@ -71,10 +74,13 @@ def load_library(place):
     whether there are unnamed faces to ask about)."""
     db = open_db()
     try:
-        items = load_items(db, folder=_folder(place), person=person_of(place)) if shows_photos(place) else []
+        library = library_folders()
+        items = (load_items(db, folder=_folder(place), person=person_of(place), library=library)
+                 if shows_photos(place) else [])
         counts = folder_counts(db)
         unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
-        return group_by_month(items), counts, sum(counts.values()), named_people(db), bool(unnamed)
+        total = sum(n for f, n in counts.items() if not set_aside(f, library))
+        return group_by_month(items), counts, total, named_people(db), bool(unnamed)
     finally:
         db.close()
 
@@ -180,11 +186,12 @@ class MainWindow(QMainWindow):
         self.who_count = ""  # groups to ask about, once worked out
         self.unnamed = False  # there are faces to ask about
         self.person_faces = PersonFaces()
+        self.dupes = DuplicatesView()
         self._faces_jobs = workers.Latest()  # the who groups, someone's faces, or a photo's
         self._viewer_faces = workers.Latest()
         self._viewer_from = None  # the page the viewer opened over
         self.stack = QStackedWidget()
-        for w in (self.welcome, self.timeline, self.people, self.who, self.person_faces, self.viewer):
+        for w in (self.welcome, self.timeline, self.people, self.who, self.person_faces, self.dupes, self.viewer):
             self.stack.addWidget(w)
         self.stack.setCurrentWidget(self.timeline)
         self.banner = Banner()
@@ -203,6 +210,7 @@ class MainWindow(QMainWindow):
 
         self.naming = PeopleActions(self)
         self.organizer = Organizer(self)
+        self.dedupe = Dedupe(self)
         self._build_toolbar()
         self._build_file_actions()
         self._build_menus()
@@ -222,6 +230,9 @@ class MainWindow(QMainWindow):
         self.who.hidden.connect(lambda ids: self._answer_who(ids, lambda: self.naming.hide(ids)))
         self.who.opened.connect(self._open_face_photo)
         self.person_faces.opened.connect(self._open_face_photo)
+        self.dupes.set_aside.connect(self.dedupe.set_aside)
+        self.dupes.apart.connect(self.dedupe.apart)
+        self.dupes.opened.connect(self.open_photo)
         self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
         self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is it?"))
         self.person_faces.hidden.connect(self.naming.hide)
@@ -259,6 +270,7 @@ class MainWindow(QMainWindow):
         if index:
             QTimer.singleShot(1500, self.watcher.start)  # look for new photos once the window is up
         QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
+        QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -386,6 +398,8 @@ class MainWindow(QMainWindow):
         m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
         m.addSeparator()
         m.addAction(self._action("Who is this?", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]))
+        m.addAction(self._action("Duplicates", lambda: self.show_place(DUPES),
+                                 tip="Copies of the same photo or video, to review"))
         m.addAction(self._action("Show faces in the viewer", self.viewer.toggle_faces,
                                  tip="Boxes around faces, with their names (N in the viewer)"))
 
@@ -717,13 +731,17 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Click a face to name it, or to say it's someone else. N hides them.", 8000)
 
     def _open_face_photo(self, face):
+        self.open_photo(face["photo_id"])
+
+    def open_photo(self, photo_id: int):
+        """Show one photo in the viewer, over the page shown now (it comes back when the viewer closes)."""
         def done(items, err):
             if err is None and items:
                 self._viewer_from = self.stack.currentWidget()
                 self.viewer.show_items(items, 0)
                 self._show(self.viewer)
                 self.viewer.setFocus()
-        workers.run(load_item, done, face["photo_id"])
+        workers.run(load_item, done, photo_id)
 
     # --- the library ---------------------------------------------------------------------------------
 
@@ -741,8 +759,9 @@ class MainWindow(QMainWindow):
         self.loaded = True
         roots = library_folders()
         self.people_names = {p["id"]: p["name"] for p in people}
-        self.sidebar.set_folders(roots, counts, total, people, self.who_count if self.unnamed else None)
-        if not self.sidebar.select(self.place) and self.place != WHO:  # that folder or person is gone
+        self.sidebar.set_folders(roots, counts, total, people, self.who_count if self.unnamed else None,
+                                 self.dedupe.count if total else None)
+        if not self.sidebar.select(self.place) and self.place not in (WHO, DUPES):  # that folder or person is gone
             self.place = ALL
             return self.reload(fresh=True)
         if not roots and not total:
@@ -752,8 +771,11 @@ class MainWindow(QMainWindow):
         self.faces_action.setVisible(person_of(self.place) is not None or faces_of(self.place) is not None)
         self.faces_action.setChecked(faces_of(self.place) is not None)
         if not shows_photos(self.place):
-            page = {PEOPLE: self.people, WHO: self.who}.get(self.place, self.person_faces)
-            if self.place == WHO:
+            page = {PEOPLE: self.people, WHO: self.who, DUPES: self.dupes}.get(self.place, self.person_faces)
+            if self.place == DUPES:
+                self.dedupe.load()
+                self.count_label.setText("")
+            elif self.place == WHO:
                 self._load_who()
                 self.count_label.setText("")
             elif self.place == PEOPLE:
@@ -766,7 +788,7 @@ class MainWindow(QMainWindow):
             else:
                 self._show(page)
             return
-        if self.stack.currentWidget() in (self.welcome, self.people, self.who, self.person_faces):
+        if self.stack.currentWidget() in (self.welcome, self.people, self.who, self.person_faces, self.dupes):
             self._show(self.timeline)
         if self.query:
             if self._fresh:
@@ -903,7 +925,7 @@ class MainWindow(QMainWindow):
         if not shows_photos(self.place):
             self.place = ALL  # searching from a people page: search everything
             self.sidebar.select(ALL)
-        if self.stack.currentWidget() in (self.people, self.who, self.person_faces):
+        if self.stack.currentWidget() in (self.people, self.who, self.person_faces, self.dupes):
             self._show(self.timeline)
         where = self._place_name()
         self.timeline.empty_text = f"No photos{where} look like “{self.query}”."
@@ -974,4 +996,5 @@ class MainWindow(QMainWindow):
         self.settings.setValue("tile", self.timeline.tile)
         self.watcher.shutdown()
         self.loader.stop()
+        self.dupes.stop()
         super().closeEvent(e)

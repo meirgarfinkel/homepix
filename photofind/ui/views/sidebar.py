@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
 ALL = "all"
 PEOPLE = "people"
 WHO = "who"  # unnamed faces to name
+DUPES = "duplicates"  # the duplicates review
 
 
 def person_place(person_id: int) -> str:
@@ -61,7 +62,7 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
 
 
 class Sidebar(QTreeWidget):
-    chosen = Signal(str)  # ALL, PEOPLE, WHO, a person_place, or a folder's path
+    chosen = Signal(str)  # ALL, PEOPLE, WHO, DUPES, a person_place, or a folder's path
     menu_requested = Signal(str, QPoint)  # right-click on a folder or person: its place, and where (global)
 
     def __init__(self, parent=None):
@@ -78,10 +79,11 @@ class Sidebar(QTreeWidget):
         self._quiet = False
         self.set_folders([], {}, 0)
 
-    def set_folders(self, roots: list[str], counts: dict, total: int, people=(), who=None):
+    def set_folders(self, roots: list[str], counts: dict, total: int, people=(), who=None, dupes=None):
         """Rebuild, keeping what was open and what was chosen. people: as from core.named_people;
         who: None if there are no unnamed faces, else how many groups of them to ask about ("" if
-        not known yet)."""
+        not known yet); dupes: groups of duplicates to review ("" if none or not known yet), None to
+        leave the review out."""
         opened = {it.data(0, PATH_ROLE) for it in self._all_items() if it.isExpanded()}
         had_people = any(it.data(0, PATH_ROLE) == PEOPLE for it in self._all_items())
         chosen = self.current_path()
@@ -110,6 +112,12 @@ class Sidebar(QTreeWidget):
             ask.setToolTip(0, "Name the people in your photos")
             self._style_count(ask)
             self.addTopLevelItem(ask)
+        if dupes is not None:
+            review = QTreeWidgetItem([" Duplicates", f"{dupes:,}" if isinstance(dupes, int) and dupes else ""])
+            review.setData(0, PATH_ROLE, DUPES)
+            review.setToolTip(0, "Copies of the same photo or video, to review")
+            self._style_count(review)
+            self.addTopLevelItem(review)
         heading = QTreeWidgetItem(["Folders", ""])
         heading.setFlags(Qt.ItemFlag.ItemIsEnabled)
         font = QFont(self.font())

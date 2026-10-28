@@ -28,11 +28,15 @@ import shutil
 import time
 from pathlib import Path
 
-from . import dates, metadata, people
+from . import dates, duplicates, metadata, people
 from . import trash as trashcan
 from .safefs import copy_file, free_name, move_file, rename_noreplace
 from .thumbs import thumbs_dir
 from .util import quick_hash
+
+# Steps that change only the index (who's who, what isn't a duplicate): {action: its module}, whose
+# apply(db, state) sets a state; the step's before is {"old": state, "new": state}.
+INDEX_ONLY = {"people": people, "apart": duplicates}
 
 PLANNED, UNDER_WAY, FINISHED, SKIPPED = 0, 1, 2, 3
 
@@ -110,7 +114,7 @@ def _apply(db, step) -> dict:
         return {}
     if action == "meta":
         return _apply_meta(db, src, json.loads(step["before"]))
-    if action == "people":  # done in the index itself (see run)
+    if action in INDEX_ONLY:  # done in the index itself (see run)
         return {}
     raise ValueError(f"unknown step {action}")
 
@@ -141,7 +145,7 @@ def _apply_meta(db, path, change) -> dict:
     st = os.stat(path)
     qh = quick_hash(Path(path), st.st_size)
     d = metadata.read([path]).get(path)
-    fields = {"size": st.st_size, "mtime": st.st_mtime, "qhash": qh}
+    fields = {"size": st.st_size, "mtime": st.st_mtime, "qhash": qh, "sha256": None}  # (its bytes changed)
     if d is not None:
         taken, source, moment = dates.from_tags(path, d.tags, st.st_mtime)
         fields.update(taken=taken, taken_source=source, moment=moment, details_done=1,
@@ -149,6 +153,7 @@ def _apply_meta(db, path, change) -> dict:
     db.execute(f"UPDATE photos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), row["id"]))
     turn = change.get("orientation")
     if turn and turn[0] != turn[1]:
+        db.execute("UPDATE photos SET phash=NULL WHERE id=?", (row["id"],))  # it looks different now
         for f in db.execute("SELECT id, x, y, w, h FROM faces WHERE photo_id=?", (row["id"],)).fetchall():
             db.execute("UPDATE faces SET x=?, y=?, w=?, h=? WHERE id=?",
                        (*metadata.move_box((f["x"], f["y"], f["w"], f["h"]), *turn), f["id"]))
@@ -472,8 +477,8 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
                     raise FileNotFoundError
                 metadata.write(r["src"], json.loads(r["before"])["new"])
                 dst = r["src"]
-            elif r["action"] == "people":  # only the index changes: committed with being marked done
-                people.apply(db, json.loads(r["before"])["new"])
+            elif r["action"] in INDEX_ONLY:  # only the index changes: committed with being marked done
+                INDEX_ONLY[r["action"]].apply(db, json.loads(r["before"])["new"])
                 dst = None
         except FileNotFoundError:
             skipped(r, "it isn't there any more")
@@ -542,7 +547,7 @@ def recover(db) -> list[str]:
                     fixed += 1
                 else:
                     _skip(db, r, "interrupted before it was done")
-            elif action == "people":  # it and its being done are committed together: it wasn't
+            elif action in INDEX_ONLY:  # it and its being done are committed together: it wasn't
                 _skip(db, r, "interrupted before it was done")
             elif action == "meta":  # ExifTool replaces a file in one step: it holds either all or none
                 Path(metadata.leftover(src)).unlink(missing_ok=True)
@@ -618,8 +623,9 @@ def inverse(db, op_id: int) -> list[dict]:
             if c.get("orientation"):
                 back["orientation"] = c["orientation"][::-1]
             out.append(("meta", r["src"], r["src"], back))
-        elif r["action"] == "people":
-            out.append(("people", None, None, people.inverse(r["before"])))
+        elif r["action"] in INDEX_ONLY:
+            c = json.loads(r["before"])
+            out.append((r["action"], None, None, {"old": c["new"], "new": c["old"]}))
     moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"])
     others = []
     taken = {}
@@ -633,8 +639,8 @@ def inverse(db, op_id: int) -> list[dict]:
             others.append({"action": "restore", "src": s, "dst": os.path.join(folder, name), "before": before})
         elif a == "meta":
             others.append({"action": "meta", "src": s, "dst": s, "before": before})
-        elif a == "people":
-            others.append({"action": "people", "src": None, "dst": None, "before": before})
+        elif a in INDEX_ONLY:
+            others.append({"action": a, "src": None, "dst": None, "before": before})
     return moves + others
 
 
