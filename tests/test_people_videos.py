@@ -257,7 +257,7 @@ def test_people_page_and_a_persons_photos(window, pf, lib, app):
     wait_until(app, lambda: window.place == person_place(pid) and len(window.timeline.items) == 3)
     assert window.stack.currentWidget() is window.timeline
     assert window.count_label.text().strip() == "3 photos of Ada"
-    assert window.sidebar.current_path() == person_place(pid)
+    assert window.sidebar.current_path() == PEOPLE  # (people aren't listed one by one)
 
 
 def test_videos_in_the_grid_and_the_viewer(window, pf, lib, app, monkeypatch):
