@@ -377,20 +377,39 @@ def test_a_move_to_another_drive_copies_checks_and_removes(home, lib, monkeypatc
 # --- in the app ----------------------------------------------------------------------------------------
 
 def test_the_clipboard_speaks_the_file_managers_formats(app):
-    from photofind.ui import desktop
-
-    mime = desktop.files_mime(["/p/a b.jpg", "/p/c.jpg"], cut=True)
-    assert bytes(mime.data(desktop.GNOME)) == b"cut\nfile:///p/a%20b.jpg\nfile:///p/c.jpg"
-    assert bytes(mime.data(desktop.KDE_CUT)) == b"1"
-    assert desktop.files_in(mime) == (["/p/a b.jpg", "/p/c.jpg"], True)
-    assert desktop.files_in(desktop.files_mime(["/p/a.jpg"]))[1] is False
-
     from PySide6.QtCore import QMimeData, QUrl
 
+    from photofind.ui import desktop
+
+    ab, c = os.path.abspath("/p/a b.jpg"), os.path.abspath("/p/c.jpg")
+    mime = desktop.files_mime([ab, c], cut=True)
+    urls = b"".join(b"\n" + QUrl.fromLocalFile(p).toEncoded() for p in (ab, c))
+    assert bytes(mime.data(desktop.GNOME)) == b"cut" + urls and b"/a%20b.jpg" in urls
+    assert bytes(mime.data(desktop.KDE_CUT)) == b"1"
+    assert desktop.files_in(mime) == ([ab, c], True)
+    assert desktop.files_in(desktop.files_mime([c]))[1] is False
+
     dolphin = QMimeData()
-    dolphin.setUrls([QUrl.fromLocalFile("/p/a.jpg")])
+    dolphin.setUrls([QUrl.fromLocalFile(c)])
     dolphin.setData(desktop.KDE_CUT, b"1")
-    assert desktop.files_in(dolphin) == (["/p/a.jpg"], True)
+    assert desktop.files_in(dolphin) == ([c], True)
+
+    for effect, cut in ((2, True), (5, False), (1, False)):  # Windows Explorer: cut, copied, copied
+        explorer = QMimeData()
+        explorer.setUrls([QUrl.fromLocalFile(c)])
+        explorer.setData(desktop.WIN_EFFECT, effect.to_bytes(4, "little"))
+        assert desktop.files_in(explorer) == ([c], cut)
+
+
+def test_commands_to_open_with_keep_their_paths():
+    from photofind.ui import desktop
+
+    if os.name == "nt":
+        assert desktop.split_command(r'"C:\Program Files\GIMP 3\bin\gimp.exe" --new %f') == \
+            [r"C:\Program Files\GIMP 3\bin\gimp.exe", "--new", "%f"]
+        assert desktop.split_command(r"C:\Tools\edit.exe") == [r"C:\Tools\edit.exe"]
+    else:
+        assert desktop.split_command("darktable --some-option '%f'") == ["darktable", "--some-option", "%f"]
 
 
 @pytest.fixture(scope="module")
