@@ -5,8 +5,9 @@ rem Needs Python 3.10+ (python.org) and Inno Setup 6 (jrsoftware.org/isinfo.php)
 setlocal
 cd /d "%~dp0\.."
 
-set "PY=py -3"
-where py >nul 2>nul || set "PY=python"
+rem Python 3.12 if it's there (the AI libraries don't support the newest Python yet), else "python"
+set "PY=python"
+py -3.12 -c "" >nul 2>nul && set "PY=py -3.12"
 
 echo 1/5  Setting up a clean Python environment for building...
 if not exist build\env\Scripts\python.exe %PY% -m venv build\env || goto fail
