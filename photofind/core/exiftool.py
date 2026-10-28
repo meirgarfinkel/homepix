@@ -98,7 +98,8 @@ class ExifTool:
                 self._proc.stdin.flush()
                 out = bytearray()
                 end = mark.encode() + b"\n"
-                while not out.endswith(end):
+                crlf = mark.encode() + b"\r\n"  # (on Windows its lines end that way)
+                while not (out.endswith(end) or out.endswith(crlf)):
                     chunk = self._proc.stdout.read1(1 << 16)
                     if not chunk:
                         raise RuntimeError("ExifTool stopped unexpectedly")
@@ -110,7 +111,7 @@ class ExifTool:
                 self._err_ready.wait_for(lambda: any(mark in e for e in self._err), timeout=10)
                 errors = "".join(e for e in self._err if mark not in e)
                 self._err.clear()
-            return bytes(out[: -len(end)]), errors
+            return bytes(out[: -len(crlf if out.endswith(crlf) else end)]), errors
 
     def read(self, paths, tags=(), options=("-n",)) -> dict[str, dict]:
         """{path: {tag: value}} for these files. tags like "XMP-dc:Description" (all of them if none);
