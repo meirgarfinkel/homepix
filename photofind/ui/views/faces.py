@@ -79,7 +79,8 @@ class _Tile(QStyledItemDelegate):
 
 
 class FaceGrid(QListWidget):
-    """Face tiles, any number selected. opened(face): double-click, to see its photo."""
+    """Face tiles: a click ticks or unticks one (Ctrl+A ticks them all). opened(face): double-click,
+    to see its photo."""
 
     opened = Signal(dict)
     menu_requested = Signal(QPoint)
@@ -91,7 +92,7 @@ class FaceGrid(QListWidget):
         self.setMovement(QListView.Movement.Static)
         self.setIconSize(QSize(TILE, TILE))
         self.setGridSize(QSize(TILE + 14, TILE + 14))
-        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.setUniformItemSizes(True)
         self.setFrameShape(QListWidget.Shape.NoFrame)
         self.empty_text = ""
@@ -161,9 +162,8 @@ class FaceGrid(QListWidget):
 
     def contextMenuEvent(self, e):
         item = self.itemAt(e.pos())
-        if item is not None and not item.isSelected():
-            self.clearSelection()
-            item.setSelected(True)
+        if item is not None:
+            item.setSelected(True)  # (added to those ticked)
         if self.selectedItems():
             self.menu_requested.emit(e.globalPos())
 
@@ -235,8 +235,8 @@ class PersonFaces(QWidget):
         self.person = None
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
-        self.hint = QLabel("The least like the rest come first. Select any that aren't them. "
-                           "Double-click a face to see its photo.")
+        self.hint = QLabel("The least like the rest come first. Click the faces that aren't them to tick "
+                           "them (Ctrl+A ticks them all); double-click a face to see its photo.")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         self.grid = FaceGrid()
@@ -313,7 +313,6 @@ class WhoView(QWidget):
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         self.grid = FaceGrid()
-        self.grid.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)  # a click ticks or unticks
         self.grid.opened.connect(self.opened)
         self.grid.itemSelectionChanged.connect(self._selection_changed)
         self.name = NameBox()

@@ -12,6 +12,7 @@ from photofind.core.db import to_blob
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtWidgets  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -155,7 +156,17 @@ def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
     assert window.stack.currentWidget() is window.person_faces
     first = window.person_faces.grid.faces[0]
     assert first["id"] == ann[5]  # the odd one out comes first
-    window.person_faces.grid.item(0).setSelected(True)
+    grid = window.person_faces.grid
+    assert grid.selected_faces() == [] and not window.person_faces.not_button.isEnabled()
+
+    def click(row):  # a click ticks or unticks, as on Who is this?
+        QTest.mouseClick(grid.viewport(), QtCore.Qt.MouseButton.LeftButton, pos=grid.visualItemRect(grid.item(row)).center())
+
+    click(0)
+    click(1)
+    assert {f["id"] for f in grid.selected_faces()} == {grid.faces[0]["id"], grid.faces[1]["id"]}
+    click(1)
+    assert [f["id"] for f in grid.selected_faces()] == [first["id"]]
     window.person_faces.not_button.click()
     settle(app, window)
     wait_until(app, lambda: window.person_faces.grid.count() == 5)
