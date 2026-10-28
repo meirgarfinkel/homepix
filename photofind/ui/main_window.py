@@ -553,6 +553,9 @@ class MainWindow(QMainWindow):
                                  tip="Copies of the same photo or video, to review"))
         m.addAction(self._action("Show faces in the viewer", self.viewer.toggle_faces,
                                  tip="Boxes around faces, with their names (N in the viewer)"))
+        m.addSeparator()
+        m.addAction(self._action("Start faces over...", self.naming.start_over,
+                                 tip="Forget every face and name, and look for the faces again"))
 
     # --- working with files ----------------------------------------------------------------------------
 
