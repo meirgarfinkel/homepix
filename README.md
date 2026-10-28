@@ -6,12 +6,12 @@ Nothing is uploaded anywhere. The only network access is a one-time download of 
 
 ## Desktop app (Photo Finder)
 
-To give Photo Finder to other people as a single download (an AppImage for Linux, an installer for Windows), see **[BUILDING.md](BUILDING.md)**.
+One download per system, with nothing else to install (on the project's GitHub Releases page, once a version is published):
 
-To install it on your own computer straight from this folder instead:
+- **Linux:** `PhotoFinder-x86_64.AppImage`, for Debian 12+, Ubuntu 22.04+, Fedora, Arch and others. Make it executable once (right-click, Properties, Permissions), then double-click it. The first time, it adds **Photo Finder** to your applications menu.
+- **Windows 10 and 11:** `PhotoFinderSetup.exe`. It installs for you alone (no administrator password) and adds Photo Finder to the Start menu. Windows warns about an unknown publisher the first time, because the installer isn't signed: click **More info**, then **Run anyway**.
 
-- **Linux (Debian, Ubuntu, Pop!_OS):** open a terminal here and run `bash install_linux.sh`, then open **Photo Finder** from your applications menu.
-- **Windows:** install Python from python.org, then double-click `install_windows.bat`. It adds Photo Finder to the Start menu and desktop.
+To build these yourself, see **[BUILDING.md](BUILDING.md)**. On Linux you can also install straight from this folder: `bash install_linux.sh`.
 
 Photo Finder is a native desktop app (Qt). While it's open, it looks for new photos every 30 minutes; opening it a second time brings the open window forward. `--self-test` checks that the window, thumbnails and AI parts all work.
 
@@ -28,7 +28,7 @@ What's in it:
 - **Info** (I): description, keywords, when it was taken and where that date came from, camera, size, place, people, folder.
 - **Which date:** the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the rule the library's `YYYY_MM_DD_HH_MM_SS` names were made by, so a photo shows on the day its name says.
 - **Details written into the photos** (the Photo menu, or right-click): description, keywords and location (Ctrl+I), for one photo or many at once; date and time, set or moved by some hours for a batch whose camera clock was wrong (Ctrl+Shift+D), and a file named by its date is renamed to its new one; rotate (Ctrl+R, Ctrl+Shift+R) and flip, without re-saving the picture; and every detail a file holds (Alt+Enter). They're written the standard way (XMP and EXIF, using the bundled ExifTool), so other photo apps see them too, and the file's modified time is kept. A Live Photo's clip gets its photo's new date. Undo works for all of it, and the people found in a photo stay named.
-- **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
+- **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete; the Recycle Bin on Windows), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
 - **Organizing** (the File menu, or right-click a folder): *Tidy the library* or *Organize a folder* names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. `Duplicates/` is left alone, and so are a year folder's own subfolders (`2022/Trip/`).
 - **Duplicates** (in the sidebar, or the View menu): copies of the same photo or video, side by side, the one to keep marked (the most pixels, then the biggest file; click another to keep it instead). Exact copies are the same bytes; near ones look the same (resized or saved again), checked by both a picture fingerprint and the search model. Shots of a burst are never called duplicates. Move the extras into `Duplicates/` (named after the copy kept) or to the Trash, for the groups you select or all of them, after a preview; or say a group isn't duplicates and it's never offered again. What's in `Duplicates/` stays out of the timeline and search (open the folder to see it).
 - **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, Photo Finder finishes the job next time it opens, with no photo lost or doubled.
@@ -104,14 +104,14 @@ Use Task Scheduler for nightly runs. Data is stored in `%LOCALAPPDATA%\photofind
 
 ## Where things are stored
 
-`~/.local/share/photofind/` (change it with the `PHOTOFIND_HOME` environment variable):
+`~/.local/share/photofind/` on Linux, `%LOCALAPPDATA%\photofind` on Windows (change it with the `PHOTOFIND_HOME` environment variable):
 
 - `photofind.db`: one SQLite file holding everything it learned (about 1–2 KB per photo)
 - `models/`: the downloaded AI models
-- `thumbs/`: small previews, only for photos that appeared in results
+- `thumbs/`: small previews of every photo
 - `results.html`, `people.html`: the latest pages
 
-Your photos are only ever read, never modified. To uninstall, delete that folder and `~/photofind-env`.
+Your photos change only when you ask (rename, move, Trash, details, organize, duplicates), and every change can be undone. Uninstalling the app keeps that folder, so reinstalling picks up where you left off; delete it to remove everything.
 
 ## How it works
 
@@ -142,8 +142,8 @@ Constants in `photofind/core/config.py`:
 
 - Search is great for objects, scenes, colors and activities. It's weak at counting ("three dogs"), reading text in photos, and left/right relationships.
 - Photos are center-cropped to a square for search, so things at the far edges of wide panoramas can be missed.
-- RAW camera files other than DNG aren't supported yet; DNG photos are shown from the preview inside them. HEIC needs `pip install pillow-heif`.
+- RAW camera files other than DNG aren't supported yet; DNG photos are shown from the preview inside them.
 - HEIC photos can be rotated but not flipped, and WebP files can't have details written into them with the ExifTool that comes with older Linux versions (the bundled one can).
-- From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl`.
-- On Windows, Move to Trash doesn't work yet (the Recycle Bin comes later); everything else does.
+- From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (the downloads bundle their own).
+- On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so Photo Finder won't delete them.
 - Very small faces in big group photos are often missed or not recognized.

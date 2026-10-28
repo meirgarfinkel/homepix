@@ -43,7 +43,7 @@ The AppImage runs on the Linux it was built on and on newer ones. Release builds
 
 **What's left to the computer it runs on:** graphics libraries (they must match its drivers), fonts, sound, and the C/C++ runtime. Every desktop Linux has these. Everything else is bundled.
 
-**ExifTool** (which writes details into photos) is bundled with a Perl of its own by `packaging/bundle_exiftool.sh`: the version is pinned and checked against its published checksum, only the Perl modules it uses are included (found by watching it read and write every kind of file), and the build checks that it works with nothing but the bundle. To update it, change `VERSION` and `SHA256` there together.
+**ExifTool** (which writes details into photos) is bundled with a Perl of its own by `packaging/bundle_exiftool.sh`: the version is pinned and checked against its published checksum, only the Perl modules it uses are included (found by watching it read and write every kind of file), and the build checks that it works with nothing but the bundle. To update it, change `VERSION` and `SHA256` there together, and the same two lines in `packaging/bundle_exiftool.ps1`, which bundles ExifTool's official Windows build (it comes with its own Perl) for the Windows installer.
 
 If double-clicking does nothing on some computer, running it as `./PhotoFinder-x86_64.AppImage --appimage-extract-and-run` works without the FUSE support AppImages normally use.
 
@@ -61,7 +61,7 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
    ```
    packaging\build_windows.bat
    ```
-   It shows four steps, including a quick self-test where the app window opens and closes by itself. It finishes with `Done: PhotoFinderSetup.exe`.
+   It shows five steps: setting up Python, bundling the app, adding ExifTool (downloaded and checked against its published checksum), a quick self-test where the app window opens and closes by itself, and making the installer. It finishes with `Done: PhotoFinderSetup.exe`. The self-test uses a data folder of its own (`build\selftest`), never yours; put the AI models in `build\selftest\models` to have it check them too.
 
 5. **Share `PhotoFinderSetup.exe`.** Double-clicking it installs Photo Finder for that user (no administrator password needed) and adds it to the Start menu and, optionally, the desktop.
 
@@ -73,8 +73,8 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
 
 `.github/workflows/build.yml` builds on GitHub's computers:
 
-- **Every pull request** that changes the app or its packaging builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch.
-- **By hand** (Actions tab > **Build Photo Finder** > **Run workflow**): the same, plus the Windows installer. After 15–25 minutes, download **PhotoFinder-Linux** and **PhotoFinder-Windows** under **Artifacts**.
+- **Every pull request** that changes the app or its packaging builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch. It also builds the Windows installer and runs its app's self-test on Windows, with the AI models.
+- **By hand** (Actions tab > **Build Photo Finder** > **Run workflow**): the same. After 15–25 minutes, download **PhotoFinder-Linux** and **PhotoFinder-Windows** under **Artifacts**.
 - **A version tag** such as `v0.2.0` does everything and publishes a GitHub Release with both files.
 
 ---
@@ -83,7 +83,7 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
 
 Change the code, build again, and share the new file. Each person's index, folders and people's names are stored separately (`~/.local/share/photofind` on Linux, `%LOCALAPPDATA%\photofind` on Windows), so updating or reinstalling keeps everything.
 
-On Windows, also raise `AppVersion` in `packaging/photofind.iss` so the installer replaces the old version cleanly.
+Raise the version in `photofind/__init__.py` and `AppVersion` in `packaging/photofind.iss` together, so the Windows installer replaces the old version cleanly. Then push a tag for it (`git tag v1.0.0 && git push origin v1.0.0`): GitHub builds and checks both downloads and publishes them as a Release.
 
 ## Why it's about 140 MB
 

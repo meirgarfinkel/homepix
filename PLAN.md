@@ -120,7 +120,7 @@ or undo in about 0.4 s, and go to the Trash in 1 s. The Trash is the desktop's o
 so trashed photos show up in the file manager's Trash; undoing puts them back with their faces and
 names. Undo history is kept in the database, so it survives closing the app. A Live Photo's clip
 moves, renames and goes to the Trash with its photo. Moving and copying stay within the library
-folders; Export makes copies for anywhere else. The Recycle Bin on Windows is left for later.
+folders; Export makes copies for anywhere else. On Windows, the Recycle Bin came in M10.
 
 ### M5 — Metadata
 - exiftool bundled with its own Perl.
@@ -214,8 +214,13 @@ remembered; all of it is undoable. The info panel doesn't say what a file in `Du
 - Zero-shot labels: screenshots, documents, receipts, food, beach…
 - Filter by label.
 
+*Status: skipped for now (2026-10-28), moved to Later in `REQUIREMENTS.md`.*
+
 ### M10 — Windows and release
-- Windows build and installer, a migration path for existing installs, and updated docs.
+- Windows build and installer, and updated docs. (No migration path: there are no existing installs.)
+
+**Done when:** the test suite passes on Windows, and the installer's app passes its self-test there
+(AI included), built and checked by CI on every pull request.
 
 ## Main risks
 

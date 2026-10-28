@@ -6,7 +6,7 @@
 # Usage: powershell -ExecutionPolicy Bypass -File packaging\bundle_exiftool.ps1 OUT_DIR
 param([Parameter(Mandatory = $true)][string]$Out)
 $ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"  # the progress bar makes downloads many times slower
+$ProgressPreference = "SilentlyContinue"  # (Expand-Archive is many times slower with its progress bar)
 
 $Version = "13.59"  # update both lines together (checksums: https://exiftool.org/checksums.txt)
 $Sha256 = "44b512b25af500724ba579d0a53c8fc5851628b692dd5e5d94ae4a15c2cba9ec"
@@ -16,8 +16,9 @@ $Zip = Join-Path $Cache "exiftool-$($Version)_64.zip"
 New-Item -ItemType Directory -Force -Path $Cache | Out-Null
 function Matches { (Test-Path $Zip) -and ((Get-FileHash -Algorithm SHA256 $Zip).Hash -eq $Sha256) }
 if (-not (Matches)) {
-    Invoke-WebRequest -UseBasicParsing -OutFile "$Zip.part" `
-        "https://sourceforge.net/projects/exiftool/files/exiftool-$($Version)_64.zip/download"
+    # curl (part of Windows 10 and 11): PowerShell's own download gets SourceForge's web page instead
+    curl.exe -fsSL -o "$Zip.part" "https://sourceforge.net/projects/exiftool/files/exiftool-$($Version)_64.zip/download"
+    if ($LASTEXITCODE -ne 0) { throw "ExifTool couldn't be downloaded" }
     Move-Item -Force "$Zip.part" $Zip
 }
 if (-not (Matches)) { throw "ExifTool download doesn't match its checksum" }
