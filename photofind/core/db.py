@@ -182,6 +182,11 @@ def migrate(db: sqlite3.Connection, path):
         return
     if db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]:
         backup(db, version)
+    upgrade(db)
+
+
+def upgrade(db: sqlite3.Connection):
+    """Bring a database up to LATEST, all in one transaction (no backup: see migrate)."""
     db.execute("BEGIN IMMEDIATE")  # one upgrader at a time: the app and the CLI may open it together
     try:
         version = db.execute("PRAGMA user_version").fetchone()[0]  # someone may have upgraded meanwhile

@@ -45,6 +45,7 @@ from ..core import people as known_people
 from ..core.duplicates import set_aside
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
 from . import desktop, theme, workers
+from . import portable as portable_ui
 from .dedupe import Dedupe
 from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
@@ -234,6 +235,7 @@ class MainWindow(QMainWindow):
         self.loader = ThumbLoader()
         self.watcher = IndexWatcher(self, rescan=index)
         self.indexing = index
+        self.copies = portable_ui.PortableCopies(self, active=index)
         self.ops = FileOps(self)
         self._select_after = None  # after files went away: the index of the photo to select instead
         self.loaded = False  # the library has been read once
@@ -364,8 +366,8 @@ class MainWindow(QMainWindow):
         self._update_history()
         self._update_actions()
         self._editor_changed()
-        if index:
-            QTimer.singleShot(1500, self.watcher.start)  # look for new photos once the window is up
+        if index:  # look for new photos once the window is up (bringing in a folder's copy first, if waiting)
+            QTimer.singleShot(1500, lambda: portable_ui.offer(self, library_folders(), self.watcher.start))
         QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
         QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
 
@@ -1036,8 +1038,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Add folder", str(e))
             return
         self.statusBar().showMessage(f"Added {p}. Looking for photos in it...", 8000)
-        self.watcher.start()
+        portable_ui.offer(self, [p], self.watcher.start)  # it may hold a library from another computer
         self.reload()
+
+    def library_brought_in(self):
+        """A folder's portable copy came in: show its photos, people and duplicates."""
+        self.reload(fresh=True)
+        self._load_who()
+        self.dedupe.load()
 
     def remove_library_folder(self, path: str):
         def job():  # wait for indexing to let go first, so it doesn't add the folder's photos back
@@ -1218,4 +1226,6 @@ class MainWindow(QMainWindow):
         self.watcher.shutdown()
         self.loader.stop()
         self.dupes.stop()
+        self.hide()
+        self.copies.flush()  # the folders' copies match the library whenever the app is closed
         super().closeEvent(e)

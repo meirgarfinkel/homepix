@@ -33,6 +33,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Videos (MP4, MOV): shown in the timeline and folders with a plain thumbnail, opened in the system player, included in rename/organize and exact dedupe. **No AI** (no search, no faces) | v1 |
 | Live Photos (HEIC + MOV) and sidecars (`.aae`, `.xmp`, `.json`) always kept together as one item | v1 |
 | Import from a folder, SD card or phone: preview, copy into year folders, optional rename, skip what's already in the library | v1 |
+| A library folder carries what's known about its photos (faces and names, search, duplicate choices, folders left out) in `.photofind/`, kept up to date by itself: copied to another computer (any path, any system), it's brought back in without indexing again. Photos are matched by content | v1 |
 | Other RAW formats (CR2, NEF, ARW, ...) | v2 |
 
 ## 2. Browsing
