@@ -5,12 +5,15 @@ Settings can pick light, or follow the system. Widgets that paint themselves rea
 here at paint time (`color("accent")`), so they follow a switch on their next repaint.
 """
 
+import atexit
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QStyledItemDelegate
 
 from ..core import load_settings, save_settings
 
@@ -105,8 +108,40 @@ def apply(app, m: str | None = None):
     app.setPalette(palette())
     if _fonts_loaded():
         app.setFont(font(13))
-    app.setStyleSheet(style_sheet(_tokens))
+    if not hasattr(app, "_popups"):
+        app._popups = _Popups(app)
+        app.installEventFilter(app._popups)
+    app.setStyleSheet(style_sheet(dict(_tokens, arrow=_arrow_file())))
     signals.changed.emit()
+
+
+class _Popups(QObject):
+    """Rounds the corners of menus and dropdown lists (their windows need a see-through background
+    for that), and lets a dropdown's rows take the style sheet's padding."""
+
+    def eventFilter(self, obj, e):
+        if e.type() == QEvent.Type.Polish:
+            if isinstance(obj, QMenu):
+                obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+                obj.setWindowFlag(Qt.WindowType.FramelessWindowHint)
+                obj.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint)
+            elif isinstance(obj, QComboBox) and type(obj.itemDelegate()) is not QStyledItemDelegate:
+                obj.setItemDelegate(QStyledItemDelegate(obj))
+        return False
+
+
+_arrows = None  # a folder for the dropdown arrows, which a style sheet can only take as files
+
+
+def _arrow_file() -> str:
+    global _arrows
+    if _arrows is None:
+        _arrows = Path(tempfile.mkdtemp(prefix="photofind-look-"))
+        atexit.register(shutil.rmtree, _arrows, True)
+    path = _arrows / f"down-{'dark' if _dark else 'light'}.png"
+    if not path.exists():
+        _pixmap("down", color("muted"), 14, 2.0).save(str(path))
+    return path.as_posix()
 
 
 def palette() -> QPalette:
@@ -170,7 +205,7 @@ QPushButton {{ background: {raised}; color: {text}; border: 1px solid {border}; 
                padding: 7px 16px; font-weight: 600; }}
 QPushButton:hover {{ background: {field}; }}
 QPushButton:pressed {{ background: {border}; }}
-QPushButton:default {{ background: {accent}; color: {accentInk}; border-color: {accent}; border-radius: 17px; }}
+QPushButton:default {{ background: {accent}; color: {accentInk}; border-color: {accent}; }}
 QPushButton:disabled {{ color: {muted}; background: {side}; }}
 QToolButton {{ border-radius: 8px; padding: 4px 8px; }}
 QToolButton:hover {{ background: {hover}; }}
@@ -180,9 +215,16 @@ QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDateTimeEdit, QComboBox {{
     selection-background-color: {accent}; selection-color: {accentInk}; }}
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus, QDateTimeEdit:focus, QComboBox:focus {{
     border-color: {accent}; }}
-QComboBox::drop-down {{ border: none; width: 24px; }}
-QComboBox QAbstractItemView {{ background: {raised}; border: 1px solid {border}; padding: 4px;
-                               selection-background-color: {accentSoft}; selection-color: {accentText}; }}
+QComboBox {{ padding: 8px 12px; min-width: 120px; combobox-popup: 0; }}
+QComboBox:hover {{ border-color: {border}; }}
+QComboBox::drop-down {{ border: none; width: 32px; subcontrol-position: center right; }}
+QComboBox::down-arrow {{ image: url("{arrow}"); width: 14px; height: 14px; }}
+QComboBox QAbstractItemView, QListView#popup {{ background: {raised}; color: {text}; border: 1px solid {border};
+    border-radius: 12px; padding: 6px; outline: 0; }}
+QComboBox QAbstractItemView::item, QListView#popup::item {{ min-height: 32px; padding: 0 12px; border-radius: 8px; }}
+QComboBox QAbstractItemView::item:hover, QListView#popup::item:hover {{ background: {hover}; }}
+QComboBox QAbstractItemView::item:selected, QListView#popup::item:selected {{ background: {accentSoft};
+    color: {accentText}; }}
 QDialog QListWidget, QDialog QTreeView, QDialog QTableView {{ background: {field}; border: none; border-radius: 10px; padding: 4px;
                                             outline: 0; }}
 QDialog QListWidget::item {{ padding: 6px 8px; border-radius: 8px; }}
@@ -193,8 +235,8 @@ QListWidget#people::item {{ border: none; border-radius: 14px; padding: 6px; col
 QListWidget#people::item:hover {{ background: {hover}; }}
 QListWidget#people::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 
-QMenu {{ background: {raised}; color: {text}; border: 1px solid {border}; padding: 6px; }}
-QMenu::item {{ padding: 7px 28px 7px 14px; border-radius: 6px; }}
+QMenu {{ background: {raised}; color: {text}; border: 1px solid {border}; border-radius: 12px; padding: 6px; }}
+QMenu::item {{ padding: 9px 32px 9px 14px; border-radius: 8px; }}
 QMenu::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 QMenu::item:disabled {{ color: {muted}; }}
 QMenu::separator {{ height: 1px; background: {border}; margin: 5px 8px; }}
@@ -249,6 +291,11 @@ def _draw(name: str, p: QPainter):
     elif name == "clear":
         p.drawLine(QPointF(7, 7), QPointF(17, 17))
         p.drawLine(QPointF(17, 7), QPointF(7, 17))
+    elif name == "down":
+        path = QPainterPath(QPointF(7, 10))
+        path.lineTo(12, 15)
+        path.lineTo(17, 10)
+        p.drawPath(path)
     elif name == "faces":
         p.drawEllipse(QPointF(12, 9), 3.6, 3.6)
         path = QPainterPath(QPointF(5, 19.5))

@@ -33,8 +33,7 @@ ID_ROLE = Qt.ItemDataRole.UserRole
 
 
 class _Tile(QStyledItemDelegate):
-    """A face, with a tick when it's chosen; faded when it isn't, if fade_unchosen (the who page,
-    where faces start chosen and are unticked to leave them out)."""
+    """A face, with a thin border and a tick when it's chosen."""
 
     def __init__(self, grid):
         super().__init__(grid)
@@ -51,25 +50,26 @@ class _Tile(QStyledItemDelegate):
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         clip = QPainterPath()
         clip.addRoundedRect(box, 8, 8)
-        if self.grid.fade_unchosen and not chosen:
-            p.setOpacity(0.3)
         p.setClipPath(clip)
         icon = index.data(Qt.ItemDataRole.DecorationRole)
         if isinstance(icon, QIcon):
             p.drawPixmap(box.toRect(), icon.pixmap(QSize(TILE, TILE)))
         p.setClipping(False)
-        p.setOpacity(1)
         highlight = self.grid.palette().color(QPalette.ColorRole.Highlight)
         if chosen:
-            p.setPen(QPen(highlight, 3))
+            p.setPen(QPen(highlight, 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(box.adjusted(1.5, 1.5, -1.5, -1.5), 7, 7)
-            r = 11
-            c = QPointF(box.right() - r - 4, box.top() + r + 4)
-            p.setPen(QPen(QColor(255, 255, 255), 2))
+            p.drawRoundedRect(box.adjusted(1, 1, -1, -1), 7, 7)
+            r = 8.5
+            c = QPointF(box.right() - r - 5, box.top() + r + 5)
+            p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(highlight)
             p.drawEllipse(c, r, r)
-            p.drawPolyline([c + QPointF(-5, 0), c + QPointF(-1.5, 4), c + QPointF(5, -4)])
+            tick = QPen(QColor(255, 255, 255), 1.6)
+            tick.setCapStyle(Qt.PenCapStyle.RoundCap)
+            tick.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(tick)
+            p.drawPolyline([c + QPointF(-3.6, 0.2), c + QPointF(-1.1, 2.8), c + QPointF(3.8, -2.6)])
         if option.state & QStyle.StateFlag.State_HasFocus and self.grid.hasFocus():
             p.setPen(QPen(highlight, 1, Qt.PenStyle.DotLine))
             p.setBrush(Qt.BrushStyle.NoBrush)
@@ -94,7 +94,6 @@ class FaceGrid(QListWidget):
         self.setUniformItemSizes(True)
         self.setFrameShape(QListWidget.Shape.NoFrame)
         self.empty_text = ""
-        self.fade_unchosen = False
         self.setItemDelegate(_Tile(self))
         self.faces = []
         self._loaded = 0  # faces whose pictures were asked for (the first ones; the rest as they're scrolled to)
@@ -167,6 +166,7 @@ class NameBox(QLineEdit):
         self.completer_ = QCompleter([], self)
         self.completer_.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.completer_.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.completer_.popup().setObjectName("popup")  # (styled like the other dropdowns)
         self.setCompleter(self.completer_)
 
     def set_names(self, names):
@@ -290,7 +290,6 @@ class WhoView(QWidget):
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         self.grid = FaceGrid()
         self.grid.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)  # a click ticks or unticks
-        self.grid.fade_unchosen = True
         self.grid.opened.connect(self.opened)
         self.grid.itemSelectionChanged.connect(self._selection_changed)
         self.name = NameBox()
