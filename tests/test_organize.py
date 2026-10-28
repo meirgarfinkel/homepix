@@ -179,6 +179,40 @@ def test_a_live_photo_clip_is_named_like_its_photo_where_it_is(home, lib):
     assert [(os.path.basename(c.dst), c.why) for c in p.changes] == [("2022_04_01_07_32_31_1.mov", "with its photo")]
 
 
+def test_a_burst_of_live_photos_keeps_each_clip_with_its_own_photo(home, lib):
+    """A photo a second before a Live Photo (with no clip of its own) mustn't take that photo's clip,
+    and so on down the burst, each clip named after the photo a second before its own."""
+    pf, db, _, organize = home
+    a = shot(lib / "2022" / "IMG_1.jpg", "2022:12:14 13:51:41")
+    b = shot(lib / "2022" / "IMG_2.jpg", "2022:12:14 13:51:42")
+    c = shot(lib / "2022" / "IMG_3.jpg", "2022:12:14 13:51:43")
+    with_clip(home, lib, b, lib / "2022" / "2022_12_14_18_56_56.mov", "2022-12-14 18:56:56")
+    clip = lib / "2022" / "2022_12_14_18_56_58.mov"  # (with_clip again would index the first one afresh)
+    clip.write_bytes(b"clip")
+    db.execute("INSERT INTO photos (path, qhash, kind, taken, taken_source, moment, duration) "
+               "SELECT ?, 'q2', 'motion', '2022-12-14 18:56:58', 'video', taken, 2 FROM photos WHERE path=?",
+               (str(clip), str(c)))
+    db.commit()
+    p = organize.plan(db, [lib])
+    clips = {os.path.basename(ch.src): os.path.basename(ch.dst) for ch in p.changes if ch.why == "with its photo"}
+    assert clips == {"2022_12_14_18_56_56.mov": "2022_12_14_13_51_42.mov",
+                     "2022_12_14_18_56_58.mov": "2022_12_14_13_51_43.mov"}
+    assert a.exists()
+
+
+def test_a_clip_stays_with_the_copy_left_behind(home, lib):
+    """Two copies of one Live Photo: the clip is as much the kept one's, so it doesn't go with the other."""
+    _, db, fo, _ = home
+    kept = shot(lib / "2023" / "2023_05_22_17_00_08_1.jpg", "2023:05:22 17:00:08")
+    extra = shot(lib / "2023" / "2023_05_22_17_00_08.jpg", "2023:05:22 17:00:08")
+    clip = lib / "2023" / "2023_05_22_21_00_15.mov"
+    with_clip(home, lib, kept, clip, "2023-05-22 21:00:15")
+    assert fo.companions(db, [extra]) == {}
+    assert fo.with_companions(db, [extra]) == [str(extra)]
+    assert fo.companions(db, [kept]) == {}  # either way round: it stays with the other
+    assert list(fo.companions(db, [kept, extra]).values()) == [str(clip)]  # both going: it goes too
+
+
 # --- at the size of a real library ------------------------------------------------------------
 
 def test_thirty_thousand_files(home, lib):

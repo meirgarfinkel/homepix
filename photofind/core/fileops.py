@@ -233,29 +233,39 @@ def plan_trash(paths) -> list[dict]:
 
 
 def companions(db, paths) -> dict[str, str]:
-    """{photo path: its Live Photo clip's path} for those of paths that have one: the motion clip in
-    the same folder taken within 2 seconds (the one with the same name first, then the closest)."""
-    wanted = {}
-    for p in paths:
-        row = db.execute("SELECT COALESCE(moment, taken) FROM photos WHERE path=? AND kind='photo' "
-                         "AND taken IS NOT NULL", (os.path.abspath(p),)).fetchone()
-        if row:
-            wanted[os.path.abspath(p)] = dt.datetime.fromisoformat(row[0])
-    if not wanted:
-        return {}
-    clips = {}
-    for path, taken in db.execute(  # a clip's local time, as its photo's date is
-            "SELECT path, COALESCE(moment, taken) FROM photos WHERE kind='motion' AND taken IS NOT NULL"):
-        clips.setdefault(os.path.dirname(path), []).append((path, dt.datetime.fromisoformat(taken)))
-    out, used = {}, set()
-    for p, taken in wanted.items():
-        stem = os.path.splitext(os.path.basename(p))[0].lower()
-        near = [(os.path.splitext(os.path.basename(c))[0].lower() != stem, abs((t - taken).total_seconds()), c)
-                for c, t in clips.get(os.path.dirname(p), []) if abs((t - taken).total_seconds()) <= 2]
-        near = [n for n in sorted(near) if n[2] not in used]
-        if near:
-            out[p] = near[0][2]
-            used.add(near[0][2])
+    """{photo path: its Live Photo clip's path} for those of paths that have one.
+
+    Each motion clip belongs to one photo in its folder taken within 2 seconds of it: the one with the
+    same name, else the closest. That's settled among all the folder's photos, not only paths, so a
+    clip never goes with a photo a second off when its own photo sits right beside it. Where a photo
+    not in paths is as close as one in it (an exact copy kept while its duplicate goes), the clip
+    stays with the one left behind."""
+    wanted = {os.path.abspath(p) for p in paths}
+    folders = {os.path.dirname(p) for p in wanted}
+    photos, clips = {}, {}
+    for path, kind, when in db.execute(  # a clip's local time, as its photo's date is
+            "SELECT path, kind, COALESCE(moment, taken) FROM photos WHERE kind IN ('photo', 'motion') "
+            "AND taken IS NOT NULL"):
+        folder = os.path.dirname(path)
+        if folder in folders:
+            (photos if kind == "photo" else clips).setdefault(folder, []).append((path, dt.datetime.fromisoformat(when)))
+
+    def stem(path):
+        return os.path.splitext(os.path.basename(path))[0].lower()
+
+    out = {}
+    for folder, its_clips in clips.items():
+        pairs = sorted(
+            (stem(p) != stem(c), abs((pt - ct).total_seconds()), p in wanted, p, c)
+            for c, ct in its_clips for p, pt in photos.get(folder, []) if abs((pt - ct).total_seconds()) <= 2)
+        has, taken = set(), set()
+        for _, _, asked, p, c in pairs:  # the best match first, all through the folder
+            if p in has or c in taken:
+                continue
+            has.add(p)
+            taken.add(c)
+            if asked:
+                out[p] = c
     return out
 
 
