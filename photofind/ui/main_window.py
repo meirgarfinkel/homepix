@@ -1172,11 +1172,21 @@ class MainWindow(QMainWindow):
                 first = ids[index] if ids[index] in at else at[0]
                 self._viewer_from = self.dupes
                 self.viewer.compare = (lambda i: self.dupes.copy_info(self.viewer.items[i].id),
-                                       lambda i: self.dupes.keep_photo(self.viewer.items[i].id))
+                                       lambda i: self.dupes.keep_photo(self.viewer.items[i].id),
+                                       self._compare_other)
                 self.viewer.show_items(items, at.index(first))
                 self._show(self.viewer)
                 self.viewer.setFocus()
         workers.run(load_copies, done, ids)
+
+    def _compare_other(self, i, step):
+        """Comparing: on to the next group of duplicates (or back to the one before), still large."""
+        ids = self.dupes.other_group(self.viewer.items[i].id, step)
+        if ids is None:
+            self.statusBar().showMessage("That was the last group of duplicates." if step > 0
+                                         else "That's the first group of duplicates.", 3000)
+        else:
+            self.compare_copies(ids, 0)
 
     def close_viewer(self):
         if self.stack.currentWidget() is not self.viewer:
