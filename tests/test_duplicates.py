@@ -326,7 +326,7 @@ def test_going_through_duplicates_in_the_window(home, lib, set_aside, monkeypatc
         v._keep(b, 1)  # the copy in Duplicates/ instead
         v.aside_trash_button.click()
         wait_until(app, lambda: not w.ops.busy and sorted(os.listdir(lib / "Duplicates")) == ["BSEA6346.jpg"])
-        assert ("Duplicates/IMG_4.jpg", "2021/2021_02_02_10_00_00.jpg") in shown[0]
+        assert ("Duplicates/IMG_4.jpg", "2021/2021_02_02_10_00_00.jpg") in [(a.replace(os.sep, "/"), b.replace(os.sep, "/")) for a, b in shown[0]]
         assert set_aside["b"].read_bytes() == small
         wait_until(app, lambda: [g.how for g in v.groups] == ["alone"])
         v.put_back_button.click()
