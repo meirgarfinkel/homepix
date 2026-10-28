@@ -8,7 +8,7 @@ import shutil
 
 import numpy as np
 import pytest
-from conftest import own_trash
+from conftest import own_trash, rel
 from PIL import Image, ImageDraw
 
 from photofind.core.util import quick_hash
@@ -192,7 +192,7 @@ def test_the_duplicates_folder_is_known_and_out_of_the_timeline_and_search(home,
     pf.index_folder(lib, want_faces=False)
     known = duplicates.known(db, [lib])
     path = {r[0]: r[1] for r in db.execute("SELECT id, path FROM photos")}
-    got = {os.path.basename(path[d]): (os.path.relpath(path[k], lib), how) for d, (k, how) in known.items()}
+    got = {os.path.basename(path[d]): (rel(path[k], lib), how) for d, (k, how) in known.items()}
     assert got == {"2020_01_01_10_00_00.jpg": ("2020/2020_01_01_10_00_00.jpg", "exact"),
                    "IMG_4.jpg": ("2021/2021_02_02_10_00_00.jpg", "near"),
                    "2022_03_03_10_00_00_1.jpg": ("2022/2022_03_03_10_00_00.png", "name"),

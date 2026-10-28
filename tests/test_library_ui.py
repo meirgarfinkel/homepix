@@ -100,7 +100,7 @@ def test_search_finds_the_photo_and_keeps_to_a_folder(pf, lib):
     assert found["total"] == 12 and found["matches"][0]["id"] == target
     inside = index.search("anything", folder=lib / "2023")
     assert inside["total"] == 6  # not 2023b
-    assert all("/2023/" in r["path"] for r in inside["matches"] + inside["related"])
+    assert all(f"{os.sep}2023{os.sep}" in r["path"] for r in inside["matches"] + inside["related"])
 
 
 def test_search_sees_new_photos(pf, lib):

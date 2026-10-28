@@ -39,7 +39,7 @@ def contents(lib) -> dict[str, str]:
 def index_matches_disk(db, lib):
     """Every indexed path exists, and every photo on disk is indexed at its own path, with its own bytes."""
     indexed = {r["path"]: r["qhash"] for r in db.execute("SELECT path, qhash FROM photos")}
-    on_disk = {os.path.join(lib, p) for p in contents(lib) if not os.path.basename(p).startswith(".")}
+    on_disk = {os.path.normpath(os.path.join(lib, p)) for p in contents(lib) if not os.path.basename(p).startswith(".")}
     assert set(indexed) == on_disk
     from photofind.core.util import quick_hash
 
