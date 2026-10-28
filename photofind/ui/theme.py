@@ -23,12 +23,14 @@ TOKENS = {
         "bg": "#FFFFFF", "side": "#F5F6F8", "raised": "#FFFFFF", "field": "#EEF0F3", "border": "#E4E7EB",
         "text": "#161A1F", "muted": "#5B6470", "accent": "#0A7DAD", "accentInk": "#FFFFFF",
         "accentSoft": "rgba(10,125,173,0.11)", "accentText": "#086A93", "hover": "rgba(22,26,31,0.06)",
+        "hoverStrong": "rgba(22,26,31,0.10)",
         "danger": "#C0392B",
     },
     "dark": {
         "bg": "#0E1014", "side": "#15181D", "raised": "#1D2127", "field": "#1D2127", "border": "#262B32",
         "text": "#E7EAEE", "muted": "#9AA3AE", "accent": "#3AA9DB", "accentInk": "#04202C",
         "accentSoft": "rgba(58,169,219,0.16)", "accentText": "#7FCBEA", "hover": "rgba(231,234,238,0.06)",
+        "hoverStrong": "rgba(231,234,238,0.12)",
         "danger": "#F0776A",
     },
 }
@@ -146,6 +148,9 @@ QLineEdit#search:focus {{ border-color: {accent}; background: {bg}; }}
 QWidget#pageHeader {{ background: {bg}; }}
 QLabel#pageTitle {{ font-size: 26px; font-weight: 700; }}
 QLabel#pageCount {{ color: {muted}; }}
+QToolButton#pageBack {{ border: none; border-radius: 16px; padding: 4px 12px 4px 6px; color: {muted};
+                        font-weight: 600; }}
+QToolButton#pageBack:hover {{ background: {hover}; color: {text}; }}
 
 QTreeWidget#sidebar {{ background: {side}; border: none; padding: 10px 10px; outline: 0; }}
 QTreeWidget#sidebar::item {{ min-height: 36px; padding: 0 4px; border: none; }}

@@ -96,12 +96,17 @@ class CountDelegate(QStyledItemDelegate):
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
         first = index.siblingAtColumn(0)
         if index.model().hasChildren(first):
-            pen = QPen(muted, 1.6)
+            tree = self.parent()
+            if tree.hover_arrow is not None and tree.indexFromItem(tree.hover_arrow) == first:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(theme.color("hoverStrong"))
+                p.drawEllipse(arrow.center(), 12, 12)
+            pen = QPen(theme.color("text"), 1.6)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
             c, w = arrow.center(), 4.0
-            h = -2.0 if self.parent().isExpanded(first) else 2.0  # ▴ open, ▾ closed
+            h = -2.0 if tree.isExpanded(first) else 2.0  # ▴ open, ▾ closed
             path = QPainterPath(QPointF(c.x() - w, c.y() - h))
             path.lineTo(c.x(), c.y() + h)
             path.lineTo(c.x() + w, c.y() - h)
@@ -127,6 +132,7 @@ class Sidebar(QTreeWidget):
         self.setRootIsDecorated(False)  # no arrows at the left: they're at the right (CountDelegate)
         self.setExpandsOnDoubleClick(False)  # (double-click chooses it, like a click)
         self.setMouseTracking(True)  # (the hand over an arrow)
+        self.hover_arrow = None  # the row whose arrow the mouse is over
         self.setUniformRowHeights(True)
         self.setMinimumWidth(220)
         self.itemSelectionChanged.connect(self._picked)
@@ -134,14 +140,15 @@ class Sidebar(QTreeWidget):
         self._quiet = False
         self.set_folders([], {}, 0)
 
-    def set_folders(self, roots: list[str], counts: dict, total: int, people=None, dupes=None):
+    def set_folders(self, roots: list[str], counts: dict, total: int, people=None, dupes=None, excluded=()):
         """Rebuild, keeping what was open and what was chosen; everything starts closed. people: how
         many are named, or None to leave People out (no one named and no faces to ask about);
         dupes: groups of duplicates to review ("" if none or not known yet), None to leave the
-        review out."""
+        review out. excluded: folders left out of the library's views (shown dimmed)."""
         opened = {it.data(0, PATH_ROLE) for it in self._all_items() if it.isExpanded()}
         chosen = self.current_path()
         self._quiet = True
+        self.hover_arrow = None
         self.clear()
         everything = QTreeWidgetItem(["All photos", f"{total:,}"])
         everything.setData(0, PATH_ROLE, ALL)
@@ -177,8 +184,16 @@ class Sidebar(QTreeWidget):
                 italic.setItalic(True)
                 item.setFont(0, italic)
         for it in self._all_items():
-            if it.data(0, PATH_ROLE) in opened:
+            path = it.data(0, PATH_ROLE)
+            if path in opened:
                 it.setExpanded(True)
+            if path and os.path.isabs(path) and any(path == f or path.startswith(os.path.join(f, ""))
+                                                    for f in excluded):
+                it.setForeground(0, theme.color("muted"))  # (and the folders inside it)
+            if path in excluded:
+                it.setText(0, f"{it.text(0)} (excluded)")
+                it.setToolTip(0, f"{path}\nLeft out of All photos, people and search. "
+                                 "Right-click to include it again.")
         self.select(chosen or ALL)
         self._quiet = False
 
@@ -248,16 +263,30 @@ class Sidebar(QTreeWidget):
         return item if pos.x() >= self.viewport().width() - RIGHT - CHEVRON - 6 else None
 
     def mousePressEvent(self, e):
-        item = self._arrow_hit(e.position().toPoint())
+        pos = e.position().toPoint()
+        item = self._arrow_hit(pos)
         if item is not None and e.button() == Qt.MouseButton.LeftButton:
             item.setExpanded(not item.isExpanded())
             return
+        under = self.itemAt(pos)
+        again = under is not None and under.isSelected() and e.button() == Qt.MouseButton.LeftButton
         super().mousePressEvent(e)
+        if again and not self._quiet:  # already chosen: go back to it (e.g. People, from someone's photos)
+            self.chosen.emit(under.data(0, PATH_ROLE))
 
     def mouseMoveEvent(self, e):
-        on = self._arrow_hit(e.position().toPoint()) is not None
-        self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if on else Qt.CursorShape.ArrowCursor)
+        hit = self._arrow_hit(e.position().toPoint())
+        self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if hit else Qt.CursorShape.ArrowCursor)
+        if hit is not self.hover_arrow:
+            self.hover_arrow = hit
+            self.viewport().update()
         super().mouseMoveEvent(e)
+
+    def leaveEvent(self, e):
+        if self.hover_arrow is not None:
+            self.hover_arrow = None
+            self.viewport().update()
+        super().leaveEvent(e)
 
     def contextMenuEvent(self, e):
         item = self.itemAt(self.viewport().mapFromGlobal(e.globalPos()))

@@ -18,7 +18,7 @@ Photo Finder is a native desktop app (Qt). While it's open, it looks for new pho
 What's in it:
 
 - **Timeline:** every photo and video by date, newest first, in month sections, with a year scrubber down the side for jumping through the years. Ctrl + mouse wheel (or the Size slider) makes the thumbnails bigger or smaller.
-- **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show.
+- **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show. Right-click a folder and choose *Exclude from library* to keep its photos out of All photos, people and search (nothing is deleted; opening the folder still shows them, and the same menu includes it again).
 - **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time. Untick any that aren't the same person, type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that match are named too. Skip a group for now, or say it's no one you know, and it isn't asked about again.
 - **People:** everyone you've named, as a page of faces. Click one to see their photos; right-click to rename them (a name someone else has makes them one person), say they're the same person as someone else, or forget them.
 - **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Select the wrong ones and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself.
