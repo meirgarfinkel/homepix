@@ -140,7 +140,7 @@ QToolBar#main QToolButton:checked {{ background: {accentSoft}; color: {accentTex
 QToolBar#main QToolButton::menu-indicator {{ image: none; width: 0; }}
 QLabel#brand {{ font-weight: 700; font-size: 15px; padding-left: 4px; }}
 QLineEdit#search {{ background: {field}; border: 1px solid transparent; border-radius: 20px; min-height: 38px;
-                    padding: 0 14px 0 40px; font-size: 14px; }}
+                    padding: 0 40px 0 40px; font-size: 14px; }}
 QLineEdit#search:focus {{ border-color: {accent}; background: {bg}; }}
 
 QWidget#pageHeader {{ background: {bg}; }}
@@ -236,6 +236,9 @@ def _draw(name: str, p: QPainter):
     elif name == "search":
         p.drawEllipse(QPointF(10.5, 10.5), 6, 6)
         p.drawLine(QPointF(15, 15), QPointF(19.5, 19.5))
+    elif name == "clear":
+        p.drawLine(QPointF(7, 7), QPointF(17, 17))
+        p.drawLine(QPointF(17, 7), QPointF(7, 17))
     elif name == "faces":
         p.drawEllipse(QPointF(12, 9), 3.6, 3.6)
         path = QPainterPath(QPointF(5, 19.5))
@@ -259,10 +262,10 @@ def _pixmap(name: str, col: QColor, px: int = 20, dpr: float = 2.0) -> QPixmap:
     return pm
 
 
-def icon(name: str) -> QIcon:
-    """In the text colour, and the accent's when checked."""
+def icon(name: str, colour: str = "text") -> QIcon:
+    """In the text colour (or another), and the accent's when checked."""
     ic = QIcon()
-    ic.addPixmap(_pixmap(name, color("text")), QIcon.Mode.Normal, QIcon.State.Off)
+    ic.addPixmap(_pixmap(name, color(colour)), QIcon.Mode.Normal, QIcon.State.Off)
     ic.addPixmap(_pixmap(name, color("accentText")), QIcon.Mode.Normal, QIcon.State.On)
     ic.addPixmap(_pixmap(name, color("muted")), QIcon.Mode.Disabled, QIcon.State.Off)
     return ic

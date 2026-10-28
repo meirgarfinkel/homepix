@@ -155,14 +155,36 @@ def _gap(width: int, stretch: bool = False) -> QWidget:
 class SearchBox(QLineEdit):
     focused = Signal()
     escaped = Signal()
-    icon = None  # drawn at the left, inside the padding
+    icon = clear_icon = None  # drawn at the left, and (with text in) the × at the right
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.textChanged.connect(lambda _: self.update())
+
+    def _clear_rect(self) -> QRect:
+        return QRect(self.width() - 34, (self.height() - 24) // 2, 24, 24)
 
     def paintEvent(self, e):
         super().paintEvent(e)
+        p = QPainter(self)
         if self.icon is not None:
-            p = QPainter(self)
             self.icon.paint(p, QRect(14, (self.height() - 18) // 2, 18, 18))
-            p.end()
+        if self.text() and self.clear_icon is not None:
+            self.clear_icon.paint(p, self._clear_rect().adjusted(4, 4, -4, -4))
+        p.end()
+
+    def mousePressEvent(self, e):
+        if self.text() and self._clear_rect().contains(e.position().toPoint()):
+            self.clear()
+            self.setFocus()
+        else:
+            super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        over = bool(self.text()) and self._clear_rect().contains(e.position().toPoint())
+        self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.IBeamCursor)
+        super().mouseMoveEvent(e)
 
     def focusInEvent(self, e):
         super().focusInEvent(e)
@@ -333,6 +355,7 @@ class MainWindow(QMainWindow):
                              (self.settings_action, "settings"), (self.more_button, "more")):
             action.setIcon(theme.icon(name))
         self.search_box.icon = theme.icon("search")
+        self.search_box.clear_icon = theme.icon("clear", "muted")
         self.search_box.update()
         self.brand.setPixmap(theme.brand_mark())
         self.timeline.viewport().update()
@@ -367,7 +390,6 @@ class MainWindow(QMainWindow):
         self.search_box.setObjectName("search")
         self.search_box.setPlaceholderText("Search your photos: a dog on the beach, a red car...")
         self.search_box.setToolTip("Ctrl+F")
-        self.search_box.setClearButtonEnabled(True)
         self.search_box.setMinimumWidth(380)
         self.search_box.setMaximumWidth(560)
         self.search_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
