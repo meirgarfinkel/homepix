@@ -4,6 +4,7 @@ saying they aren't duplicates) is undoable."""
 
 import os
 import shutil
+import time
 
 import numpy as np
 import pytest
@@ -293,6 +294,20 @@ def test_comparing_a_groups_copies_large(home, lib, planted):
         assert w.dupes.list.currentIndex().row() == row + 1
         key(Qt.Key.Key_Up)
         wait_until(app, lambda: [it.id for it in v.items] == order)
+        # Down held: the presses come faster than the groups load. Each goes on from the one before,
+        # it stops at the last group, and only that one is shown (not every group on the way, late).
+        shown = []
+        real = v.show_items
+        v.show_items = lambda items, i: (shown.append([it.id for it in items]), real(items, i))
+        for _ in range(10):
+            key(Qt.Key.Key_Down)
+        last = [c.id for c in w.dupes.list.shown(w.dupes.groups[-1])]
+        wait_until(app, lambda: [it.id for it in v.items] == last)
+        end = time.time() + 0.5
+        while time.time() < end:
+            app.processEvents()
+        assert shown == [last] and w.dupes.list.currentIndex().row() == len(w.dupes.groups) - 1
+        v.show_items = real
         key(Qt.Key.Key_Escape)
         wait_until(app, lambda: w.stack.currentWidget() is w.dupes)
         assert v.compare is None
