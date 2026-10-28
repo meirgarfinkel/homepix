@@ -84,9 +84,11 @@ def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
     window.people.itemClicked.emit(window.people.item(0))
     wait_until(app, lambda: window.stack.currentWidget() is window.who and window.who.grid.count() == 5)
     assert window.who.remaining() == 2
-    assert len(window.who.grid.selected_faces()) == 5  # all ticked to start with
-    window.who.grid.item(4).setSelected(False)  # one isn't them (they're named once it's recognized)
+    assert window.who.grid.selected_faces() == []  # none ticked to start with
     window.who.name.setText("Ann")
+    assert not window.who.name_button.isEnabled()  # nothing ticked: no one to name yet
+    for i in range(4):  # one isn't them (they're named once it's recognized)
+        window.who.grid.item(i).setSelected(True)
     assert window.who.name_button.text() == "Name 4 faces"
     window.who.name_button.click()
     assert window.who.grid.count() == 3  # on to the next group at once
@@ -95,7 +97,8 @@ def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
     wait_until(app, lambda: window.who.remaining() == 1)
     assert "Ann" in window.people_names.values()
 
-    window.who.hide_button.click()  # strangers: don't ask again
+    assert window.who.grid.selected_faces() == [] and window.who.hide_button.isEnabled()
+    window.who.hide_button.click()  # strangers: none ticked, so the whole group; don't ask again
     settle(app, window)
     wait_until(app, lambda: window.who.remaining() == 0)
     assert window.who.title.text() == "No one to ask about"

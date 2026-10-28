@@ -272,8 +272,8 @@ class PersonFaces(QWidget):
 
 
 class WhoView(QWidget):
-    """One group of unnamed look-alike faces at a time. Those selected are named; a face that isn't
-    the same person is clicked to leave it out."""
+    """One group of unnamed look-alike faces at a time, none ticked to start with: those ticked are
+    named (or hidden), so a face is only named once it's been clicked."""
 
     named = Signal(list, str)  # face ids, name
     hidden = Signal(list)  # face ids: no one to name
@@ -303,8 +303,10 @@ class WhoView(QWidget):
         self.skip_button.setToolTip("Ask about another group (this one comes back next time)")
         self.skip_button.clicked.connect(self.skip)
         self.hide_button = QPushButton("No one I know")
-        self.hide_button.setToolTip("Strangers, or not faces: don't ask about these again")
-        self.hide_button.clicked.connect(lambda: self.hidden.emit([f["id"] for f in self._chosen()]))
+        self.hide_button.setToolTip("Strangers, or not faces: don't ask about these again (the ones ticked, or "
+                                    "the whole group if none are)")
+        self.hide_button.clicked.connect(
+            lambda: self.hidden.emit([f["id"] for f in self._chosen() or self.grid.faces]))
         row = QHBoxLayout()
         row.addWidget(self.name, 1)
         row.addWidget(self.name_button)
@@ -359,7 +361,7 @@ class WhoView(QWidget):
             waiting = self._waiting()
         group = waiting[0] if waiting else []
         self.grid.empty_text = "Everyone's been named, or there's no one to ask about yet."
-        self.grid.set_faces(group, selected=True)
+        self.grid.set_faces(group)
         for w in (self.name, self.name_button, self.skip_button, self.hide_button):
             w.setEnabled(bool(group))
         self._update_text()
@@ -371,8 +373,8 @@ class WhoView(QWidget):
         n, group = self.remaining(), self.grid.faces
         self.title.setText("Who is this?" if group else "No one to ask about")
         after = f"{n - 1:,} more group{'s' if n != 2 else ''} after this" if n > 1 else "the last group"
-        self.hint.setText(f"{len(group)} faces that look alike; {after}. Click a face that isn't the same person "
-                          "to leave it out; double-click to see its photo."
+        self.hint.setText(f"{len(group)} faces that look alike; {after}. Click the faces of the same person to "
+                          "tick them (Ctrl+A ticks them all); double-click to see its photo."
                           if group else "")
 
     def _chosen(self):
@@ -382,7 +384,7 @@ class WhoView(QWidget):
         n = len(self._chosen())
         self.name_button.setEnabled(n > 0 and bool(self.name.text().strip()))
         self.name_button.setText(f"Name {n} face{'s' if n != 1 else ''}" if n else "Name them")
-        self.hide_button.setEnabled(n > 0)
+        self.hide_button.setEnabled(bool(self.grid.faces))
 
     def _name(self):
         faces, name = self._chosen(), self.name.text().strip()
