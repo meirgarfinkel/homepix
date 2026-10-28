@@ -3,7 +3,7 @@ and Undo takes it back."""
 
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
-from ..core import people
+from ..core import open_db, people
 from .views.faces import ask_name
 
 
@@ -74,3 +74,35 @@ class PeopleActions:
             QMessageBox.StandardButton.Cancel)
         if answer == QMessageBox.StandardButton.Yes:
             self._run(f"Forget {name}", f"Forgot {name}", lambda db: people.plan_forget(db, pid))
+
+    # --- starting over ------------------------------------------------------------------------------
+
+    def start_over(self):
+        """Forget every face and name, and look for the faces again (with what's learned since)."""
+        answer = QMessageBox.warning(
+            self.w, "Start faces over",
+            "Forget every face found and everyone you named, and look through your photos for faces again?"
+            "\n\nThe photos aren't touched, and search, dates and everything else stay. This can't be undone "
+            "(a copy of the database is kept in the backups folder first). Finding the faces again takes a "
+            "while, in the background; then name people on Who is this?.",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Reset, QMessageBox.StandardButton.Cancel)
+        if answer != QMessageBox.StandardButton.Reset:
+            return
+
+        def work(progress, should_stop):
+            db = open_db()
+            try:
+                return people.reset_faces(db)
+            finally:
+                db.close()
+
+        def done(res, err):
+            if err is not None:
+                QMessageBox.warning(self.w, "Photo Finder", f"That didn't work:\n{err}")
+                self.w.ops.finished.emit("")
+                return
+            n, _ = res
+            self.w.ops.finished.emit(f"Forgot {_faces(n)}. Looking for faces again, in the background")
+
+        self.w.ops._go("Forgetting the faces...", work, done)
+

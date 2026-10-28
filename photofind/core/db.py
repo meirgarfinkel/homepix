@@ -166,8 +166,14 @@ def _m9_duplicates(db):
         db.execute(stmt)
 
 
+def _m10_face_size(db):
+    """px: a face's size in the pixels it was read from (a small face is read from a bigger decode of
+    its photo), to leave the blurry ones out of recognizing; NULL for faces found before."""
+    db.execute("ALTER TABLE faces ADD COLUMN px REAL")
+
+
 MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates,
-              _m8_faces, _m9_duplicates]
+              _m8_faces, _m9_duplicates, _m10_face_size]
 LATEST = len(MIGRATIONS)
 
 
@@ -199,10 +205,11 @@ def upgrade(db: sqlite3.Connection):
         raise
 
 
-def backup(db: sqlite3.Connection, version: int):
+def backup(db: sqlite3.Connection, version: int, why: str = ""):
+    """A copy of the database in the backups folder (why: a word for its name, like before-reset)."""
     folder = data_dir() / "backups"
     folder.mkdir(exist_ok=True)
-    out = folder / f"photofind-v{version}-{dt.datetime.now():%Y%m%d-%H%M%S}.db"
+    out = folder / f"photofind-v{version}{'-' + why if why else ''}-{dt.datetime.now():%Y%m%d-%H%M%S}.db"
     with sqlite3.connect(out) as copy:
         db.backup(copy)
     copy.close()

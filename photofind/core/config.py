@@ -10,8 +10,13 @@ MIN_FACE_PX = 36          # ignore tiny background faces (in WORK_SIZE pixels)
 FACE_SCORE = 0.85         # face detector confidence needed
 CLUSTER_SIM = 0.40        # how alike two faces must be to group them
 SUBGROUP_SIM = 0.55       # ...and to sit side by side inside a group (Who is this?)
-ASSIGN_SIM = 0.42         # how alike a face must be to a named person to auto-tag it
-ASSIGN_MARGIN = 0.05      # ...and how much better than the next-closest person
+ASSIGN_SIM = 0.55         # how alike a face must be to the faces someone was named on (the 3 most alike,
+                          # on average) to be recognized as them...
+ASSIGN_MARGIN = 0.08      # ...and how much more than to anyone else's
+ASSIGN_MIN_PX = 80        # faces smaller than this (in the pixels they were read from) are never
+                          # recognized by themselves: too blurry to tell people apart (they can still be named)
+FACE_READ_PX = 112        # a face smaller than this in the WORK_SIZE photo is read again from a bigger decode
+FACE_READ_MAX = 4096      # ...of at most this many pixels on its long side
 MATCH_STRICTNESS = 2.0    # search: how far above a typical photo's score counts as a match
                           # (raise if unrelated photos show up as matches, lower if real ones are missed)
 NEAR_STRICTNESS = 1.0     # search: lower bar for the "possibly related" section
