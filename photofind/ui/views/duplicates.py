@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStyle,
     QStyledItemDelegate,
+    QTabBar,
     QVBoxLayout,
     QWidget,
 )
@@ -27,6 +28,8 @@ PAD = 16
 RING = 4  # the keeper's ring sits this far outside its picture
 RADIUS = 6
 _ROOT = QModelIndex()
+# how a copy in Duplicates/ was found to be one (see core.duplicates.known)
+MARKS = {"exact": "Same file", "near": "Looks the same", "mapping": "Listed as a copy", "name": "Same name: check it"}
 
 
 class _Groups(QAbstractListModel):
@@ -40,6 +43,8 @@ class _Groups(QAbstractListModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.ToolTipRole:
             g = self.groups[index.row()]
+            if g.how == "alone":
+                return "No photo like it was found in the library: this is the only one. Put it back rather than lose it."
             return ("The same file" if g.how == "exact" else "They look the same") + ". Click a copy to keep it instead."
         return None
 
@@ -115,20 +120,23 @@ class _Row(QStyledItemDelegate):
                 p.drawImage(r, img)
             else:
                 p.fillRect(r, c_("field"))
-            if not keep and not over:  # the extras, dimmed
+            if not keep and not over and g.how != "alone":  # the extras, dimmed
                 dim = c_("bg")
                 dim.setAlpha(110)
                 p.fillRect(r, dim)
             p.restore()
             p.setFont(bold)
-            if keep:
+            if g.how == "alone":
+                _pill(p, r.left() + 10, r.top() + 10, "No copy in the library", c_("danger"), QColor(255, 255, 255))
+            elif keep:
                 p.setPen(QPen(c_("accent"), 3))
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawRoundedRect(QRectF(r).adjusted(-RING, -RING, RING, RING), RADIUS + RING, RADIUS + RING)
                 _pill(p, r.left() + 10, r.top() + 10, "✓ Keep", c_("accent"), c_("accentInk"))
             else:
-                _pill(p, r.left() + 10, r.top() + 10, "Same file" if g.how == "exact" else "Extra copy",
-                      QColor(0, 0, 0, 140), QColor(255, 255, 255))
+                mark = (MARKS.get(g.marks.get(c.id), "In Duplicates/") if g.marks
+                        else "Same file" if g.how == "exact" else "Extra copy")
+                _pill(p, r.left() + 10, r.top() + 10, mark, QColor(0, 0, 0, 140), QColor(255, 255, 255))
                 if over:
                     _pill(p, r.center().x(), r.center().y(), "Keep this one", c_("accent"), c_("accentInk"),
                           centre=True)
@@ -218,18 +226,26 @@ class _List(QListView):
     empty_text = "Looking for duplicates..."
 
 
+LIBRARY, ASIDE = 0, 1  # the tabs: duplicates in the library, and what Duplicates/ holds already
+
+
 class DuplicatesView(QWidget):
-    """set_aside(groups, to): to is "duplicates" or "trash"; apart(groups); compared(its copies'
-    ids as shown, the one double-clicked): to look at them large, one after another."""
+    """Two tabs: the duplicates in the library, and the files in Duplicates/ beside the photos they're
+    copies of. set_aside(groups, to): to is "duplicates" or "trash"; apart(groups); aside_trash(groups):
+    be rid of copies in Duplicates/; put_back(groups): move them back into the library; compared(its
+    copies' ids as shown, the one double-clicked): to look at them large, one after another."""
 
     set_aside = Signal(list, str)
     apart = Signal(list)
+    aside_trash = Signal(list)
+    put_back = Signal(list)
     compared = Signal(list, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.loader = ThumbLoader(workers=2, budget=48 * 1024 * 1024)
         self.groups = []
+        self.sets = {LIBRARY: [], ASIDE: None}  # None: not worked out yet
         self.pending = 0  # photos not looked at yet
         self._kept = {}  # {its copies' ids: the one chosen to keep}
         lay = QVBoxLayout(self)
@@ -237,6 +253,13 @@ class DuplicatesView(QWidget):
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
         lay.addWidget(self.title)
+        self.tabs = QTabBar()
+        self.tabs.setDrawBase(False)
+        self.tabs.setExpanding(False)
+        self.tabs.addTab("In the library")
+        self.tabs.addTab("In Duplicates/")
+        self.tabs.currentChanged.connect(lambda _: self._show_tab())
+        lay.addWidget(self.tabs)
         self.hint = QLabel()
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
@@ -247,7 +270,13 @@ class DuplicatesView(QWidget):
         self.trash_button = QPushButton("Move extras to Trash...")
         self.apart_button = QPushButton("Not duplicates")
         self.apart_button.setToolTip("Never offer these as duplicates again")
-        for b in (self.aside_button, self.trash_button, self.apart_button):
+        self.aside_trash_button = QPushButton("Move copies to Trash...")
+        self.aside_trash_button.setToolTip("The copies in Duplicates/ go; the photo with the ring stays (or takes "
+                                           "the library photo's place, if you chose a copy)")
+        self.put_back_button = QPushButton("Put back in the library...")
+        self.put_back_button.setToolTip("Into their year's folder, named by when they were taken")
+        for b in (self.aside_button, self.trash_button, self.apart_button, self.aside_trash_button,
+                  self.put_back_button):
             row.addWidget(b)
         row.addStretch()
         lay.addLayout(row)
@@ -258,22 +287,54 @@ class DuplicatesView(QWidget):
         self.aside_button.clicked.connect(lambda: self._act(lambda gs: self.set_aside.emit(gs, "duplicates")))
         self.trash_button.clicked.connect(lambda: self._act(lambda gs: self.set_aside.emit(gs, "trash")))
         self.apart_button.clicked.connect(lambda: self._act(self.apart.emit, selected_only=True))
+        self.aside_trash_button.clicked.connect(self._aside_trash)
+        self.put_back_button.clicked.connect(self._put_back)
         self.list.keep.connect(self._keep)
         self.list.open_copy.connect(lambda r, i: self.compared.emit([c.id for c in self.list.shown(self.groups[r])], i))
         self.list.selectionModel().selectionChanged.connect(lambda *_: self._update_text())
-        self._update_text()
+        self._show_tab()
 
     def set_groups(self, groups, library, pending=0):
+        """The duplicates in the library."""
+        self.list.library = library
+        self.pending = pending
+        self.sets[LIBRARY] = self._chosen(groups)
+        if self.tabs.currentIndex() == LIBRARY:
+            self._show_tab()
+        else:
+            self._update_text()
+
+    def set_aside_groups(self, groups):
+        """What Duplicates/ holds, beside the photos in the library they're copies of."""
+        self.sets[ASIDE] = self._chosen(groups)
+        if self.tabs.currentIndex() == ASIDE:
+            self._show_tab()
+        else:
+            self._update_text()
+
+    def _chosen(self, groups):
         for g in groups:
             chosen = self._kept.get(frozenset(c.id for c in g.copies))
             if chosen is not None:
                 g.keep(chosen)
-        self.groups = groups
-        self.list.library = library
-        self.pending = pending
-        self.list.empty_text = ("No duplicates found yet." if pending else
-                                "No duplicates. Every photo and video here is the only one of its kind.")
-        self.list.model().set_groups(groups)
+        return groups
+
+    def _show_tab(self):
+        aside = self.tabs.currentIndex() == ASIDE
+        groups = self.sets[ASIDE if aside else LIBRARY]
+        self.groups = groups or []
+        if aside:
+            self.list.empty_text = ("Looking through Duplicates/... (the first time takes a minute)" if groups is None
+                                    else "Nothing in Duplicates/.")
+        else:
+            self.list.empty_text = ("No duplicates found yet." if self.pending else
+                                    "No duplicates. Every photo and video here is the only one of its kind.")
+        for b in (self.aside_button, self.trash_button, self.apart_button):
+            b.setVisible(not aside)
+        for b in (self.aside_trash_button, self.put_back_button):
+            b.setVisible(aside)
+        self.list.model().set_groups(self.groups)
+        self.list.viewport().update()
         self._update_text()
 
     def selected(self) -> list:
@@ -284,6 +345,16 @@ class DuplicatesView(QWidget):
         groups = self.selected() or ([] if selected_only else list(self.groups))
         if groups:
             do(groups)
+
+    def _aside_trash(self):
+        groups = [g for g in (self.selected() or self.groups) if g.how != "alone"]
+        if groups:
+            self.aside_trash.emit(groups)
+
+    def _put_back(self):
+        groups = self.selected() or [g for g in self.groups if g.how == "alone"]
+        if groups:
+            self.put_back.emit(groups)
 
     def _keep(self, row, i):
         g = self.groups[row]
@@ -302,7 +373,14 @@ class DuplicatesView(QWidget):
         shown = self.list.shown(g)
         i = next(i for i, c in enumerate(shown) if c.id == photo_id)
         c = shown[i]
-        kept = "✓ Keep" if c.id == g.keeper.id else ("Same file" if g.how == "exact" else "Extra copy")
+        if g.how == "alone":
+            kept = "No copy in the library"
+        elif c.id == g.keeper.id:
+            kept = "✓ Keep"
+        elif g.marks:
+            kept = MARKS.get(g.marks.get(c.id), "In Duplicates/")
+        else:
+            kept = "Same file" if g.how == "exact" else "Extra copy"
         size = f"{c.width:,} × {c.height:,} · " if c.width else ""
         n = self.groups.index(g)
         return (f"Copy {i + 1} of {len(shown)} · {kept}",
@@ -329,6 +407,12 @@ class DuplicatesView(QWidget):
             self._keep(self.groups.index(g), [c.id for c in self.list.shown(g)].index(photo_id))
 
     def _update_text(self):
+        lib, aside = self.sets[LIBRARY], self.sets[ASIDE]
+        self.tabs.setTabText(LIBRARY, f"In the library ({len(lib):,})")
+        files = sum(len(g.copies) - (g.how != "alone") for g in aside or [])
+        self.tabs.setTabText(ASIDE, "In Duplicates/" + (f" ({files:,})" if aside is not None else ""))
+        if self.tabs.currentIndex() == ASIDE:
+            return self._update_aside_text(files)
         extras = sum(len(g.extras) for g in self.groups)
         chosen = self.selected()
         if not self.groups:
@@ -351,6 +435,29 @@ class DuplicatesView(QWidget):
         self.apart_button.setEnabled(bool(chosen))
         self.apart_button.setToolTip("Never offer the selected groups as duplicates again" if chosen
                                      else "Select the groups that aren't duplicates first")
+
+    def _update_aside_text(self, files: int):
+        alone = [g for g in self.groups if g.how == "alone"]
+        if self.sets[ASIDE] is None:
+            self.title.setText("Duplicates/")
+        else:
+            self.title.setText(f"{files:,} file{'s' if files != 1 else ''} in Duplicates/"
+                               + (f", {len(alone):,} with no copy in the library" if alone else ""))
+        self.hint.setText(
+            "What's in Duplicates/ stays out of the timeline and search. Each copy is shown beside the photo in your "
+            "library it's a copy of (the one with the ring). Check them, then move the copies to the Trash; the photos "
+            "in your library stay. Click a copy to keep it instead: it takes the library photo's place. "
+            "Double-click to compare them large (← → to switch, ↑ ↓ for others, K to keep). "
+            + ("The ones at the end have no copy in the library: put them back rather than lose them. " if alone else "")
+            + "Select groups (Ctrl-click the space beside them) to act on just those.")
+        chosen = self.selected()
+        which = f" ({len(chosen):,} selected)" if chosen else ""
+        matched = [g for g in (chosen or self.groups) if g.how != "alone"]
+        self.aside_trash_button.setText(f"Move copies to Trash{which}...")
+        self.aside_trash_button.setEnabled(bool(matched))
+        self.put_back_button.setText("Put back in the library" + (which if chosen else
+                                     f" ({len(alone):,} with no copy)" if alone else "") + "...")
+        self.put_back_button.setEnabled(bool(chosen or alone))
 
     def stop(self):
         self.loader.stop()

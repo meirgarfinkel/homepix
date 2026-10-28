@@ -188,6 +188,10 @@ QDialog QListWidget, QDialog QTreeView, QDialog QTableView {{ background: {field
 QDialog QListWidget::item {{ padding: 6px 8px; border-radius: 8px; }}
 QDialog QListWidget::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 
+QTabBar::tab {{ background: transparent; border: none; border-radius: 15px; padding: 6px 14px;
+    margin: 6px 6px 2px 0; color: {muted}; font-weight: 600; }}
+QTabBar::tab:selected {{ background: {accentSoft}; color: {accentText}; }}
+QTabBar::tab:hover:!selected {{ background: {hover}; color: {text}; }}
 QListWidget#people {{ background: {bg}; border: none; outline: 0; padding: 8px 16px; }}
 QListWidget#people::item {{ border: none; border-radius: 14px; padding: 6px; color: {text}; }}
 QListWidget#people::item:hover {{ background: {hover}; }}

@@ -214,6 +214,133 @@ def test_the_duplicates_folder_is_known_and_out_of_the_timeline_and_search(home,
     assert index.search("anything", folder=str(lib / "Duplicates"))["total"] == 4
 
 
+@pytest.fixture
+def set_aside(home, lib):
+    """A library with Duplicates/ from before: two copies of a (one exact), a smaller one of b, and one
+    whose photo isn't in the library at all."""
+    pf, _, _, _ = home
+    p = {"a": save(scene(1), lib / "2020" / "2020_01_01_10_00_00.jpg", "2020:01:01 10:00:00"),
+         "b": save(scene(2), lib / "2021" / "2021_02_02_10_00_00.jpg", "2021:02:02 10:00:00")}
+    p["a exact"] = lib / "Duplicates" / "2020_01_01_10_00_00.jpg"
+    p["a exact"].parent.mkdir()
+    shutil.copy2(p["a"], p["a exact"])
+    p["a small"] = save(scene(1).resize((320, 240)), lib / "Duplicates" / "IMG_9.jpg")
+    p["b small"] = save(scene(2).resize((320, 240)), lib / "Duplicates" / "IMG_4.jpg")
+    p["lone"] = save(scene(40), lib / "Duplicates" / "BSEA6346.jpg", "2018:05:05 10:00:00")
+    pf.index_folder(lib, want_faces=False)
+    return p
+
+
+def aside_names(groups, planted):
+    back = {str(v): k for k, v in planted.items()}
+    return [[back[c.path] for c in g.copies] for g in groups]
+
+
+def test_what_duplicates_holds_is_shown_beside_the_photos_in_the_library(home, lib, set_aside):
+    _, db, _, duplicates = home
+    groups = duplicates.aside_groups(db, [lib])
+    assert aside_names(groups, set_aside) == [["b", "b small"], ["a", "a exact", "a small"], ["lone"]]
+    assert [g.how for g in groups] == ["near", "near", "alone"]
+    a = groups[1]
+    assert {set_aside_name(c, set_aside): a.marks[c.id] for c in a.extras} == {"a exact": "exact", "a small": "near"}
+
+
+def set_aside_name(c, planted):
+    return {str(v): k for k, v in planted.items()}[c.path]
+
+
+def test_the_copies_set_aside_go_to_the_trash_and_the_lone_one_stays(home, lib, set_aside):
+    _, db, fo, duplicates = home
+    before = sorted(rel(p, lib) for p in lib.rglob("*") if p.is_file())
+    steps = duplicates.plan_aside_trash(db, duplicates.aside_groups(db, [lib]), [lib])
+    assert sorted(rel(s["src"], lib) for s in steps) == [
+        "Duplicates/2020_01_01_10_00_00.jpg", "Duplicates/IMG_4.jpg", "Duplicates/IMG_9.jpg"]
+    fo.run(db, "trash", "Duplicates to Trash", steps)
+    assert sorted(os.listdir(lib / "Duplicates")) == ["BSEA6346.jpg"]
+    assert set_aside["a"].exists() and set_aside["b"].exists()
+    fo.undo(db)
+    assert sorted(rel(p, lib) for p in lib.rglob("*") if p.is_file()) == before
+
+
+def test_keeping_the_copy_set_aside_puts_it_in_the_photos_place(home, lib, set_aside):
+    _, db, fo, duplicates = home
+    small = set_aside["b small"].read_bytes()
+    groups = duplicates.aside_groups(db, [lib])
+    b = next(g for g in groups if aside_names([g], set_aside)[0][0] == "b")
+    b.keep(next(c.id for c in b.copies if c.path == str(set_aside["b small"])))
+    fo.run(db, "trash", "Duplicates to Trash", duplicates.plan_aside_trash(db, [b], [lib]))
+    assert set_aside["b"].read_bytes() == small  # in its place, by its name
+    assert not set_aside["b small"].exists()
+    fo.undo(db)
+    assert set_aside["b small"].read_bytes() == small and set_aside["b"].read_bytes() != small
+    fo.redo(db)
+    assert set_aside["b"].read_bytes() == small and not set_aside["b small"].exists()
+    assert sorted(os.listdir(lib / "2021")) == ["2021_02_02_10_00_00.jpg"]
+
+
+def test_putting_one_back_names_it_into_its_years_folder(home, lib, set_aside):
+    _, db, fo, duplicates = home
+    lone = [g for g in duplicates.aside_groups(db, [lib]) if g.how == "alone"]
+    steps = duplicates.plan_put_back(db, lone, [lib])
+    assert [(rel(s["src"], lib), rel(s["dst"], lib)) for s in steps] == [
+        ("Duplicates/BSEA6346.jpg", "2018/2018_05_05_10_00_00.jpg")]
+    fo.run(db, "move", "Put back", steps)
+    assert (lib / "2018" / "2018_05_05_10_00_00.jpg").exists()
+    assert [g.how for g in duplicates.aside_groups(db, [lib])] == ["near", "near"]
+    fo.undo(db)
+    assert set_aside["lone"].exists()
+
+
+def test_going_through_duplicates_in_the_window(home, lib, set_aside, monkeypatch):
+    from test_faces_ui import app as _app
+    from test_faces_ui import wait_until
+
+    from photofind.ui.main_window import MainWindow
+    from photofind.ui.views import changes_dialog
+    from photofind.ui.views.duplicates import ASIDE
+    from photofind.ui.views.sidebar import DUPES
+
+    app = _app.__wrapped__()
+    shown = []
+
+    def exec_(dlg):
+        model = dlg.table.model()
+        shown.append([(model.data(model.index(r, 0)), model.data(model.index(r, 1))) for r in range(model.rowCount())])
+        return 1
+
+    monkeypatch.setattr(changes_dialog.ChangesDialog, "exec", exec_)
+    small = set_aside["b small"].read_bytes()
+    w = MainWindow(index=False)
+    w.show()
+    wait_until(app, lambda: w.loaded)
+    v = w.dupes
+    try:
+        w.show_place(DUPES)
+        v.tabs.setCurrentIndex(ASIDE)
+        wait_until(app, lambda: len(v.groups) == 3)
+        assert v.tabs.tabText(ASIDE) == "In Duplicates/ (4)"
+        assert v.title.text() == "4 files in Duplicates/, 1 with no copy in the library"
+        assert v.aside_trash_button.isVisible() and not v.aside_button.isVisible()
+        assert v.copy_info(v.groups[2].keeper.id)[0] == "Copy 1 of 1 · No copy in the library"
+        b = next(i for i, g in enumerate(v.groups) if g.keeper.path == str(set_aside["b"]))
+        v._keep(b, 1)  # the copy in Duplicates/ instead
+        v.aside_trash_button.click()
+        wait_until(app, lambda: not w.ops.busy and sorted(os.listdir(lib / "Duplicates")) == ["BSEA6346.jpg"])
+        assert ("Duplicates/IMG_4.jpg", "2021/2021_02_02_10_00_00.jpg") in [(a.replace(os.sep, "/"), b.replace(os.sep, "/")) for a, b in shown[0]]
+        assert set_aside["b"].read_bytes() == small
+        wait_until(app, lambda: [g.how for g in v.groups] == ["alone"])
+        v.put_back_button.click()
+        wait_until(app, lambda: not w.ops.busy and (lib / "2018" / "2018_05_05_10_00_00.jpg").exists())
+        wait_until(app, lambda: v.groups == [])
+        w.ops.undo()
+        wait_until(app, lambda: not w.ops.busy and set_aside["lone"].exists())
+        w.ops.undo()
+        wait_until(app, lambda: not w.ops.busy and len(os.listdir(lib / "Duplicates")) == 4)
+        wait_until(app, lambda: len(v.groups) == 3)
+    finally:
+        w.close()
+
+
 def test_the_command_line_reports(home, lib, planted, capsys):
     from types import SimpleNamespace
 
