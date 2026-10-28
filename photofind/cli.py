@@ -563,6 +563,10 @@ def main():
     args = ap.parse_args()
     try:
         args.func(args)
+        if args.func in (cmd_index, cmd_name, cmd_unname, cmd_rename, cmd_forget, cmd_organize):
+            from .core import portable
+
+            portable.refresh_copies()  # each library folder's copy of what's known about it
     except BrokenPipeError:  # output piped into e.g. `head`
         sys.stderr.close()
     except KeyboardInterrupt:
