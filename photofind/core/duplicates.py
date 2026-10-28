@@ -8,13 +8,10 @@ again: it looks the same), never a burst of different shots.
   A raw file (DNG) is only ever an exact copy: the JPEG beside it is the same shot, kept on purpose.
 - The keeper of a group: the most pixels, then the biggest file (then a name already organized).
 
-Extras go to the Trash, never to a folder of their own. A Duplicates/ folder left by the Sep 2026
-pipeline (6,641 files) is left out of the timeline and search, and gone through on its own
-(aside_groups) until it's emptied. Nothing is moved or deleted here: plan_extras() works out the
-steps, which fileops.run() makes, undoably.
+Extras go to the Trash, never to a folder of their own. Nothing is moved or deleted here:
+plan_extras() works out the steps, which fileops.run() makes, undoably.
 """
 
-import csv
 import datetime as dt
 import hashlib
 import os
@@ -25,12 +22,10 @@ from PIL import Image
 
 from . import dates
 
-DUPLICATES = "Duplicates"
 NEAR_BITS = 4
 NEAR_LOOK = 0.95
 BURST_WINDOW = 3600  # seconds
 RAW = (".dng",)  # a raw file and its JPEG are one shot kept twice on purpose, not a copy
-MAPPING = "duplicate_mapping.csv"  # the old pipeline's record: kept_original_path, duplicate_original_path, ...
 
 _N = 32
 _DCT = np.cos(np.pi * np.outer(np.arange(_N), 2 * np.arange(_N) + 1) / (2 * _N))
@@ -47,31 +42,6 @@ def phash(img: Image.Image) -> int:
 
 def distance(a: int, b: int) -> int:
     return bin((a ^ b) & (2**64 - 1)).count("1")
-
-
-# --- what's set aside already ----------------------------------------------------------------------
-
-def folders_of(library) -> list[str]:
-    """The Duplicates/ folder of each library folder."""
-    return [os.path.join(os.path.abspath(f), DUPLICATES) for f in library]
-
-
-def set_aside(path, library, excluded=()) -> bool:
-    """Is path in a Duplicates/ folder (where known duplicates are kept), or in one of the folders
-    excluded (left out of the library's views)?"""
-    path = os.path.abspath(path)
-    hidden = [*folders_of(library), *(os.path.abspath(f) for f in excluded)]
-    return any(path == d or path.startswith(os.path.join(d, "")) for d in hidden)
-
-
-def outside_sql(library, excluded=()) -> tuple[str, tuple]:
-    """A WHERE clause (and its parameters) for files not in a Duplicates/ folder, nor in a folder
-    excluded."""
-    prefixes = [os.path.join(d, "") for d in [*folders_of(library), *(os.path.abspath(f) for f in excluded)]]
-    if not prefixes:
-        return "1=1", ()
-    sql = " AND ".join("substr(path, 1, ?) != ?" for _ in prefixes)
-    return sql, tuple(x for p in prefixes for x in (len(p), p))
 
 
 # --- filled in after indexing ------------------------------------------------------------------------
@@ -148,9 +118,8 @@ class Copy:
 @dataclass
 class Group:
     copies: list[Copy]  # the keeper first
-    how: str  # "exact" (the same bytes) or "near" (looks the same); set aside: also "alone" (see aside_groups)
+    how: str  # "exact" (the same bytes) or "near" (looks the same)
     pairs: list = field(default_factory=list, repr=False)  # [(id, id)] that matched
-    marks: dict = field(default_factory=dict, repr=False)  # set aside: {copy's id: how it was found (see known)}
 
     @property
     def keeper(self) -> Copy:
@@ -173,10 +142,9 @@ def _keeper_order(c: Copy):
 _COLS = "id, path, kind, qhash, size, width, height, taken, taken_source, sha256, phash, clip"
 
 
-def _rows(db, library):
-    where, params = outside_sql(library)
-    return db.execute(f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL AND kind != 'motion' "
-                      f"AND {where}", params).fetchall()
+def _rows(db):
+    return db.execute(f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL "
+                      "AND kind != 'motion'").fetchall()
 
 
 def _copy(r) -> Copy:
@@ -252,10 +220,10 @@ def _apart(db) -> set[tuple[int, int]]:
     return {(a, b) for a, b in db.execute("SELECT a, b FROM apart")}
 
 
-def find(db, library) -> list[Group]:
-    """The groups of duplicates in the library (none of them in Duplicates/), newest first. Each holds
-    files that are all copies of the first, its keeper."""
-    rows = _rows(db, library)
+def find(db) -> list[Group]:
+    """The groups of duplicates in the library, newest first. Each holds files that are all copies of
+    the first, its keeper."""
+    rows = _rows(db)
     by_id = {r["id"]: r for r in rows}
     apart = _apart(db)
     exact = [(a, b, -1, 1.0) for a, b in _exact_pairs(db, rows) if tuple(sorted((a, b))) not in apart]
@@ -293,163 +261,6 @@ def pending(db) -> int:
     aren't found until then."""
     return db.execute("SELECT COUNT(*) FROM photos WHERE phash IS NULL AND kind='photo' AND error IS NULL "
                       "AND qhash IS NOT NULL").fetchone()[0]
-
-
-# --- the ones set aside already ----------------------------------------------------------------------
-
-def _mapping(library) -> dict[str, str]:
-    """{duplicate's path: its keeper's path then} from the old pipeline's duplicate_mapping.csv."""
-    out = {}
-    for root in library:
-        root = os.path.abspath(root)
-        try:
-            with open(os.path.join(root, MAPPING), newline="", encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    kept, now = row.get("kept_original_path"), row.get("duplicate_current_path_in_Duplicates")
-                    if kept and now:  # (written with / between folders, even for Windows)
-                        out[os.path.normpath(os.path.join(root, now))] = os.path.normpath(os.path.join(root, kept))
-        except (OSError, csv.Error, UnicodeDecodeError):
-            continue
-    return out
-
-
-def known(db, library) -> dict[int, tuple[int | None, str]]:
-    """For each file in a Duplicates/ folder: (the id of the file it duplicates, or None if none is
-    found, and how it was found: "exact", "near", "mapping" (duplicate_mapping.csv) or "name" (it was
-    named after its keeper, as the old pipeline did))."""
-    prefixes = [os.path.join(d, "") for d in folders_of(library)]
-    if not prefixes:
-        return {}
-    inside = " OR ".join("substr(path, 1, ?) = ?" for _ in prefixes)
-    params = tuple(x for p in prefixes for x in (len(p), p))
-    dups = db.execute(f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL AND ({inside})",
-                      params).fetchall()
-    rows = _rows(db, library)
-    out = {}
-    # the same bytes
-    by_q = {}
-    for r in rows:
-        by_q.setdefault(r["qhash"], []).append(r)
-    for d in dups:
-        same = by_q.get(d["qhash"], [])
-        if same:
-            sha = _sha256(db, [d, *same])
-            hit = [r for r in same if r["id"] in sha and sha[r["id"]] == sha.get(d["id"])]
-            if hit:
-                out[d["id"]] = (sorted(map(_copy, hit), key=_keeper_order)[0].id, "exact")
-    # looks the same
-    left = [d for d in dups if d["id"] not in out and d["phash"] is not None and d["clip"] is not None
-            and not _raw(d["path"])]
-    photos = [r for r in rows if r["phash"] is not None and r["clip"] is not None and not _raw(r["path"])]
-    if left and photos:
-        h = np.array([r["phash"] for r in photos], np.int64).view(np.uint64)
-        clip = np.frombuffer(b"".join(r["clip"] for r in photos), np.float16).reshape(len(photos), -1)
-        clip = clip.astype(np.float32)
-        for d in left:
-            dist = np.bitwise_count(h ^ np.uint64(d["phash"] & (2**64 - 1)))
-            near = np.flatnonzero(dist <= NEAR_BITS)
-            if not len(near):
-                continue
-            mine = np.frombuffer(d["clip"], np.float16).astype(np.float32)
-            look = clip[near] @ mine
-            best = [i for i in near[np.argsort(-look)] if clip[i] @ mine >= NEAR_LOOK]
-            if best:
-                out[d["id"]] = (photos[best[0]]["id"], "near")
-    # what the old pipeline wrote down, then its names
-    by_path = {r["path"]: r["id"] for r in rows}
-    mapping = _mapping(library)
-    by_stem = {}
-    for r in rows:
-        by_stem.setdefault(_base_stem(r["path"]), []).append(r)
-    for d in dups:
-        if d["id"] in out:
-            continue
-        kept = mapping.get(d["path"])
-        if kept in by_path:
-            out[d["id"]] = (by_path[kept], "mapping")
-        elif same := by_stem.get(_base_stem(d["path"])):
-            out[d["id"]] = (sorted(map(_copy, same), key=_keeper_order)[0].id, "name")
-        else:
-            out[d["id"]] = (None, "")
-    return out
-
-
-def aside_groups(db, library) -> list[Group]:
-    """What the Duplicates/ folders hold, to review: each photo in the library with the copies of it
-    set aside (the library's one first, as the keeper), newest first; then each file set aside that no
-    photo in the library was found for, alone (how="alone": the only one there is). marks says how each
-    copy was found: "exact", "near", "mapping" or "name" (only its name says so: worth a look)."""
-    found = known(db, library)
-    if not found:
-        return []
-    rows = {r["id"]: r for r in db.execute(f"SELECT {_COLS} FROM photos")}
-    by_keeper, alone = {}, []
-    for d, (k, how) in found.items():
-        if d not in rows:
-            continue
-        if k is None or k not in rows:
-            alone.append(Group([_copy(rows[d])], "alone"))
-        else:
-            by_keeper.setdefault(k, []).append((d, how))
-    groups = []
-    for k, ds in by_keeper.items():
-        ds.sort(key=lambda x: _keeper_order(_copy(rows[x[0]])))
-        hows = {h for _, h in ds}
-        groups.append(Group([_copy(rows[k])] + [_copy(rows[d]) for d, _ in ds],
-                            "exact" if hows == {"exact"} else "near", marks=dict(ds)))
-    newest = lambda g: g.keeper.taken or ""  # noqa: E731
-    return sorted(groups, key=newest, reverse=True) + sorted(alone, key=newest, reverse=True)
-
-
-def plan_aside_trash(db, groups, library) -> list[dict]:
-    """Steps to be rid of set-aside copies: each group's copies but the one kept go to the Trash. Where
-    a copy from Duplicates/ is kept instead of the library's photo, it takes that photo's place (its
-    name, with the copy's own extension) once the photo is in the Trash. A file with no copy in the
-    library is never in these (it's the only one)."""
-    from . import fileops
-
-    trash, moves = [], []
-    for g in groups:
-        if g.how == "alone":
-            continue
-        mine = next((c for c in g.copies if not set_aside(c.path, library)), None)
-        if mine is None:
-            continue
-        aside = [c.path for c in g.extras if c is not mine]
-        trash += fileops.with_companions(db, aside) + ([mine.path] if g.keeper is not mine else [])
-        if g.keeper is not mine:
-            stem = os.path.splitext(mine.path)[0]
-            moves.append({"action": "move", "src": os.path.abspath(g.keeper.path),
-                          "dst": os.path.abspath(stem + os.path.splitext(g.keeper.path)[1].lower())})
-    return fileops.plan_trash(trash) + moves  # the moves last: each place is free by then
-
-
-def plan_put_back(db, groups, library) -> list[dict]:
-    """Steps that move set-aside copies back into the library, where tidying would put them: named by
-    when they were taken, in their year's folder (Unsorted/ with their own name if there's no date)."""
-    from . import fileops
-    from .organize import _place, root_of
-
-    pairs = []
-    for g in groups:
-        for c in g.copies:
-            if not set_aside(c.path, library):
-                continue
-            root = root_of(c.path, library)
-            row = db.execute("SELECT taken, taken_source FROM photos WHERE id=?", (c.id,)).fetchone()
-            real = row is not None and row["taken"] and row["taken_source"] not in (None, "file-modified")
-            folder, stem, _ = _place(root, c.path, dt.datetime.fromisoformat(row["taken"]) if real else None)
-            pairs.append((c.path, os.path.join(folder, stem + os.path.splitext(c.path)[1].lower())))
-    return fileops.plan_moves(pairs)
-
-
-def _base_stem(path: str) -> str:
-    """A file's name without its extension and without a _1, _2 ... the way duplicates were named."""
-    stem = os.path.splitext(os.path.basename(path))[0]
-    if dates.ORGANIZED.match(stem):
-        return stem[:19]
-    head, _, tail = stem.rpartition("_")
-    return head if head and tail.isdigit() else stem
 
 
 # --- doing something about them ----------------------------------------------------------------------

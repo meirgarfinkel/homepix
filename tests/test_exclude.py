@@ -21,12 +21,12 @@ def test_an_excluded_folder_is_left_out_but_can_be_opened(pf, lib):
     pf.set_excluded(screens, True)
     assert pf.excluded_folders() == [screens]
     db = pf.open_db()
-    library, excluded = pf.library_folders(), pf.excluded_folders()
-    shown = {os.path.basename(it.path) for it in load_items(db, library=library, excluded=excluded)}
+    excluded = pf.excluded_folders()
+    shown = {os.path.basename(it.path) for it in load_items(db, excluded=excluded)}
     assert shown == {"a.jpg", "b.jpg"}
-    opened = load_items(db, folder=screens, library=library, excluded=excluded)
+    opened = load_items(db, folder=screens, excluded=excluded)
     assert {os.path.basename(it.path) for it in opened} == {"c.jpg", "d.jpg"}
-    assert len(load_items(db, folder=lib / "Screens" / "old", library=library, excluded=excluded)) == 1
+    assert len(load_items(db, folder=lib / "Screens" / "old", excluded=excluded)) == 1
 
     from photofind.core.search import SearchIndex
 
@@ -38,7 +38,7 @@ def test_an_excluded_folder_is_left_out_but_can_be_opened(pf, lib):
     pf.set_excluded(screens, False)  # back in: search sees it again without re-indexing
     assert pf.excluded_folders() == []
     assert index.search("anything")["total"] == 4
-    assert len(load_items(db, library=library, excluded=pf.excluded_folders())) == 4
+    assert len(load_items(db, excluded=pf.excluded_folders())) == 4
     db.close()
 
 
