@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ...core import open_db
 from ...core.info import photo_info
-from .. import workers
+from .. import theme, workers
 from .timeline import clock
 
 
@@ -31,11 +31,18 @@ def nice_date(taken: str) -> str:
 class InfoPanel(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("info")
         self.setWidgetResizable(True)
-        self.setMinimumWidth(260)
+        self.setMinimumWidth(280)
         body = QWidget()
+        body.setObjectName("infoBody")
         lay = QVBoxLayout(body)
-        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setContentsMargins(20, 20, 20, 16)
+        self.head = QLabel()  # name and date
+        self.head.setWordWrap(True)
+        self.head.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        lay.addWidget(self.head)
+        lay.addSpacing(14)
         self.label = QLabel()
         self.label.setWordWrap(True)
         self.label.setTextFormat(Qt.TextFormat.RichText)
@@ -47,13 +54,22 @@ class InfoPanel(QScrollArea):
         self.setWidget(body)
         self._latest = workers.Latest()
         self._id = None
+        self._info = None
         self.show_photo(None)
+        theme.signals.changed.connect(self._recolour)
+
+    def _recolour(self):
+        if self._id is None:
+            self.show_photo(None)
+        elif self._info is not None:
+            self._show(self._info, None)
 
     def show_photo(self, photo_id, count: int = 1):
         """photo_id None: nothing selected. count > 1: several selected (the info is for photo_id)."""
         self._id = photo_id
         if photo_id is None:
-            self.label.setText("<p style='color:gray'>Select a photo to see its details.</p>")
+            self.head.hide()
+            self.label.setText(f"<p style='color:{_c('muted')}'>Select a photo to see its details.</p>")
             return
         self._count = count
         self._latest.run(_lookup, self._show, photo_id)
@@ -63,43 +79,59 @@ class InfoPanel(QScrollArea):
             self.show_photo(self._id, self._count)
 
     def _show(self, info, err):
+        muted, danger = _c("muted"), _c("danger")
         if err is not None or info is None:
-            self.label.setText(f"<p style='color:gray'>No details: {html.escape(str(err or 'not in the index'))}</p>")
+            self._info = None
+            self.head.hide()
+            self.label.setText(f"<p style='color:{muted}'>No details: "
+                               f"{html.escape(str(err or 'not in the index'))}</p>")
             return
+        self._info = info
         e = html.escape
         rows = []
 
         def row(name, value, note=None):
             if value:
-                extra = f"<br><span style='color:gray'>{e(note)}</span>" if note else ""
-                rows.append(f"<p><b>{e(name)}</b><br>{value}{extra}</p>")
+                extra = f"<br><span style='color:{muted}'>{e(note)}</span>" if note else ""
+                rows.append(f"<tr><td width='84' style='color:{muted}; padding: 0 8px 10px 0'>{e(name)}</td>"
+                            f"<td style='padding-bottom: 10px'>{value}{extra}</td></tr>")
 
-        head = f"<h3 style='margin-bottom:2px'>{e(info['name'])}</h3>"
-        if self._count > 1:
-            head += f"<p style='color:gray'>{self._count:,} photos selected; this is the last one clicked.</p>"
-        if info.get("offline"):
-            head += "<p style='color:#c0392b'>The file can't be reached right now (is its drive connected?).</p>"
-        if info.get("error"):
-            head += f"<p style='color:#c0392b'>This file couldn't be read: {e(info['error'])}</p>"
         video = info.get("kind") == "video"
+        when = e(nice_date(info["taken"]))
+        if info.get("date_source"):
+            when += f" · {e(info['date_source'])}"
+        self.head.setText(f"<p style='font-size:14px; font-weight:700; margin:0'>{e(info['name'])}</p>"
+                          f"<p style='color:{muted}; margin:3px 0 0 0'>{when}</p>")
+        self.head.show()
+        head = ""
+        if self._count > 1:
+            head += (f"<p style='color:{muted}; margin:0 0 14px 0'>{self._count:,} photos selected; "
+                     "this is the last one clicked.</p>")
+        if info.get("offline"):
+            head += f"<p style='color:{danger}'>The file can't be reached right now (is its drive connected?).</p>"
+        if info.get("error"):
+            head += f"<p style='color:{danger}'>This file couldn't be read: {e(info['error'])}</p>"
         if info.get("description"):
-            rows.append(f"<p>{e(info['description']).replace(chr(10), '<br>')}</p>")
+            head += f"<p>{e(info['description']).replace(chr(10), '<br>')}</p>"
         row("Keywords", e(", ".join(info.get("keywords", []))))
-        row("Recorded" if video else "Taken", e(nice_date(info["taken"])), info["date_source"])
         if info.get("duration"):
             row("Length", e(clock(info["duration"])))
         row("Camera", e(info.get("camera", "")), info.get("lens"))
         row("Exposure", e(info.get("exposure", "")))
         if "dimensions" in info:
             w, h = info["dimensions"]
-            pixels = f"{w:,} × {h:,}" if video else f"{w:,} × {h:,} ({w * h / 1e6:.1f} megapixels)"
-            row("Size", f"{pixels} · {e(info.get('size', ''))}")
+            pixels = f"{w:,} × {h:,}" if video else f"{w:,} × {h:,} ({w * h / 1e6:.1f} MP)"
+            row("Size", f"{pixels}<br>{e(info.get('size', ''))}")
         else:
             row("Size", e(info.get("size", "")))
         if "gps" in info:
             lat, lon = info["gps"]
             url = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}"
-            row("Location", f"{lat:.5f}, {lon:.5f} · <a href='{url}'>map</a>")
+            row("Location", f"{lat:.5f}, {lon:.5f}<br><a href='{url}' style='color:{_c('accentText')}'>Open map</a>")
         row("People", e(", ".join(info["people"])))
         row("Folder", e(info["folder"]))
-        self.label.setText(head + "".join(rows))
+        self.label.setText(head + "<table cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>")
+
+
+def _c(name: str) -> str:
+    return theme.color(name).name()

@@ -9,15 +9,17 @@ import bisect
 import calendar
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPen
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QAbstractScrollArea, QToolTip, QWidget
 
 from ...core.timeline import Month
+from .. import theme
 
-HEADER_H = 48
-SPACING = 3
-MARGIN = 12
+HEADER_H = 52
+SPACING = 10
+MARGIN = 24
+RADIUS = 12  # tiles' corners
 MIN_TILE, MAX_TILE, DEFAULT_TILE = 90, 360, 170
 PREFETCH_SCREENS = 1.5  # also load this many screens of thumbnails ahead and behind
 
@@ -213,38 +215,36 @@ class TimelineView(QAbstractScrollArea):
 
     def paintEvent(self, e):
         p = QPainter(self.viewport())
-        pal = self.palette()
-        p.fillRect(self.viewport().rect(), pal.color(QPalette.ColorRole.Base))
+        c = theme.color
+        bg = c("bg")
+        p.fillRect(self.viewport().rect(), bg)
         if not self.items:
-            p.setPen(pal.color(QPalette.ColorRole.PlaceholderText))
+            p.setPen(c("muted"))
             p.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
                        self.empty_text)
             return
         top = self.verticalScrollBar().value()
         h = self.viewport().height()
         p.translate(0, -top)
-        head_font = QFont(self.font())
-        head_font.setPointSizeF(head_font.pointSizeF() * 1.25)
-        head_font.setWeight(QFont.Weight.DemiBold)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        head_font = theme.font(17, QFont.Weight.Bold)
         sub_font = QFont(self.font())
-        small_font = QFont(self.font())
-        small_font.setPointSizeF(small_font.pointSizeF() * 0.85)
-        small_font.setWeight(QFont.Weight.DemiBold)
-        placeholder = pal.color(QPalette.ColorRole.AlternateBase)
-        highlight = pal.color(QPalette.ColorRole.Highlight)
+        small_font = theme.font(11, QFont.Weight.Bold)
+        placeholder, accent, muted = c("field"), c("accent"), c("muted")
+        corners = self._corners()
         k = self._row_at(top)
         while k < len(self.rows) and self.rows[k].y < top + h:
             r = self.rows[k]
             if r.start == -1:
                 m = self.months[r.month]
-                p.setPen(pal.color(QPalette.ColorRole.Text))
+                p.setPen(c("text"))
                 p.setFont(head_font)
                 title = m.title or (f"{calendar.month_name[m.month]} {m.year}" if m.month
                                     else str(m.year or "Unknown date"))
-                box = QRect(MARGIN, r.y, self.viewport().width() - 2 * MARGIN, r.h)
+                box = QRect(MARGIN, r.y + 6, self.viewport().width() - 2 * MARGIN, r.h - 6)
                 p.drawText(box, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
                 p.setFont(sub_font)
-                p.setPen(pal.color(QPalette.ColorRole.PlaceholderText))
+                p.setPen(muted)
                 p.drawText(box, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                            f"{len(m.items):,} photo{'s' if len(m.items) != 1 else ''}")
             else:
@@ -255,23 +255,55 @@ class TimelineView(QAbstractScrollArea):
                     video = it.kind == "video"
                     if img is not None:
                         p.drawImage(rect, img)
+                        p.fillPath(corners.translated(rect.x(), rect.y()), bg)  # round the corners
                     else:
-                        p.fillRect(rect, placeholder)
+                        p.setPen(Qt.PenStyle.NoPen)
+                        p.setBrush(placeholder)
+                        p.drawRoundedRect(QRectF(rect), RADIUS, RADIUS)
                         if self.loader.failed(it.qhash):
-                            p.setPen(pal.color(QPalette.ColorRole.PlaceholderText))
+                            p.setPen(muted)
                             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "▶" if video else "Can't show\nthis photo")
                     if video:
                         self._video_badge(p, rect, it.duration, small_font)
+                    ring = QRectF(rect).adjusted(-4, -4, 4, 4)
                     if i in self.selected:
-                        p.fillRect(rect, QColor(highlight.red(), highlight.green(), highlight.blue(), 70))
-                        p.setPen(QPen(highlight, 3))
-                        p.drawRect(rect.adjusted(1, 1, -2, -2))
-                    if i == self.current and self.hasFocus():
-                        p.setPen(QPen(pal.color(QPalette.ColorRole.Text), 1, Qt.PenStyle.DashLine))
-                        p.drawRect(rect.adjusted(0, 0, -1, -1))
+                        p.setBrush(Qt.BrushStyle.NoBrush)
+                        p.setPen(QPen(accent, 2))
+                        p.drawRoundedRect(ring, RADIUS + 4, RADIUS + 4)
+                        self._check(p, rect)
+                    elif i == self.current and self.hasFocus():
+                        p.setBrush(Qt.BrushStyle.NoBrush)
+                        p.setPen(QPen(muted, 1.5, Qt.PenStyle.DashLine))
+                        p.drawRoundedRect(ring, RADIUS + 4, RADIUS + 4)
             k += 1
         p.end()
         self._request_thumbs(top, h)
+
+    def _corners(self) -> QPainterPath:
+        """What's outside a tile's rounded corners, for a tile at 0, 0 (painted over in the background)."""
+        if getattr(self, "_corner_cache", (None,))[0] != self._cell:
+            square, rounded = QPainterPath(), QPainterPath()
+            square.addRect(QRectF(-1, -1, self._cell + 2, self._cell + 2))
+            rounded.addRoundedRect(QRectF(0, 0, self._cell, self._cell), RADIUS, RADIUS)
+            self._corner_cache = (self._cell, square.subtracted(rounded))
+        return self._corner_cache[1]
+
+    @staticmethod
+    def _check(p, rect):
+        """A tick in an accent circle, top left: it's selected."""
+        centre = QPointF(rect.x() + 20, rect.y() + 20)
+        p.setPen(QPen(theme.color("bg"), 2))
+        p.setBrush(theme.color("accent"))
+        p.drawEllipse(centre, 12, 12)
+        tick = QPainterPath(centre + QPointF(-5, 0.5))
+        tick.lineTo(centre + QPointF(-1.5, 4))
+        tick.lineTo(centre + QPointF(5, -3.5))
+        pen = QPen(theme.color("accentInk"), 2.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(tick)
 
     @staticmethod
     def _video_badge(p, rect, duration, font):
@@ -279,13 +311,11 @@ class TimelineView(QAbstractScrollArea):
         text = f"▶ {clock(duration)}".strip()
         p.setFont(font)
         fm = p.fontMetrics()
-        w, h = fm.horizontalAdvance(text) + 10, fm.height() + 2
-        pill = QRect(rect.right() - w - 5, rect.bottom() - h - 5, w, h)
+        w, h = fm.horizontalAdvance(text) + 16, 20
+        pill = QRect(rect.right() - w - 7, rect.bottom() - h - 7, w, h)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(0, 0, 0, 150))
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        p.drawRoundedRect(pill, h / 2, h / 2)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        p.setBrush(QColor(0, 0, 0, 128))
+        p.drawRoundedRect(QRectF(pill), 10, 10)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QColor(255, 255, 255))
         p.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
@@ -466,7 +496,7 @@ class Scrubber(QWidget):
     """Years down the right edge, marked where they start. Click or drag to jump; the bubble shows
     the month you'd land on. Takes the place of the scroll bar."""
 
-    WIDTH = 56
+    WIDTH = 48
 
     def __init__(self, view: TimelineView):
         super().__init__(view)
@@ -494,12 +524,13 @@ class Scrubber(QWidget):
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pal = self.palette()
         scale = self._scale()
-        font = QFont(self.font())
-        font.setPointSizeF(font.pointSizeF() * 0.85)
+        muted, accent = theme.color("muted"), theme.color("accent")
+        font = theme.font(11, QFont.Weight.DemiBold)
+        bold = theme.font(11, QFont.Weight.Bold)
         p.setFont(font)
         fm = p.fontMetrics()
+        shown = v.months[v.visible_months()[0]].year if v.rows else None
         last_label_y = -1e9
         years_seen = set()
         for mi, m in enumerate(v.months):  # newest first, so a year's first section is its December
@@ -508,19 +539,20 @@ class Scrubber(QWidget):
             years_seen.add(m.year)
             y = v.month_y(mi) * scale
             if y - last_label_y >= fm.height() + 2:  # skip labels that would overlap
-                p.setPen(pal.color(QPalette.ColorRole.PlaceholderText))
-                p.drawText(QRect(0, int(y), self.width() - 8, fm.height()), Qt.AlignmentFlag.AlignRight,
+                now = m.year == shown
+                p.setPen(theme.color("accentText") if now else muted)
+                p.setFont(bold if now else font)
+                p.drawText(QRect(0, int(y), self.width() - 10, fm.height()), Qt.AlignmentFlag.AlignRight,
                            str(m.year))
                 last_label_y = y
             else:
-                p.fillRect(QRect(self.width() - 10, int(y) + fm.height() // 2, 4, 1),
-                           pal.color(QPalette.ColorRole.PlaceholderText))
+                p.fillRect(QRect(self.width() - 10, int(y) + fm.height() // 2, 4, 1), muted)
         # where the screen is now
         bar = v.verticalScrollBar()
         top = bar.value() * scale
         h = max(6.0, v.viewport().height() * scale)
         p.setPen(Qt.PenStyle.NoPen)
-        hl = pal.color(QPalette.ColorRole.Highlight)
+        hl = accent
         p.setBrush(QColor(hl.red(), hl.green(), hl.blue(), 150))
         p.drawRoundedRect(self.width() - 4, int(top), 3, int(h), 1.5, 1.5)
         if self._hover_y is not None:

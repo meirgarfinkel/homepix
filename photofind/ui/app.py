@@ -42,6 +42,9 @@ def main(argv=None):
     app.setDesktopFileName("photofind")
     if ICON.is_file():
         app.setWindowIcon(QIcon(str(ICON)))
+    from . import theme
+
+    theme.apply(app)
 
     if self_test:
         return run_self_test(app)
@@ -128,6 +131,11 @@ def run_self_test(app) -> int:
         from .thumbs import ThumbLoader
 
         ok("AI libraries load.")
+        from . import theme
+
+        if app.font().family() != theme.FAMILY:
+            raise RuntimeError(f"the app's font is missing from this build ({theme.FONT_DIR})")
+        ok("the app's font loads.")
         if not HEIF:
             raise RuntimeError("HEIC support (pillow-heif) is missing from this build")
         ok("HEIC photos can be read.")

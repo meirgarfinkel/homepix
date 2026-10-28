@@ -21,7 +21,7 @@ excludes = [
 a = Analysis(
     [str(ROOT / "photofind_app.py")],
     pathex=[str(ROOT)],
-    datas=[(str(ROOT / "photofind-icon.png"), ".")],
+    datas=[(str(ROOT / "photofind-icon.png"), "."), (str(ROOT / "photofind/ui/fonts"), "photofind/ui/fonts")],
     hiddenimports=["PySide6.QtNetwork"],
     excludes=excludes,
     noarchive=False,
