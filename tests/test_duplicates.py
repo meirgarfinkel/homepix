@@ -8,11 +8,10 @@ import shutil
 
 import numpy as np
 import pytest
+from conftest import own_trash
 from PIL import Image, ImageDraw
 
 from photofind.core.util import quick_hash
-
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="the Trash is the freedesktop one")
 
 
 def scene(seed, shift=0, size=(640, 480)):
@@ -45,7 +44,7 @@ def save(img, path, taken=None, quality=92):
 
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    own_trash(monkeypatch, tmp_path)
     from photofind.core import duplicates, fileops
 
     pf.add_folder(lib)

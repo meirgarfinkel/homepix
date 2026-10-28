@@ -2,7 +2,8 @@
 
 Starting ExifTool (a Perl program) takes about a quarter of a second, so one copy is started on first
 use and kept open (-stay_open), and each request is a few milliseconds. The bundled app ships its own
-copy with its own Perl; from source, PHOTOFIND_EXIFTOOL or the system's exiftool is used.
+copy with its own Perl (on Windows, ExifTool's official Windows build); from source, PHOTOFIND_EXIFTOOL
+or the system's exiftool is used.
 """
 
 import json
@@ -19,10 +20,13 @@ class ExifToolMissing(RuntimeError):
 
 
 def bundled() -> Path | None:
-    """The app's own ExifTool and Perl (see packaging/bundle_exiftool.sh), if there is one."""
+    """The app's own ExifTool and Perl (see packaging/bundle_exiftool.sh and .ps1), if there is one."""
     here = os.environ.get("PHOTOFIND_EXIFTOOL_DIR") or (
         str(Path(sys._MEIPASS) / "exiftool") if getattr(sys, "frozen", False) else "")
-    return Path(here) if here and (Path(here) / "run.pl").is_file() else None
+    if not here:
+        return None
+    here = Path(here)
+    return here if (here / "run.pl").is_file() or (here / "exiftool.exe").is_file() else None
 
 
 def command() -> list[str]:
@@ -30,6 +34,8 @@ def command() -> list[str]:
     if os.environ.get("PHOTOFIND_EXIFTOOL"):
         return [os.environ["PHOTOFIND_EXIFTOOL"]]
     if b := bundled():
+        if (b / "exiftool.exe").is_file():
+            return [str(b / "exiftool.exe")]
         return [str(b / "perl" / "bin" / "perl"), str(b / "run.pl")]
     found = shutil.which("exiftool")
     if found:
@@ -43,6 +49,10 @@ def _arg(a: str) -> str:
     if "\n" in a or "\r" in a or "\\" in a or a != a.strip():
         return "#[CSTR]" + a.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
     return a
+
+
+def _key(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path))
 
 
 class ExifTool:
@@ -105,15 +115,17 @@ class ExifTool:
     def read(self, paths, tags=(), options=("-n",)) -> dict[str, dict]:
         """{path: {tag: value}} for these files. tags like "XMP-dc:Description" (all of them if none);
         values as numbers with -n. Files that can't be read are left out."""
-        paths = [os.path.abspath(p) for p in paths]  # (never taken for an option: they start with /)
+        paths = [os.path.abspath(p) for p in paths]  # (never taken for an option: they start with / or C:)
         if not paths:
             return {}
+        # ExifTool names each file its own way (with / on Windows): match them back to ours
+        ours = {_key(p): p for p in paths}
         out, _ = self.run(["-j", "-G1", "-struct", *options, *[f"-{t}" for t in tags], *paths])
         try:
             found = json.loads(out.decode("utf-8") or "[]")
         except ValueError:
             return {}
-        return {d.pop("SourceFile"): d for d in found if "SourceFile" in d}
+        return {ours.get(_key(f), f): d for d in found if (f := d.pop("SourceFile", None))}
 
     def close(self):
         with self._lock:

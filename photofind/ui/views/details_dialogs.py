@@ -2,6 +2,7 @@
 and every tag a file holds."""
 
 import datetime as dt
+import os
 import re
 
 from PySide6.QtCore import QDateTime, Qt
@@ -181,8 +182,8 @@ class DateDialog(QDialog):
             old = self._taken(it)
             new = self.when.dateTime().toPython() if self.set_to.isChecked() else (old + self.delta() if old else None)
             shown = old.strftime("%Y-%m-%d %H:%M") if old else "no date"
-            lines.append(f"{it.path.rsplit('/', 1)[-1]}: {shown} → {new:%Y-%m-%d %H:%M}" if new else
-                         f"{it.path.rsplit('/', 1)[-1]}: {shown} (left as it is)")
+            lines.append(f"{os.path.basename(it.path)}: {shown} → {new:%Y-%m-%d %H:%M}" if new else
+                         f"{os.path.basename(it.path)}: {shown} (left as it is)")
         if len(self.items) > 3:
             lines.append("...")
         self.preview.setText("\n".join(lines))

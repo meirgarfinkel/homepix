@@ -2,6 +2,8 @@ import importlib
 import os
 import shutil
 import tempfile
+import urllib.parse
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -12,6 +14,7 @@ from PIL import Image
 _SAFE = tempfile.mkdtemp(prefix="photofind-tests-")
 os.environ["PHOTOFIND_HOME"] = os.path.join(_SAFE, "data")
 os.environ["XDG_DATA_HOME"] = os.path.join(_SAFE, "share")
+os.environ["PHOTOFIND_RECYCLE_BIN"] = os.path.join(_SAFE, "recycle")  # (Windows) never the real Recycle Bin
 
 
 class FakeClip:
@@ -70,3 +73,36 @@ def rows(pf, lib):
         return {r["path"][len(str(lib)) + 1:]: dict(r) for r in db.execute("SELECT * FROM photos")}
     finally:
         db.close()
+
+
+# --- the Trash: the freedesktop one, or on Windows the Recycle Bin --------------------------------------
+
+def own_trash(monkeypatch, tmp_path):
+    """A Trash (or Recycle Bin) of the test's own, in tmp_path."""
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("PHOTOFIND_RECYCLE_BIN", str(tmp_path / "recycle"))
+
+
+def trashed_files(tmp_path) -> list[Path]:
+    """The files in the test's Trash."""
+    if os.name == "nt":
+        folder = tmp_path / "recycle"
+        return sorted(folder.glob("$R*")) if folder.exists() else []
+    folder = tmp_path / "xdg" / "Trash" / "files"
+    return sorted(folder.iterdir()) if folder.exists() else []
+
+
+def trash_records(tmp_path) -> list[str]:
+    """Where each item the Trash knows of came from (its info files)."""
+    if os.name == "nt":
+        from photofind.core.trash import recycled_from
+
+        folder = tmp_path / "recycle"
+        return sorted(recycled_from(i) for i in folder.glob("$I*")) if folder.exists() else []
+    folder = tmp_path / "xdg" / "Trash" / "info"
+    found = []
+    for i in sorted(folder.iterdir()) if folder.exists() else []:
+        for line in i.read_text().splitlines():
+            if line.startswith("Path="):
+                found.append(urllib.parse.unquote(line[5:]))
+    return sorted(found)

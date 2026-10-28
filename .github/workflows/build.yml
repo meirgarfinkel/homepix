@@ -2,8 +2,7 @@
 # - Linux: the AppImage is built in AlmaLinux 9 (glibc 2.34), then its self-test runs on a fresh
 #   Debian, Ubuntu, Fedora and Arch. This runs on every pull request that touches the app or its
 #   packaging, so a change that breaks some distro shows up before it's merged.
-# - Windows: the installer, built only when asked (Actions tab > Build Photo Finder > Run workflow)
-#   or for a release.
+# - Windows: the installer, built the same way on Windows; its self-test runs too, with the AI models.
 # Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files.
 name: Build Photo Finder
 
@@ -81,13 +80,17 @@ jobs:
       - run: bash packaging/smoke_test.sh "${{ matrix.distro }}" PhotoFinder-x86_64.AppImage models
 
   windows:
-    if: github.event_name != 'pull_request'
+    needs: [linux-models]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: build/selftest/models
       - run: choco install innosetup --no-progress -y
       - run: packaging\build_windows.bat
         shell: cmd

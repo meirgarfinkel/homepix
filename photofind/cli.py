@@ -21,6 +21,7 @@ Run any command with -h for its options.
 
 import argparse
 import html
+import os
 import sys
 import time
 import webbrowser
@@ -457,7 +458,7 @@ def cmd_duplicates(args):
 
     def work(db):
         for f in folders:
-            duplicates.fill_looks(db, str(Path(f)).rstrip("/") + "/")
+            duplicates.fill_looks(db, os.path.join(str(Path(f)), ""))
         known = duplicates.known(db, folders)
         how = Counter(h for _, h in known.values())
         found = sum(1 for k, _ in known.values() if k is not None)

@@ -7,10 +7,10 @@ import time
 
 import numpy as np
 import pytest
+from conftest import own_trash
 from PIL import Image
 from test_fileops import contents, index_matches_disk, no_leftovers
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="the Trash is the freedesktop one")
 _n = 0
 
 
@@ -32,7 +32,7 @@ def shot(path, taken=None, created=None, mtime=dt.datetime(2025, 11, 30, 9, 52))
 
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    own_trash(monkeypatch, tmp_path)
     from photofind.core import fileops, organize
 
     pf.add_folder(lib)
