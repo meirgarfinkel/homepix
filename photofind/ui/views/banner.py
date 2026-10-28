@@ -10,7 +10,6 @@ class Banner(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("banner")
-        self.setStyleSheet("#banner { background: palette(alternate-base); border-bottom: 1px solid palette(mid); }")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(14, 8, 10, 8)
         self.label = QLabel()

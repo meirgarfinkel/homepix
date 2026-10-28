@@ -1,9 +1,10 @@
-"""Settings: the folders that make up the library, and the app to edit photos in."""
+"""Settings: the folders that make up the library, the app to edit photos in, and the look."""
 
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core import library_folders, load_settings, pictures_folder, save_settings
+from .. import theme
 
 
 class SettingsDialog(QDialog):
@@ -28,7 +30,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.resize(560, 380)
+        self.resize(600, 460)
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("<b>Library folders</b>"))
         note = QLabel("Photo Finder shows and searches the photos in these folders and the folders inside "
@@ -61,6 +63,18 @@ class SettingsDialog(QDialog):
         form.addWidget(QLabel("Open photos in:"))
         form.addWidget(self.editor, 1)
         lay.addLayout(form)
+        lay.addSpacing(10)
+        lay.addWidget(QLabel("<b>Look</b>"))
+        self.look = QComboBox()
+        for key, name in theme.MODES.items():
+            self.look.addItem(name, key)
+        self.look.setCurrentIndex(self.look.findData(theme.mode()))
+        self.look.currentIndexChanged.connect(lambda _: theme.set_mode(self.look.currentData()))
+        look = QHBoxLayout()
+        look.addWidget(QLabel("Colours:"))
+        look.addWidget(self.look)
+        look.addStretch()
+        lay.addLayout(look)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)

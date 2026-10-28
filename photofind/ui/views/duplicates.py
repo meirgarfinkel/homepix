@@ -177,12 +177,9 @@ class DuplicatesView(QWidget):
         self.pending = 0  # photos not looked at yet
         self._kept = {}  # {its copies' ids: the one chosen to keep}
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 12, 16, 8)
+        lay.setContentsMargins(24, 18, 24, 8)
         self.title = QLabel()
-        font = QFont(self.font())
-        font.setPointSizeF(font.pointSizeF() * 1.25)
-        font.setWeight(QFont.Weight.DemiBold)
-        self.title.setFont(font)
+        self.title.setObjectName("pageTitle")
         lay.addWidget(self.title)
         self.hint = QLabel("The copy marked Keep has the most pixels, then the biggest file. Click another to "
                            "keep it instead. Select groups to act on just those.")

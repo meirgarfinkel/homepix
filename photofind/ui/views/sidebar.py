@@ -3,9 +3,12 @@
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QFont, QPalette
-from PySide6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem
+import shiboken6
+from PySide6.QtCore import QPoint, QRectF, Qt, Signal
+from PySide6.QtGui import QFont, QPainter
+from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
+
+from .. import theme
 
 ALL = "all"
 PEOPLE = "people"
@@ -61,21 +64,52 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
     return tree
 
 
+class CountDelegate(QStyledItemDelegate):
+    """The counts column: muted numbers, and the "who is this?" count as an accent badge."""
+
+    def paint(self, p, option, index):
+        text = index.data()
+        option.text = ""
+        super().paint(p, option, index)  # the row's background
+        if not text:
+            return
+        p.save()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = option.rect.adjusted(0, 0, -12, 0)
+        if index.siblingAtColumn(0).data(PATH_ROLE) == WHO:
+            p.setFont(theme.font(11, QFont.Weight.Bold))
+            w = p.fontMetrics().horizontalAdvance(text) + 14
+            badge = QRectF(rect.right() - w, rect.center().y() - 10, w, 20)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(theme.color("accent"))
+            p.drawRoundedRect(badge, 10, 10)
+            p.setPen(theme.color("accentInk"))
+            p.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
+        else:
+            p.setPen(theme.color("muted"))
+            p.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
+        p.restore()
+
+
 class Sidebar(QTreeWidget):
     chosen = Signal(str)  # ALL, PEOPLE, WHO, DUPES, a person_place, or a folder's path
     menu_requested = Signal(str, QPoint)  # right-click on a folder or person: its place, and where (global)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("sidebar")
         self.setColumnCount(2)
+        self.setItemDelegateForColumn(1, CountDelegate(self))
+        self.setFrameShape(QTreeWidget.Shape.NoFrame)
         self.setHeaderHidden(True)
         self.header().setStretchLastSection(False)
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.setIndentation(14)
+        self.setIndentation(16)
         self.setUniformRowHeights(True)
-        self.setMinimumWidth(200)
+        self.setMinimumWidth(220)
         self.itemSelectionChanged.connect(self._picked)
+        self.currentItemChanged.connect(self._embolden)
         self._quiet = False
         self.set_folders([], {}, 0)
 
@@ -90,12 +124,12 @@ class Sidebar(QTreeWidget):
         first = not opened and self.topLevelItemCount() == 0
         self._quiet = True
         self.clear()
-        everything = QTreeWidgetItem([" All photos", f"{total:,}"])
+        everything = QTreeWidgetItem(["All photos", f"{total:,}"])
         everything.setData(0, PATH_ROLE, ALL)
         self._style_count(everything)
         self.addTopLevelItem(everything)
         if people:
-            group = QTreeWidgetItem([" People", f"{len(people):,}"])
+            group = QTreeWidgetItem(["People", f"{len(people):,}"])
             group.setData(0, PATH_ROLE, PEOPLE)
             self._style_count(group)
             self.addTopLevelItem(group)
@@ -107,23 +141,23 @@ class Sidebar(QTreeWidget):
             if not had_people:  # new: open, to show who's there
                 opened.add(PEOPLE)
         if who is not None:
-            ask = QTreeWidgetItem([" Who is this?", f"{who:,}" if isinstance(who, int) else ""])
+            ask = QTreeWidgetItem(["Who is this?", f"{who:,}" if isinstance(who, int) else ""])
             ask.setData(0, PATH_ROLE, WHO)
             ask.setToolTip(0, "Name the people in your photos")
             self._style_count(ask)
             self.addTopLevelItem(ask)
         if dupes is not None:
-            review = QTreeWidgetItem([" Duplicates", f"{dupes:,}" if isinstance(dupes, int) and dupes else ""])
+            review = QTreeWidgetItem(["Duplicates", f"{dupes:,}" if isinstance(dupes, int) and dupes else ""])
             review.setData(0, PATH_ROLE, DUPES)
             review.setToolTip(0, "Copies of the same photo or video, to review")
             self._style_count(review)
             self.addTopLevelItem(review)
-        heading = QTreeWidgetItem(["Folders", ""])
+        heading = QTreeWidgetItem(["FOLDERS", ""])
         heading.setFlags(Qt.ItemFlag.ItemIsEnabled)
-        font = QFont(self.font())
-        font.setWeight(QFont.Weight.DemiBold)
+        font = theme.font(11, QFont.Weight.Bold)
+        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108)
         heading.setFont(0, font)
-        heading.setForeground(0, self.palette().color(QPalette.ColorRole.PlaceholderText))
+        heading.setForeground(0, theme.color("muted"))
         self.addTopLevelItem(heading)
         heading.setExpanded(True)
         for root, node in folder_tree(roots, counts).items():
@@ -153,9 +187,18 @@ class Sidebar(QTreeWidget):
             self._add(item, node["children"][name])
         return item
 
-    def _style_count(self, item):
+    @staticmethod
+    def _style_count(item):
         item.setTextAlignment(1, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        item.setForeground(1, self.palette().color(QPalette.ColorRole.PlaceholderText))
+
+    @staticmethod
+    def _embolden(now, before):
+        """The chosen place in bold."""
+        for item, weight in ((before, QFont.Weight.Normal), (now, QFont.Weight.Bold)):
+            if item is not None and shiboken6.isValid(item) and item.flags() & Qt.ItemFlag.ItemIsSelectable:
+                f = QFont(item.font(0))
+                f.setWeight(weight)
+                item.setFont(0, f)
 
     def _all_items(self):
         stack = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]

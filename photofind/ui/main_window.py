@@ -6,20 +6,23 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
+from PySide6.QtCore import QRect, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPainter
 from PySide6.QtWidgets import (
     QDockWidget,
     QFileDialog,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
+    QSizePolicy,
     QSlider,
     QStackedWidget,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -39,7 +42,7 @@ from ..core import fileops as files
 from ..core import people as known_people
 from ..core.duplicates import set_aside
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
-from . import desktop, workers
+from . import desktop, theme, workers
 from .dedupe import Dedupe
 from .fileops import FileOps, bad_name
 from .indexing import IndexStatus, IndexWatcher
@@ -55,7 +58,7 @@ from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
 from .views.sidebar import ALL, DUPES, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
-from .views.timeline import MAX_TILE, MIN_TILE, TimelineView
+from .views.timeline import MAX_TILE, MIN_TILE, Scrubber, TimelineView
 from .views.viewer import Viewer
 from .views.welcome import Welcome
 
@@ -139,9 +142,27 @@ def counted(photos: int, videos: int) -> str:
     return " and ".join(parts) or "0 photos"
 
 
+def _gap(width: int, stretch: bool = False) -> QWidget:
+    """Space in the toolbar: fixed, or taking what's left."""
+    w = QWidget()
+    if stretch:
+        w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    else:
+        w.setFixedWidth(width)
+    return w
+
+
 class SearchBox(QLineEdit):
     focused = Signal()
     escaped = Signal()
+    icon = None  # drawn at the left, inside the padding
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if self.icon is not None:
+            p = QPainter(self)
+            self.icon.paint(p, QRect(14, (self.height() - 18) // 2, 18, 18))
+            p.end()
 
     def focusInEvent(self, e):
         super().focusInEvent(e)
@@ -195,11 +216,23 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(w)
         self.stack.setCurrentWidget(self.timeline)
         self.banner = Banner()
+        self.page_header = QWidget()
+        self.page_header.setObjectName("pageHeader")
+        head = QHBoxLayout(self.page_header)
+        head.setContentsMargins(24, 18, 24 + Scrubber.WIDTH, 4)
+        self.page_title = QLabel("All photos")
+        self.page_title.setObjectName("pageTitle")
+        self.count_label = QLabel()
+        self.count_label.setObjectName("pageCount")
+        head.addWidget(self.page_title)
+        head.addStretch()
+        head.addWidget(self.count_label)
         central = QWidget()
         lay = QVBoxLayout(central)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.banner)
+        lay.addWidget(self.page_header)
         lay.addWidget(self.stack, 1)
         self.setCentralWidget(central)
 
@@ -214,9 +247,15 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self._build_file_actions()
         self._build_menus()
-        self.count_label = QLabel()
-        self.statusBar().addWidget(self.count_label)
-        self.statusBar().addPermanentWidget(IndexStatus(self.watcher))
+        self.index_status = IndexStatus(self.watcher)
+        self.statusBar().addPermanentWidget(self.index_status)
+        self.statusBar().setSizeGripEnabled(False)
+        self.statusBar().setContentsMargins(10, 0, 4, 0)
+        self.statusBar().messageChanged.connect(self._status_shown)
+        self.watcher.state.connect(self._status_shown)
+        self._status_shown()
+        theme.signals.changed.connect(self._restyle)
+        self._restyle()
 
         self.timeline.activated.connect(self.open_viewer)
         self.timeline.current_changed.connect(self._timeline_current)
@@ -276,52 +315,86 @@ class MainWindow(QMainWindow):
         dock = QDockWidget(title, self)
         dock.setObjectName(name)
         dock.setWidget(widget)
-        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable
-                         | QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        dock.setTitleBarWidget(QWidget())  # no title bar: the toolbar's buttons show and hide it
         self.addDockWidget(area, dock)
         return dock
+
+    def _status_shown(self, *_):
+        """The status bar only while there's something to say."""
+        s = self.index_status
+        self.statusBar().setVisible(bool(self.statusBar().currentMessage()) or not s.label.isHidden()
+                                    or not s.bar.isHidden())
+
+    def _restyle(self):
+        """The icons, after the colours changed."""
+        for action, name in ((self.back_action, "back"), (self.library_action, "sidebar"),
+                             (self.faces_action, "faces"), (self.info_action, "info"),
+                             (self.settings_action, "settings"), (self.more_button, "more")):
+            action.setIcon(theme.icon(name))
+        self.search_box.icon = theme.icon("search")
+        self.search_box.update()
+        self.brand.setPixmap(theme.brand_mark())
+        self.timeline.viewport().update()
 
     def _build_toolbar(self):
         bar = QToolBar("Main", self)
         bar.setObjectName("main")
         bar.setMovable(False)
+        bar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+        bar.setIconSize(QSize(20, 20))
+        bar.setFixedHeight(60)
         self.addToolBar(bar)
-        self.back_action = QAction("← Back", self)
+        bar.addWidget(_gap(6))
+        self.brand = QLabel()
+        bar.addWidget(self.brand)
+        name = QLabel("Photo Finder")
+        name.setObjectName("brand")
+        bar.addWidget(name)
+        bar.addWidget(_gap(14))
+        folders = self.library_action = self.sidebar_dock.toggleViewAction()
+        folders.setText("Library")
+        folders.setToolTip("Show or hide the library")
+        bar.addAction(folders)
+        self.back_action = QAction("Back", self)
+        self.back_action.setToolTip("Back to the photos (Esc)")
         self.back_action.triggered.connect(self.close_viewer)
         self.back_action.setVisible(False)
         bar.addAction(self.back_action)
-        folders = self.library_action = self.sidebar_dock.toggleViewAction()
-        folders.setText("Library")
-        folders.setToolTip("Show or hide the folders")
-        bar.addAction(folders)
+        self._labelled(bar, self.back_action)
+        bar.addWidget(_gap(0, stretch=True))
         self.search_box = SearchBox()
-        self.search_box.setPlaceholderText("Search: describe what's in the photo (Ctrl+F)")
+        self.search_box.setObjectName("search")
+        self.search_box.setPlaceholderText("Search your photos: a dog on the beach, a red car...")
+        self.search_box.setToolTip("Ctrl+F")
         self.search_box.setClearButtonEnabled(True)
-        self.search_box.setMinimumWidth(260)
-        self.search_box.setMaximumWidth(520)
+        self.search_box.setMinimumWidth(380)
+        self.search_box.setMaximumWidth(560)
+        self.search_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_box.returnPressed.connect(self.search)
         self.search_box.textChanged.connect(self._search_text_changed)
         self.search_box.focused.connect(self._warm_search)
         self.search_box.escaped.connect(self._leave_search_box)
         bar.addWidget(self.search_box)
+        bar.addWidget(_gap(0, stretch=True))
         find = QAction("Search", self)
         find.setShortcut(QKeySequence.StandardKey.Find)
         find.triggered.connect(lambda: (self.search_box.setFocus(), self.search_box.selectAll()))
         self.addAction(find)
-        bar.addSeparator()
-        bar.addWidget(QLabel(" Size "))
         self.zoom = QSlider(Qt.Orientation.Horizontal)
         self.zoom.setRange(MIN_TILE, MAX_TILE)
-        self.zoom.setFixedWidth(120)
+        self.zoom.setFixedWidth(96)
         self.zoom.setToolTip("Thumbnail size (Ctrl + mouse wheel, Ctrl + / Ctrl -)")
         self.zoom.valueChanged.connect(self.timeline.set_tile_size)
         bar.addWidget(self.zoom)
+        bar.addWidget(_gap(8))
         self.faces_action = QAction("Their faces", self)
         self.faces_action.setCheckable(True)
         self.faces_action.setToolTip("See the faces taken to be them, to take out any that aren't")
         self.faces_action.triggered.connect(self._toggle_person_faces)
         self.faces_action.setVisible(False)
         bar.addAction(self.faces_action)
+        self._labelled(bar, self.faces_action)
         info = self.info_action = self.info_dock.toggleViewAction()
         info.setText("Info")
         info.setShortcut(QKeySequence("I"))
@@ -329,9 +402,15 @@ class MainWindow(QMainWindow):
         bar.addAction(info)
         settings = self.settings_action = QAction("Settings...", self)
         settings.setShortcut(QKeySequence("Ctrl+,"))
-        settings.setToolTip("Library folders (Ctrl+,)")
+        settings.setToolTip("Settings (Ctrl+,)")
         settings.triggered.connect(self.open_settings)
         bar.addAction(settings)
+        self.more_button = QToolButton()
+        self.more_button.setToolTip("More")
+        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_menu = QMenu(self.more_button)
+        self.more_button.setMenu(self.more_menu)
+        bar.addWidget(self.more_button)
         reload = self.reload_action = QAction("Reload", self)
         reload.setShortcut(QKeySequence("F5"))  # (Ctrl+R turns a photo)
         reload.triggered.connect(self.reload)
@@ -340,6 +419,13 @@ class MainWindow(QMainWindow):
         full.setShortcut(QKeySequence("F11"))
         full.triggered.connect(lambda: self.showNormal() if self.isFullScreen() else self.showFullScreen())
         self.addAction(full)
+
+    @staticmethod
+    def _labelled(bar, action):
+        """A toolbar button showing its words beside the icon."""
+        button = bar.widgetForAction(action)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setProperty("label", True)
 
     def _action(self, text, slot, keys=(), tip=None) -> QAction:
         a = QAction(text, self)
@@ -372,7 +458,8 @@ class MainWindow(QMainWindow):
                           self.open_app_action, self.show_action, *self.photo.targeted]
 
     def _build_menus(self):
-        bar = self.menuBar()
+        """Behind the toolbar's ⋯ button (every item's shortcut works anywhere in the window)."""
+        bar = self.more_menu
         m = bar.addMenu("&File")
         m.addActions([self.open_app_action, self.show_action])
         m.addSeparator()
@@ -774,15 +861,15 @@ class MainWindow(QMainWindow):
             page = {PEOPLE: self.people, WHO: self.who, DUPES: self.dupes}.get(self.place, self.person_faces)
             if self.place == DUPES:
                 self.dedupe.load()
-                self.count_label.setText("")
+                self._set_count("")
             elif self.place == WHO:
                 self._load_who()
-                self.count_label.setText("")
+                self._set_count("")
             elif self.place == PEOPLE:
-                self.count_label.setText(f"  {len(people):,} people")
+                self._set_count(f"  {len(people):,} people")
             else:
                 self._load_person_faces(faces_of(self.place))
-                self.count_label.setText("")
+                self._set_count("")
             if self.stack.currentWidget() is self.viewer:
                 self._sync_viewer()  # (the page shows again when the viewer closes)
             else:
@@ -808,6 +895,20 @@ class MainWindow(QMainWindow):
         self._count_text()
         self._update_actions()
 
+    def _set_count(self, text: str):
+        """The page's title (where we are) and, beside it, how much is shown."""
+        self.count_label.setText(text.strip())
+        pid, fid = person_of(self.place), faces_of(self.place)
+        if self.query:
+            title = f"“{self.query}”"
+        elif pid is not None or fid is not None:
+            name = self.people_names.get(pid if pid is not None else fid, "Someone")
+            title = name if pid is not None else f"{name}: faces"
+        else:
+            title = {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates"}.get(
+                self.place) or Path(self.place).name or self.place
+        self.page_title.setText(title)
+
     def _place_name(self) -> str:
         """" in 2023", " of Mom", or nothing for all photos."""
         pid = person_of(self.place)
@@ -819,7 +920,7 @@ class MainWindow(QMainWindow):
 
     def _count_text(self):
         videos = sum(it.kind == "video" for it in self.timeline.items)
-        self.count_label.setText(f"  {counted(len(self.timeline.items) - videos, videos)}{self._place_name()}")
+        self._set_count(f"  {counted(len(self.timeline.items) - videos, videos)}{self._place_name()}")
 
     def show_place(self, place: str):
         """Show all photos, the people page, one person's photos, or one folder (and those inside it)."""
@@ -910,7 +1011,7 @@ class MainWindow(QMainWindow):
             return self._leave_search()
         self.close_viewer()
         self.query = q
-        self.count_label.setText("  Searching...")
+        self._set_count("  Searching...")
         self._searches.run(run_search, self._searched, self.search_index, q, self.place)
 
     def _searched(self, res, err):
@@ -919,7 +1020,7 @@ class MainWindow(QMainWindow):
         if err is not None:
             self.timeline.empty_text = f"Search isn't working right now:\n{err}"
             self.timeline.set_months([], fresh=True)
-            self.count_label.setText("")
+            self._set_count("")
             return
         sections, n, took = res
         if not shows_photos(self.place):
@@ -932,7 +1033,7 @@ class MainWindow(QMainWindow):
         self.timeline.set_scrubber(False)
         self.timeline.set_months(sections, fresh=True)
         self._sync_viewer()
-        self.count_label.setText(f"  {n:,} match{'es' if n != 1 else ''} for “{self.query}”{where}"
+        self._set_count(f"  {n:,} match{'es' if n != 1 else ''} for “{self.query}”{where}"
                                  f"  ({took:.2f} s)")
         if self.timeline.items:
             self.timeline.setFocus()
@@ -959,6 +1060,7 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(widget)
         in_viewer = widget is self.viewer
         self.back_action.setVisible(in_viewer)
+        self.page_header.setVisible(widget in (self.timeline, self.people))  # the others have their own
         self.zoom.setEnabled(widget is self.timeline)
         self._update_actions()
 

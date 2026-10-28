@@ -32,7 +32,8 @@ What's in it:
 - **Organizing** (the File menu, or right-click a folder): *Tidy the library* or *Organize a folder* names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. `Duplicates/` is left alone, and so are a year folder's own subfolders (`2022/Trip/`).
 - **Duplicates** (in the sidebar, or the View menu): copies of the same photo or video, side by side, the one to keep marked (the most pixels, then the biggest file; click another to keep it instead). Exact copies are the same bytes; near ones look the same (resized or saved again), checked by both a picture fingerprint and the search model. Shots of a burst are never called duplicates. Move the extras into `Duplicates/` (named after the copy kept) or to the Trash, for the groups you select or all of them, after a preview; or say a group isn't duplicates and it's never offered again. What's in `Duplicates/` stays out of the timeline and search (open the folder to see it).
 - **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, Photo Finder finishes the job next time it opens, with no photo lost or doubled.
-- **Settings** (Ctrl+,): which folders make up the library, and the app to edit photos in.
+- **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
+- **Menus:** File, Edit, Photo and View are under the **⋯** button at the top right. Their shortcuts work anywhere in the window.
 
 Every change to who's who is undoable like a file operation, from the app or the command line.
 
@@ -128,6 +129,8 @@ Your photos change only when you ask (rename, move, Trash, details, organize, du
 | SFace face recognizer | 39 MB | Apache-2.0 |
 
 Read the Apple license yourself before shipping a commercial product. The newer MobileCLIP2 models are more accurate but use a different, research-oriented Apple license.
+
+The app's font is [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans), bundled under the SIL Open Font License (`photofind/ui/fonts/OFL.txt`).
 
 ## Tuning
 
