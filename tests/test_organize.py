@@ -87,6 +87,15 @@ def test_the_tricky_dates_from_the_old_pipeline(home, lib):
                           "2017/2017_03_04_05_06_07.jpg", "Unsorted/scan.jpg"]
 
 
+def test_only_the_extension_changes_case(home, lib):
+    # (on Windows the new name is the old one's: it mustn't count as taken, giving _1)
+    shot(lib / "2020" / "2020_01_02_03_04_05.JPG", "2020:01:02 03:04:05")
+    shot(lib / "Unsorted" / "scan.PNG")
+    apply(home, lib)
+    assert files(lib) == ["2020/2020_01_02_03_04_05.jpg", "Unsorted/scan.png"]
+    index_matches_disk(home[1], lib)
+
+
 def test_what_is_already_in_order_is_left_alone(home, lib):
     shot(lib / "2020" / "2020_01_02_03_04_05.jpg", "2020:01:02 03:04:05")
     shot(lib / "2020" / "2020_01_02_03_04_05_3.jpg", "2020:01:02 03:04:05")  # its number is kept

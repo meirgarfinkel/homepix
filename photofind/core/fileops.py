@@ -197,7 +197,8 @@ def _set(db, step, **fields):
 def plan_moves(pairs) -> list[dict]:
     """[(src, wanted dst)] -> move steps. A wanted name that's taken (and not being vacated by another
     file in the same operation) gets _1, _2, ...; files already where they're wanted are left out."""
-    srcs = {os.path.abspath(s) for s, d in pairs if os.path.abspath(s) != os.path.abspath(d)}  # leaving
+    # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
+    srcs = {os.path.normcase(os.path.abspath(s)) for s, d in pairs if os.path.abspath(s) != os.path.abspath(d)}
     planned, steps = set(), []
     for src, dst in pairs:
         src, dst = os.path.abspath(src), os.path.abspath(dst)
@@ -206,10 +207,10 @@ def plan_moves(pairs) -> list[dict]:
         folder, name = os.path.split(dst)
         stem, ext = os.path.splitext(name)
         n, candidate = 0, dst
-        while candidate in planned or (os.path.lexists(candidate) and candidate not in srcs):
+        while (key := os.path.normcase(candidate)) in planned or (os.path.lexists(candidate) and key not in srcs):
             n += 1
             candidate = os.path.join(folder, f"{stem}_{n}{ext}")
-        planned.add(candidate)
+        planned.add(key)
         steps.append({"action": "move", "src": src, "dst": candidate})
     return steps
 

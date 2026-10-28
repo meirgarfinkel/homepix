@@ -154,17 +154,21 @@ def plan(db, folders, scope=None) -> Plan:
         groups.append(_Group(path, taken, folder, base, members))
 
     moving = [g for g in groups if not g.unchanged()]
-    leaving = {src for g in moving for src, _, _ in g.members}
+    # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
+    leaving = {os.path.normcase(src) for g in moving for src, _, _ in g.members}
     planned, changes = set(), []
     for g in moving:
         n = 0
         while True:
             stem = g.base if n == 0 else f"{_numbered_base(g.base)}_{n}"
             targets = g.paths(stem)
-            if all(t not in planned and (t in leaving or not os.path.lexists(t)) for t in targets):
+            keys = [os.path.normcase(t) for t in targets]
+            free = all(k not in planned and (k in leaving or not os.path.lexists(t))
+                       for k, t in zip(keys, targets, strict=True))
+            if free:
                 break
             n += 1
-        planned.update(targets)
+        planned.update(keys)
         changes += [Change(src, dst, why) for (src, _, why), dst in zip(g.members, targets, strict=True)
                     if src != dst]
     return Plan(changes, len(files), not_ready)
