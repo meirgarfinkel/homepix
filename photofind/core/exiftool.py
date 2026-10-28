@@ -2,7 +2,8 @@
 
 Starting ExifTool (a Perl program) takes about a quarter of a second, so one copy is started on first
 use and kept open (-stay_open), and each request is a few milliseconds. The bundled app ships its own
-copy with its own Perl; from source, PHOTOFIND_EXIFTOOL or the system's exiftool is used.
+copy with its own Perl (on Windows, ExifTool's official Windows build); from source, PHOTOFIND_EXIFTOOL
+or the system's exiftool is used.
 """
 
 import json
@@ -19,10 +20,13 @@ class ExifToolMissing(RuntimeError):
 
 
 def bundled() -> Path | None:
-    """The app's own ExifTool and Perl (see packaging/bundle_exiftool.sh), if there is one."""
+    """The app's own ExifTool and Perl (see packaging/bundle_exiftool.sh and .ps1), if there is one."""
     here = os.environ.get("PHOTOFIND_EXIFTOOL_DIR") or (
         str(Path(sys._MEIPASS) / "exiftool") if getattr(sys, "frozen", False) else "")
-    return Path(here) if here and (Path(here) / "run.pl").is_file() else None
+    if not here:
+        return None
+    here = Path(here)
+    return here if (here / "run.pl").is_file() or (here / "exiftool.exe").is_file() else None
 
 
 def command() -> list[str]:
@@ -30,6 +34,8 @@ def command() -> list[str]:
     if os.environ.get("PHOTOFIND_EXIFTOOL"):
         return [os.environ["PHOTOFIND_EXIFTOOL"]]
     if b := bundled():
+        if (b / "exiftool.exe").is_file():
+            return [str(b / "exiftool.exe")]
         return [str(b / "perl" / "bin" / "perl"), str(b / "run.pl")]
     found = shutil.which("exiftool")
     if found:
@@ -45,6 +51,10 @@ def _arg(a: str) -> str:
     return a
 
 
+def _key(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path))
+
+
 class ExifTool:
     """One running ExifTool. Safe to use from several threads (requests take turns)."""
 
@@ -54,6 +64,7 @@ class ExifTool:
         self._n = 0
         self._err = []
         self._err_ready = threading.Condition()
+        self._version = None
 
     def _start(self):
         env = dict(os.environ)
@@ -88,7 +99,8 @@ class ExifTool:
                 self._proc.stdin.flush()
                 out = bytearray()
                 end = mark.encode() + b"\n"
-                while not out.endswith(end):
+                crlf = mark.encode() + b"\r\n"  # (on Windows its lines end that way)
+                while not (out.endswith(end) or out.endswith(crlf)):
                     chunk = self._proc.stdout.read1(1 << 16)
                     if not chunk:
                         raise RuntimeError("ExifTool stopped unexpectedly")
@@ -100,20 +112,31 @@ class ExifTool:
                 self._err_ready.wait_for(lambda: any(mark in e for e in self._err), timeout=10)
                 errors = "".join(e for e in self._err if mark not in e)
                 self._err.clear()
-            return bytes(out[: -len(end)]), errors
+            return bytes(out[: -len(crlf if out.endswith(crlf) else end)]), errors
 
     def read(self, paths, tags=(), options=("-n",)) -> dict[str, dict]:
         """{path: {tag: value}} for these files. tags like "XMP-dc:Description" (all of them if none);
         values as numbers with -n. Files that can't be read are left out."""
-        paths = [os.path.abspath(p) for p in paths]  # (never taken for an option: they start with /)
+        paths = [os.path.abspath(p) for p in paths]  # (never taken for an option: they start with / or C:)
         if not paths:
             return {}
+        # ExifTool names each file its own way (with / on Windows): match them back to ours
+        ours = {_key(p): p for p in paths}
         out, _ = self.run(["-j", "-G1", "-struct", *options, *[f"-{t}" for t in tags], *paths])
         try:
             found = json.loads(out.decode("utf-8") or "[]")
         except ValueError:
             return {}
-        return {d.pop("SourceFile"): d for d in found if "SourceFile" in d}
+        return {ours.get(_key(f), f): d for d in found if (f := d.pop("SourceFile", None))}
+
+    def version(self) -> float:
+        """ExifTool's version, e.g. 13.59 (asked once)."""
+        if self._version is None:
+            try:
+                self._version = float(self.run(["-ver"])[0].decode().strip())
+            except ValueError:
+                self._version = 0.0
+        return self._version
 
     def close(self):
         with self._lock:

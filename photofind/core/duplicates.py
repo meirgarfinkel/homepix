@@ -302,8 +302,8 @@ def _mapping(library) -> dict[str, str]:
             with open(os.path.join(root, MAPPING), newline="", encoding="utf-8") as f:
                 for row in csv.DictReader(f):
                     kept, now = row.get("kept_original_path"), row.get("duplicate_current_path_in_Duplicates")
-                    if kept and now:
-                        out[os.path.join(root, now)] = os.path.join(root, kept)
+                    if kept and now:  # (written with / between folders, even for Windows)
+                        out[os.path.normpath(os.path.join(root, now))] = os.path.normpath(os.path.join(root, kept))
         except (OSError, csv.Error, UnicodeDecodeError):
             continue
     return out

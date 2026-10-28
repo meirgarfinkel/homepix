@@ -61,7 +61,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Right-click menu, toolbar, keyboard shortcuts | v1 |
 | Copy / cut / paste / move into folders; rename (single and batch) | v1 |
 | Ctrl+C / Ctrl+V through the **system clipboard**, so files paste into the file manager and other apps | v1 |
-| Delete to Trash; undo and redo (Ctrl+Z / Ctrl+Shift+Z) for every operation | v1 |
+| Delete to Trash (the Recycle Bin on Windows); undo and redo (Ctrl+Z / Ctrl+Shift+Z) for every operation | v1 |
 | Export (copy out, optionally resized or converted to JPEG); open in an external editor; show in folder | v1 |
 
 ## 5. Metadata (written into the files)
@@ -72,7 +72,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Edit date taken: one photo, a batch, and "shift by N hours" | v1 |
 | Edit description, keywords, GPS | v1 |
 | Writing: via exiftool, file modification time kept, old values journaled for undo, index fingerprint updated in the same step (so faces and names survive) | v1 |
-| Faces, people and scene labels stay in the app's database | v1 |
+| Faces and people stay in the app's database | v1 |
 
 ## 6. Editing
 
@@ -87,7 +87,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 |---|---|
 | Search by description | v1 |
 | Faces: boxes in the viewer; name, rename, merge, split, fix wrong matches; the "who is this" flow | v1 |
-| Automatic scene labels (screenshots, documents, receipts, food, beach, ...) using the existing search model | v1 |
+| Automatic scene labels (screenshots, documents, receipts, food, beach, ...) using the existing search model, and filtering by them | Later |
 | Burst grouping with best-shot suggestions | v2 |
 | Search text inside photos (OCR) | Later |
 | Place names from GPS, offline | Later |

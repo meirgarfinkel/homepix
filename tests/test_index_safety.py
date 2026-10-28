@@ -73,6 +73,7 @@ def test_folder_emptied_by_moving_its_photos_is_just_a_move(pf, lib):
 
 
 @pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root can read anything")
+@pytest.mark.skipif(os.name == "nt", reason="Windows ignores these permissions")
 def test_unreadable_folder_keeps_its_photos(pf, lib):
     for i in range(3):
         photo(lib / "locked" / f"{i}.jpg")

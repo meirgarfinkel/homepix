@@ -5,7 +5,7 @@ import os
 import struct
 
 import pytest
-from conftest import photo, rows
+from conftest import et_command, photo, rows
 from PIL import Image
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -124,7 +124,7 @@ def recorded(path, local: str):
     if not available():
         pytest.skip("needs ExifTool")
     utc = dt.datetime.fromisoformat(local).astimezone(dt.UTC)
-    subprocess.run(["exiftool", "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
+    subprocess.run([*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
                     str(path)], check=True)
     return path
 
@@ -279,7 +279,7 @@ def test_videos_in_the_grid_and_the_viewer(window, pf, lib, app, monkeypatch):
     wait_until(app, lambda: window.viewer._image() is not None)  # its frame shows
     assert opened == []  # stepping onto a video doesn't start it
     QTest.keyClick(window.viewer, Qt.Key.Key_Return)
-    assert opened == [str(lib / "clip.mp4")]
+    assert [os.path.normpath(p) for p in opened] == [str(lib / "clip.mp4")]
     window.viewer.go(1 - vi)  # to the photo: Enter there doesn't play anything
     QTest.keyClick(window.viewer, Qt.Key.Key_Return)
     assert len(opened) == 1

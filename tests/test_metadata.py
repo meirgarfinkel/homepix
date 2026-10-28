@@ -9,6 +9,7 @@ import sys
 import textwrap
 
 import pytest
+from conftest import et_command
 from PIL import Image
 
 from photofind.core import exiftool as et_mod
@@ -143,7 +144,7 @@ def test_names_survive_editing(home, lib):
 def test_undo_puts_back_exactly_what_was_there(home, lib):
     pf, db, fo, md = home
     p = make_photo(lib / "a.jpg", exif={270: "OLYMPUS DIGITAL CAMERA", 0x9003: "2010:01:02 03:04:05"})
-    subprocess.run(["exiftool", "-q", "-overwrite_original", "-IPTC:Keywords=old one", "-IPTC:Keywords=old two",
+    subprocess.run([*et_command(), "-q", "-overwrite_original", "-IPTC:Keywords=old one", "-IPTC:Keywords=old two",
                     str(p)], check=True)
     index(pf, lib)
     original = md.read([p])[str(p)].tags
@@ -175,7 +176,7 @@ def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
     w.release()
     local = dt.datetime(2021, 3, 4, 10, 0, 1)
     utc = local.astimezone(dt.UTC).strftime("%Y:%m:%d %H:%M:%S")
-    subprocess.run(["exiftool", "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc}", str(clip)], check=True)
+    subprocess.run([*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc}", str(clip)], check=True)
     index(pf, lib)
     assert row(db, clip)["kind"] == "motion"
     result, cant = edit_and_run(db, fo, [a, b], md.Edit(shift=dt.timedelta(hours=-3, minutes=-15)))
@@ -261,12 +262,12 @@ def test_a_format_exiftool_cant_write_is_reported(home, lib):
 def test_indexing_reads_keywords_and_descriptions_written_elsewhere(home, lib):
     pf, db, fo, md = home
     p = make_photo(lib / "a.jpg")
-    subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-dc:Subject=trip",
+    subprocess.run([*et_command(), "-q", "-overwrite_original", "-XMP-dc:Subject=trip",
                     "-XMP-dc:Description=From digiKam", str(p)], check=True)
     index(pf, lib)
     r = row(db, p)
     assert (json.loads(r["keywords"]), r["description"], r["details_done"]) == (["trip"], "From digiKam", 1)
-    subprocess.run(["exiftool", "-q", "-overwrite_original", "-XMP-dc:Subject=home", str(p)], check=True)
+    subprocess.run([*et_command(), "-q", "-overwrite_original", "-XMP-dc:Subject=home", str(p)], check=True)
     os.utime(p, (os.stat(p).st_atime, os.stat(p).st_mtime + 5))  # (as a real edit later on would)
     index(pf, lib)  # changed outside: read again
     assert json.loads(row(db, p)["keywords"]) == ["home"]

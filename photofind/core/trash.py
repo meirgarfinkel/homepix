@@ -1,13 +1,22 @@
-"""The desktop's Trash (the freedesktop.org standard that GNOME Files, Dolphin, Nemo and Thunar use),
+r"""The desktop's Trash (the freedesktop.org standard that GNOME Files, Dolphin, Nemo and Thunar use),
 so a photo Photo Finder deletes shows up there and can be restored from either.
 
 A file in the home Trash goes to ~/.local/share/Trash; one on another drive goes to that drive's
 own Trash (.Trash/<uid> or .Trash-<uid> at its top), so it's never copied across drives.
+
+On Windows it's the Recycle Bin, the same way: each drive has one (X:\$Recycle.Bin\<user's SID>), where
+a deleted file is renamed to $R<tag>.<ext> beside a small $I<tag>.<ext> saying where it came from, so
+Explorer can show and restore it too.
 """
 
 import datetime as dt
+import functools
 import os
+import secrets
 import stat
+import string
+import struct
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -47,8 +56,6 @@ def trash_for(path: Path) -> tuple[Path, Path | None]:
             return _ready(home), None
     except OSError:
         pass
-    if os.name == "nt":
-        raise TrashError("The Recycle Bin isn't supported yet")
     top = _mount_point(folder)
     uid = str(os.getuid())
     shared = top / ".Trash"
@@ -68,6 +75,8 @@ def reserve(path) -> str:
     """Choose the file's name in the Trash and reserve it by making its info file (exclusively, so
     two deletions never pick the same name). Returns the path it's to be moved to."""
     path = Path(os.path.abspath(path))
+    if os.name == "nt":
+        return _reserve_recycled(path)
     folder, top = trash_for(path)
     name, n = path.name, 1
     while True:
@@ -89,7 +98,10 @@ def reserve(path) -> str:
 def unreserve(trashed):
     """Remove a trashed file's info file (after restoring it, or if trashing it failed)."""
     t = Path(trashed)
-    (t.parent.parent / "info" / f"{t.name}.trashinfo").unlink(missing_ok=True)
+    if os.name == "nt":
+        (t.parent / f"$I{t.name[2:]}").unlink(missing_ok=True)
+    else:
+        (t.parent.parent / "info" / f"{t.name}.trashinfo").unlink(missing_ok=True)
 
 
 def trash(path) -> str:
@@ -107,3 +119,95 @@ def restore(trashed, dst):
     """Put a file back from the Trash at dst (which must not exist)."""
     rename_noreplace(trashed, dst)
     unreserve(trashed)
+
+
+# --- Windows: the Recycle Bin ------------------------------------------------------------------------
+
+_TAG = string.ascii_uppercase + string.digits
+_FILETIME_1970 = 116444736000000000  # 1970-01-01 in Windows time (100 ns steps since 1601)
+
+
+@functools.cache
+def _sid() -> str:
+    """The signed-in user's security ID, which names their folder in each Recycle Bin."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+    advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+                                             ctypes.POINTER(wintypes.DWORD)]
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+
+    def check(ok):
+        if not ok:
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    token = wintypes.HANDLE()
+    check(advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)))  # TOKEN_QUERY
+    try:
+        size = wintypes.DWORD()
+        advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))  # 1: TokenUser; asks the size
+        buf = ctypes.create_string_buffer(size.value)
+        check(advapi32.GetTokenInformation(token, 1, buf, size, ctypes.byref(size)))
+        sid = ctypes.cast(buf, ctypes.POINTER(ctypes.c_void_p))[0]  # TOKEN_USER starts with the SID's address
+        text = wintypes.LPWSTR()
+        check(advapi32.ConvertSidToStringSidW(sid, ctypes.byref(text)))
+        try:
+            return text.value
+        finally:
+            kernel32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+    finally:
+        kernel32.CloseHandle(token)
+
+
+def recycle_bin(path: Path) -> Path:
+    """The Recycle Bin folder for a file (PHOTOFIND_RECYCLE_BIN instead, for tests)."""
+    if os.environ.get("PHOTOFIND_RECYCLE_BIN"):
+        folder = Path(os.environ["PHOTOFIND_RECYCLE_BIN"])
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+    drive = os.path.splitdrive(str(path))[0]
+    if not drive or drive.startswith(("\\\\", "//")):
+        raise TrashError("Files in a network folder can't go to the Recycle Bin")
+    top = Path(drive + "\\") / "$Recycle.Bin"
+    if not top.is_dir():  # Windows keeps none on removable drives
+        raise TrashError(f"The drive {drive} has no Recycle Bin")
+    folder = top / _sid()
+    try:
+        folder.mkdir(exist_ok=True)
+    except OSError as e:
+        raise TrashError(f"Photo Finder can't use the Recycle Bin on {drive}: {e}") from e
+    return folder
+
+
+def _reserve_recycled(path: Path) -> str:
+    folder = recycle_bin(path)
+    ext = path.suffix
+    while True:
+        tag = "".join(secrets.choice(_TAG) for _ in range(6))
+        info = folder / f"$I{tag}{ext}"
+        try:
+            fd = os.open(info, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        except FileExistsError:
+            continue
+        if not os.path.lexists(folder / f"$R{tag}{ext}"):
+            break
+        os.close(fd)
+        info.unlink()
+    original = str(path) + "\0"
+    when = int(time.time() * 10_000_000) + _FILETIME_1970
+    with os.fdopen(fd, "wb") as f:  # version 2 (Windows 10 and later): size, date, then the path
+        f.write(struct.pack("<qqqi", 2, path.stat().st_size, when, len(original)) + original.encode("utf-16-le"))
+    return str(folder / f"$R{tag}{ext}")
+
+
+def recycled_from(info) -> str:
+    """Where a Recycle Bin item ($I file) came from."""
+    data = Path(info).read_bytes()
+    n = struct.unpack_from("<i", data, 24)[0]
+    return data[28:28 + 2 * n].decode("utf-16-le").rstrip("\0")

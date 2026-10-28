@@ -1,6 +1,8 @@
 """Faces as tiles: the "who is this?" page (a group of look-alikes to name at a time) and someone's
 faces (to take out the ones that aren't them)."""
 
+import os
+
 from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -108,7 +110,7 @@ class FaceGrid(QListWidget):
         for f in faces:
             item = QListWidgetItem(blank, "")
             item.setData(ID_ROLE, f["id"])
-            item.setToolTip(f["path"].rsplit("/", 1)[-1])
+            item.setToolTip(os.path.basename(f["path"]))
             self.addItem(item)
             item.setSelected(selected)
         for row, f in enumerate(faces[:600]):  # (more load as they're scrolled to: see paintEvent)

@@ -8,15 +8,13 @@ import sys
 import textwrap
 
 import pytest
-from conftest import photo
-
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="the Trash is the freedesktop one")
+from conftest import own_trash, photo, rel, trash_records, trashed_files
 
 
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
     """An indexed library and a Trash of its own. Returns (core, db, fileops)."""
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    own_trash(monkeypatch, tmp_path)
     from photofind.core import fileops
 
     db = pf.open_db()
@@ -34,14 +32,14 @@ def contents(lib) -> dict[str, str]:
     for d, _, names in os.walk(lib):
         for n in names:
             p = os.path.join(d, n)
-            out[os.path.relpath(p, lib)] = digest(p)
+            out[rel(p, lib)] = digest(p)
     return out
 
 
 def index_matches_disk(db, lib):
     """Every indexed path exists, and every photo on disk is indexed at its own path, with its own bytes."""
     indexed = {r["path"]: r["qhash"] for r in db.execute("SELECT path, qhash FROM photos")}
-    on_disk = {os.path.join(lib, p) for p in contents(lib) if not os.path.basename(p).startswith(".")}
+    on_disk = {os.path.normpath(os.path.join(lib, p)) for p in contents(lib) if not os.path.basename(p).startswith(".")}
     assert set(indexed) == on_disk
     from photofind.core.util import quick_hash
 
@@ -154,16 +152,14 @@ def test_trash_goes_to_the_desktop_trash_and_restores_with_everything(home, lib,
     db.commit()
     before = contents(lib)
     fo.run(db, "trash", "test", fo.plan_trash([lib / "a.jpg"]))
-    trash = tmp_path / "xdg" / "Trash"
-    assert os.listdir(trash / "files") == ["a.jpg"]
-    info = (trash / "info" / "a.jpg.trashinfo").read_text()
-    assert f"Path={lib / 'a.jpg'}" in info and "DeletionDate=" in info
+    assert [digest(f) for f in trashed_files(tmp_path)] == [before["a.jpg"]]
+    assert trash_records(tmp_path) == [str(lib / "a.jpg")]
     index_matches_disk(db, lib)
     assert db.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 0
 
     fo.undo(db)
     assert contents(lib) == before
-    assert os.listdir(trash / "files") == [] and os.listdir(trash / "info") == []
+    assert trashed_files(tmp_path) == [] and trash_records(tmp_path) == []
     index_matches_disk(db, lib)
     face = db.execute("SELECT f.emb, p.name FROM faces f JOIN people p ON p.id=f.person_id").fetchone()
     assert (face[0], face[1]) == (b"\x01\x02", "Ann")  # named faces come back too
@@ -173,9 +169,47 @@ def test_two_photos_with_the_same_name_in_the_trash(home, lib, tmp_path):
     pf, db, fo = home
     make(pf, lib, ["x/a.jpg", "y/a.jpg"])
     fo.run(db, "trash", "test", fo.plan_trash([lib / "x/a.jpg", lib / "y/a.jpg"]))
-    assert sorted(os.listdir(tmp_path / "xdg/Trash/files")) == ["a.2.jpg", "a.jpg"]
+    assert len(trashed_files(tmp_path)) == 2
+    assert trash_records(tmp_path) == [str(lib / "x/a.jpg"), str(lib / "y/a.jpg")]
     fo.undo(db)
     assert sorted(contents(lib)) == ["x/a.jpg", "y/a.jpg"]
+
+
+def test_recycle_bin_records_say_where_a_file_came_from(tmp_path, monkeypatch):
+    """Windows' $I file: version 2, the size, when, then the path (checked on every system)."""
+    import struct
+
+    from photofind.core import trash
+
+    monkeypatch.setenv("PHOTOFIND_RECYCLE_BIN", str(tmp_path / "bin"))
+    f = tmp_path / "Ünïcode photo.jpg"
+    f.write_bytes(b"x" * 1234)
+    dest = trash._reserve_recycled(f)
+    name = os.path.basename(dest)
+    assert name.startswith("$R") and len(name) == len("$RABC123.jpg") and name.endswith(".jpg")
+    info = tmp_path / "bin" / ("$I" + name[2:])
+    version, size = struct.unpack_from("<qq", info.read_bytes())
+    assert (version, size) == (2, 1234) and trash.recycled_from(info) == str(f)
+    assert trash._reserve_recycled(f) != dest  # every reservation gets a name of its own
+
+
+@pytest.mark.skipif(os.name != "nt" or not os.environ.get("CI"), reason="the real Recycle Bin, on a test machine")
+def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monkeypatch):
+    from photofind.core import trash
+
+    monkeypatch.delenv("PHOTOFIND_RECYCLE_BIN")
+    f = photo(tmp_path / "photofind-recycle-test.jpg")
+    data = f.read_bytes()
+    dest = trash.trash(f)
+    assert not f.exists() and os.path.dirname(dest).lower().endswith(trash._sid().lower())
+    listed = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "(New-Object -ComObject Shell.Application).NameSpace(10).Items() | ForEach-Object { $_.Name }"],
+        capture_output=True, text=True, timeout=60).stdout
+    assert "photofind-recycle-test" in listed  # Windows sees it in the Recycle Bin, under its own name
+    trash.restore(dest, f)
+    assert f.read_bytes() == data and not os.path.exists(dest)
+    assert not os.path.exists(os.path.join(os.path.dirname(dest), "$I" + os.path.basename(dest)[2:]))
 
 
 def test_undo_redo_and_new_work_clears_redo(home, lib):
@@ -306,8 +340,7 @@ def test_killed_partway_loses_nothing(home, lib, tmp_path, action, after):
     assert len(notes) == 1
     no_leftovers(lib)
     index_matches_disk(db, lib)
-    trashed = [digest(tmp_path / "xdg/Trash/files" / n) for n in os.listdir(tmp_path / "xdg/Trash/files")] \
-        if (tmp_path / "xdg/Trash/files").exists() else []
+    trashed = [digest(f) for f in trashed_files(tmp_path)]
     now = sorted(list(contents(lib).values()) + trashed)
     if action == "copy":
         assert set(now) == set(before) and len(now) >= len(before)
@@ -344,20 +377,39 @@ def test_a_move_to_another_drive_copies_checks_and_removes(home, lib, monkeypatc
 # --- in the app ----------------------------------------------------------------------------------------
 
 def test_the_clipboard_speaks_the_file_managers_formats(app):
-    from photofind.ui import desktop
-
-    mime = desktop.files_mime(["/p/a b.jpg", "/p/c.jpg"], cut=True)
-    assert bytes(mime.data(desktop.GNOME)) == b"cut\nfile:///p/a%20b.jpg\nfile:///p/c.jpg"
-    assert bytes(mime.data(desktop.KDE_CUT)) == b"1"
-    assert desktop.files_in(mime) == (["/p/a b.jpg", "/p/c.jpg"], True)
-    assert desktop.files_in(desktop.files_mime(["/p/a.jpg"]))[1] is False
-
     from PySide6.QtCore import QMimeData, QUrl
 
+    from photofind.ui import desktop
+
+    ab, c = os.path.abspath("/p/a b.jpg"), os.path.abspath("/p/c.jpg")
+    mime = desktop.files_mime([ab, c], cut=True)
+    urls = b"".join(b"\n" + QUrl.fromLocalFile(p).toEncoded() for p in (ab, c))
+    assert bytes(mime.data(desktop.GNOME)) == b"cut" + urls and b"/a%20b.jpg" in urls
+    assert bytes(mime.data(desktop.KDE_CUT)) == b"1"
+    assert desktop.files_in(mime) == ([ab, c], True)
+    assert desktop.files_in(desktop.files_mime([c]))[1] is False
+
     dolphin = QMimeData()
-    dolphin.setUrls([QUrl.fromLocalFile("/p/a.jpg")])
+    dolphin.setUrls([QUrl.fromLocalFile(c)])
     dolphin.setData(desktop.KDE_CUT, b"1")
-    assert desktop.files_in(dolphin) == (["/p/a.jpg"], True)
+    assert desktop.files_in(dolphin) == ([c], True)
+
+    for effect, cut in ((2, True), (5, False), (1, False)):  # Windows Explorer: cut, copied, copied
+        explorer = QMimeData()
+        explorer.setUrls([QUrl.fromLocalFile(c)])
+        explorer.setData(desktop.WIN_EFFECT, effect.to_bytes(4, "little"))
+        assert desktop.files_in(explorer) == ([c], cut)
+
+
+def test_commands_to_open_with_keep_their_paths():
+    from photofind.ui import desktop
+
+    if os.name == "nt":
+        assert desktop.split_command(r'"C:\Program Files\GIMP 3\bin\gimp.exe" --new %f') == \
+            [r"C:\Program Files\GIMP 3\bin\gimp.exe", "--new", "%f"]
+        assert desktop.split_command(r"C:\Tools\edit.exe") == [r"C:\Tools\edit.exe"]
+    else:
+        assert desktop.split_command("darktable --some-option '%f'") == ["darktable", "--some-option", "%f"]
 
 
 @pytest.fixture(scope="module")

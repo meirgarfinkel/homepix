@@ -7,10 +7,10 @@ import time
 
 import numpy as np
 import pytest
+from conftest import own_trash
 from PIL import Image
 from test_fileops import contents, index_matches_disk, no_leftovers
 
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="the Trash is the freedesktop one")
 _n = 0
 
 
@@ -32,7 +32,7 @@ def shot(path, taken=None, created=None, mtime=dt.datetime(2025, 11, 30, 9, 52))
 
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    own_trash(monkeypatch, tmp_path)
     from photofind.core import fileops, organize
 
     pf.add_folder(lib)
@@ -85,6 +85,15 @@ def test_the_tricky_dates_from_the_old_pipeline(home, lib):
     apply(home, lib)
     assert files(lib) == ["2015/2015_07_08_09_10_11.jpg", "2016/2016_01_01_00_00_00.jpg",
                           "2017/2017_03_04_05_06_07.jpg", "Unsorted/scan.jpg"]
+
+
+def test_only_the_extension_changes_case(home, lib):
+    # (on Windows the new name is the old one's: it mustn't count as taken, giving _1)
+    shot(lib / "2020" / "2020_01_02_03_04_05.JPG", "2020:01:02 03:04:05")
+    shot(lib / "Unsorted" / "scan.PNG")
+    apply(home, lib)
+    assert files(lib) == ["2020/2020_01_02_03_04_05.jpg", "Unsorted/scan.png"]
+    index_matches_disk(home[1], lib)
 
 
 def test_what_is_already_in_order_is_left_alone(home, lib):
@@ -240,7 +249,8 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
         w.organizer.tidy()
         wait_until(app, lambda: files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"]
                    and not w.ops.busy)
-        assert shown == [["new/IMG_1.jpg", "2021/2021_08_01_19_09_04.jpg", "Into 2021/"]]
+        assert shown == [[os.path.normpath("new/IMG_1.jpg"), os.path.normpath("2021/2021_08_01_19_09_04.jpg"),
+                          "Into 2021/"]]
         w.ops.undo()
         wait_until(app, lambda: files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"] and not w.ops.busy)
     finally:

@@ -8,11 +8,10 @@ import shutil
 
 import numpy as np
 import pytest
+from conftest import own_trash, rel
 from PIL import Image, ImageDraw
 
 from photofind.core.util import quick_hash
-
-pytestmark = pytest.mark.skipif(os.name == "nt", reason="the Trash is the freedesktop one")
 
 
 def scene(seed, shift=0, size=(640, 480)):
@@ -45,7 +44,7 @@ def save(img, path, taken=None, quality=92):
 
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    own_trash(monkeypatch, tmp_path)
     from photofind.core import duplicates, fileops
 
     pf.add_folder(lib)
@@ -193,7 +192,7 @@ def test_the_duplicates_folder_is_known_and_out_of_the_timeline_and_search(home,
     pf.index_folder(lib, want_faces=False)
     known = duplicates.known(db, [lib])
     path = {r[0]: r[1] for r in db.execute("SELECT id, path FROM photos")}
-    got = {os.path.basename(path[d]): (os.path.relpath(path[k], lib), how) for d, (k, how) in known.items()}
+    got = {os.path.basename(path[d]): (rel(path[k], lib), how) for d, (k, how) in known.items()}
     assert got == {"2020_01_01_10_00_00.jpg": ("2020/2020_01_01_10_00_00.jpg", "exact"),
                    "IMG_4.jpg": ("2021/2021_02_02_10_00_00.jpg", "near"),
                    "2022_03_03_10_00_00_1.jpg": ("2022/2022_03_03_10_00_00.png", "name"),
@@ -265,7 +264,7 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
         w.dupes.aside_button.click()
         wait_until(app, lambda: (lib / "Duplicates").is_dir() and len(os.listdir(lib / "Duplicates")) == 4
                    and not w.ops.busy)
-        assert "Duplicates/b.jpg" in shown[0] and planted["b small"].exists() and not planted["b"].exists()
+        assert os.path.join("Duplicates", "b.jpg") in shown[0] and planted["b small"].exists() and not planted["b"].exists()
         wait_until(app, lambda: w.dupes.groups == [])
         w.ops.undo()
         wait_until(app, lambda: len(w.dupes.groups) == 4 and not w.ops.busy)
