@@ -41,8 +41,7 @@ class Dedupe:
                 return
             groups, library, pending = res
             view.set_groups(groups, library, pending)
-            self.count = len(groups)
-            self.w.sidebar.set_count(DUPES, f"{self.count:,}" if self.count else "")
+            self.recount(view.to_decide())
             self._aside_jobs.run(_find_aside, aside_done)  # after: the first time it reads every file
 
         def aside_done(groups, err):
@@ -52,6 +51,11 @@ class Dedupe:
             self.w.dupes.set_aside_groups(groups)
 
         self._jobs.run(_find, done)
+
+    def recount(self, n: int):
+        """The sidebar's count: groups to decide (not those skipped for now)."""
+        self.count = n
+        self.w.sidebar.set_count(DUPES, f"{n:,}" if n else "")
 
     def _confirm(self, title, head, note, rows, go) -> bool:
         return bool(ChangesDialog(title, head, note, rows, go, self.w).exec())
@@ -110,39 +114,28 @@ class Dedupe:
         self.w.ops.run("move", f"Put {plural(n, 'file')} back from Duplicates/",
                        f"Put {plural(n, 'file')} back in the library", lambda db: steps)
 
-    def set_aside(self, groups, to: str):
+    def trash_extras(self, groups):
+        """Move the groups' extras to the Trash (after a preview)."""
         library = library_folders()
         db = open_db()
         try:
-            steps = duplicates.plan_extras(db, groups, to, library)
+            steps = duplicates.plan_extras(db, groups)
         finally:
             db.close()
         if not steps:
             return
         keeper = {c.path: g.keeper.path for g in groups for c in g.extras}
-        rows = []
-        for s in steps:
-            why = (f"A copy of {relative(keeper[s['src']], library)}" if s["src"] in keeper
-                   else "Goes with its photo")
-            dst = relative(s["dst"], library) if s["dst"] else "Trash"
-            rows.append((relative(s["src"], library), dst, why, s["src"]))
+        rows = [(relative(s["src"], library), "Trash",
+                 f"A copy of {relative(keeper[s['src']], library)}" if s["src"] in keeper else "Goes with its photo",
+                 s["src"]) for s in steps]
         n = len(steps)
-        where = "into Duplicates/" if to == "duplicates" else "to the Trash"
-        head = f"<b>{plural(n, 'file')}</b> will move {where}, from {plural(len(groups), 'group')} of duplicates."
-        note = ("Each group keeps the copy marked Keep. "
-                + ("They're named after the copy kept, and stay out of the timeline and search. "
-                   if to == "duplicates" else "They can be restored from the Trash. ")
-                + "Undo takes it all back.")
-        go = f"Move {plural(n, 'file')} " + ("to Duplicates/" if to == "duplicates" else "to Trash")
-        dlg = ChangesDialog("Duplicates", head, note, rows, go, self.w)
-        if not dlg.exec():
+        head = f"<b>{plural(n, 'file')}</b> will move to the Trash, from {plural(len(groups), 'group')} of duplicates."
+        note = ("Each group keeps the copy marked Keep. They can be restored from the Trash, and Undo takes it "
+                "all back.")
+        if not self._confirm("Duplicates", head, note, rows, f"Move {plural(n, 'file')} to Trash"):
             return
-        if to == "duplicates":
-            self.w.ops.run("duplicates", f"Set aside {plural(n, 'duplicate')}", f"Set aside {plural(n, 'duplicate')}",
-                           lambda db: steps)
-        else:
-            self.w.ops.run("trash", f"Move {plural(n, 'duplicate')} to Trash",
-                           f"Moved {plural(n, 'duplicate')} to Trash", lambda db: steps)
+        self.w.ops.run("trash", f"Move {plural(n, 'duplicate')} to Trash",
+                       f"Moved {plural(n, 'duplicate')} to Trash", lambda db: steps)
 
     def apart(self, groups):
         n = len(groups)

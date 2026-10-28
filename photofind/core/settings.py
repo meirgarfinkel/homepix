@@ -57,6 +57,17 @@ def set_excluded(path: str, excluded: bool):
     save_settings(s)
 
 
+def skipped_duplicates() -> set[frozenset]:
+    """The groups of duplicates skipped for now (each by its photos' ids): shown last, to decide later."""
+    return {frozenset(ids) for ids in load_settings().get("skipped_duplicates", [])}
+
+
+def set_skipped_duplicates(groups):
+    s = load_settings()
+    s["skipped_duplicates"] = sorted(sorted(g) for g in groups)
+    save_settings(s)
+
+
 def add_folder(path) -> Path:
     """Add a folder to the library. Adding a folder that holds library folders replaces them.
     Raises ValueError, with a message to show, if it can't be added."""
