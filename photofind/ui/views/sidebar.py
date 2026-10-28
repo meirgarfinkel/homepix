@@ -5,7 +5,7 @@ from pathlib import Path
 
 import shiboken6
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QFont, QPainter
+from PySide6.QtGui import QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
 
 from .. import theme
@@ -67,9 +67,23 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
 class CountDelegate(QStyledItemDelegate):
     """The counts column: muted numbers, and the "who is this?" count as an accent badge."""
 
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.text = ""  # drawn below instead, so it isn't drawn twice
+
+    def sizeHint(self, option, index):
+        """Wide enough for the number (the drawn one, not the blanked text)."""
+        size = super().sizeHint(option, index)
+        text = index.data() or ""
+        if index.siblingAtColumn(0).data(PATH_ROLE) == WHO:
+            width = QFontMetrics(theme.font(11, QFont.Weight.Bold)).horizontalAdvance(text) + 14
+        else:
+            width = QFontMetrics(option.font).horizontalAdvance(text)
+        size.setWidth(max(size.width(), width + 16))
+        return size
+
     def paint(self, p, option, index):
         text = index.data()
-        option.text = ""
         super().paint(p, option, index)  # the row's background
         if not text:
             return
