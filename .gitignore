@@ -9,3 +9,4 @@ __pycache__/
 .coverage
 dist/
 *.egg-info/
+*.AppImage.new
