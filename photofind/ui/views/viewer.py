@@ -12,12 +12,12 @@ from pathlib import Path
 
 from PIL import Image
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFontMetrics, QImage, QPainter, QPalette, QPen, QPolygonF
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontMetrics, QImage, QPainter, QPalette, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 from ...core import load_photo
 from ...core.video import video_frame, video_size
-from .. import workers
+from .. import theme, workers
 
 FULL = 1 << 15  # "no limit" for load_photo
 MAX_ZOOM = 8.0
@@ -62,6 +62,10 @@ class Viewer(QWidget):
         self.show_faces = False
         self.faces = []  # the faces in the photo shown, when show_faces
         self._faces_of = None  # whose: the photo's id
+        # comparing the copies of a duplicate: (describe(index) -> (title, detail), keep(index)). The
+        # arrows go round them, and zoom stays at the same size on screen from one to the next.
+        self.compare = None
+        self._carry_width = None  # (comparing) the zoomed width to show the next copy at
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
 
@@ -82,9 +86,17 @@ class Viewer(QWidget):
         """keep_view: the same photo again (after a change): stay zoomed where it was."""
         if not self.items:
             return
+        if self.compare is not None:
+            index %= len(self.items)  # round and round the copies
+            shown = self._image() if 0 <= self.index < len(self.items) else None
+            if self.zoom is not None and shown is not None and index != self.index:
+                self._carry_width = self._target_rect(shown).width()
+                keep_view = True
         index = max(0, min(len(self.items) - 1, index))
         self.index = index
         self._shown_id = self.items[index].id
+        if keep_view and self.zoom is not None:
+            self._load(index, FULL)
         if not keep_view:
             self.zoom = None
             self._center = QPointF(0.5, 0.5)
@@ -195,12 +207,49 @@ class Viewer(QWidget):
             p.end()
             return
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        if self._carry_width is not None and self.zoom is not None:  # the same size as the copy before
+            img, full_side = shown
+            scale = self._carry_width / img.width()
+            self.zoom = scale * self.devicePixelRatioF() * max(img.width(), img.height()) / full_side
+        self._carry_width = None
         rect = self._target_rect(shown)
         p.drawImage(rect, shown[0])
         self._draw_faces(p, rect)
         if self._is_video():
             self._draw_play(p)
+        self._draw_compare(p)
         p.end()
+
+    def _draw_compare(self, p):
+        """Comparing: which copy this is, whether it's kept, and the keys."""
+        if self.compare is None or not 0 <= self.index < len(self.items):
+            return
+        title, detail = self.compare[0](self.index)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        big, small = theme.font(15, QFont.Weight.Bold), theme.font(12)
+        fm_big, fm_small = QFontMetrics(big), QFontMetrics(small)
+        w = max(fm_big.horizontalAdvance(title), fm_small.horizontalAdvance(detail)) + 32
+        h = fm_big.height() + fm_small.height() + 22
+        box = QRectF(20, 20, min(w, self.width() - 40), h)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 170))
+        p.drawRoundedRect(box, 12, 12)
+        kept = "✓" in title
+        p.setPen(theme.color("accentText") if kept else QColor(255, 255, 255))
+        p.setFont(big)
+        p.drawText(box.adjusted(16, 10, -16, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, title)
+        p.setPen(QColor(255, 255, 255, 200))
+        p.setFont(small)
+        p.drawText(box.adjusted(16, 12 + fm_big.height(), -16, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                   fm_small.elidedText(detail, Qt.TextElideMode.ElideMiddle, int(box.width()) - 32))
+        keys = "← →  switch copies   ·   K  keep this one   ·   Esc  back"
+        kw = fm_small.horizontalAdvance(keys) + 32
+        bar = QRectF((self.width() - kw) / 2, self.height() - fm_small.height() - 40, kw, fm_small.height() + 16)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 150))
+        p.drawRoundedRect(bar, bar.height() / 2, bar.height() / 2)
+        p.setPen(QColor(255, 255, 255, 220))
+        p.drawText(bar, Qt.AlignmentFlag.AlignCenter, keys)
 
     def _is_video(self) -> bool:
         return 0 <= self.index < len(self.items) and self.items[self.index].kind == "video"
@@ -342,6 +391,9 @@ class Viewer(QWidget):
                 self.window().showNormal()
             else:
                 self.closed.emit()
+        elif key == Qt.Key.Key_K and self.compare is not None:
+            self.compare[1](self.index)
+            self.update()
         elif key == Qt.Key.Key_N:
             self.toggle_faces()
         elif key in (Qt.Key.Key_F, Qt.Key.Key_F11):

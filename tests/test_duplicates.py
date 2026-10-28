@@ -273,6 +273,52 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
         w.close()
 
 
+def test_comparing_a_groups_copies_large(home, lib, planted):
+    """Double-click a copy: the viewer shows that group's copies, the arrows go round them, K keeps
+    the one shown, and the copies stay where they were on the page."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeyEvent
+    from test_faces_ui import app as _app
+    from test_faces_ui import wait_until
+
+    from photofind.ui.main_window import MainWindow
+    from photofind.ui.views.sidebar import DUPES
+
+    app = _app.__wrapped__()
+    w = MainWindow(index=False)
+    w.show()
+    wait_until(app, lambda: w.loaded)
+    try:
+        w.show_place(DUPES)
+        wait_until(app, lambda: len(w.dupes.groups) == 5)
+        row = next(i for i, g in enumerate(w.dupes.groups) if planted_name(g, planted) == "b")
+        g = w.dupes.groups[row]
+        order = [c.id for c in w.dupes.list.shown(g)]
+        w.dupes.list.open_copy.emit(row, 0)
+        v = w.viewer
+        wait_until(app, lambda: w.stack.currentWidget() is v and len(v.items) == 2)
+        assert [it.id for it in v.items] == order and v.index == 0
+        assert v.compare[0](0)[0] == "Copy 1 of 2 · ✓ Keep"
+
+        def key(k):
+            app.sendEvent(v, QKeyEvent(QKeyEvent.Type.KeyPress, k, Qt.KeyboardModifier.NoModifier))
+
+        key(Qt.Key.Key_Right)
+        assert v.index == 1 and v.compare[0](1)[0].startswith("Copy 2 of 2 · ")
+        key(Qt.Key.Key_Right)  # round again
+        assert v.index == 0
+        key(Qt.Key.Key_Left)
+        assert v.index == 1
+        key(Qt.Key.Key_K)
+        assert g.keeper.id == order[1] and v.compare[0](1)[0] == "Copy 2 of 2 · ✓ Keep"
+        assert [c.id for c in w.dupes.list.shown(g)] == order  # nothing moved on the page
+        key(Qt.Key.Key_Escape)
+        wait_until(app, lambda: w.stack.currentWidget() is w.dupes)
+        assert v.compare is None
+    finally:
+        w.close()
+
+
 def test_a_raw_file_and_its_jpeg_are_not_duplicates(home, lib):
     pf, db, _, duplicates = home
     save(scene(40), lib / "2023" / "2023_01_02_03_04_05.jpg", "2023:01:02 03:04:05")

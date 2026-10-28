@@ -219,11 +219,12 @@ class _List(QListView):
 
 
 class DuplicatesView(QWidget):
-    """set_aside(groups, to): to is "duplicates" or "trash"; apart(groups); opened(photo id)."""
+    """set_aside(groups, to): to is "duplicates" or "trash"; apart(groups); compared(its copies'
+    ids as shown, the one double-clicked): to look at them large, one after another."""
 
     set_aside = Signal(list, str)
     apart = Signal(list)
-    opened = Signal(int)
+    compared = Signal(list, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -258,7 +259,7 @@ class DuplicatesView(QWidget):
         self.trash_button.clicked.connect(lambda: self._act(lambda gs: self.set_aside.emit(gs, "trash")))
         self.apart_button.clicked.connect(lambda: self._act(self.apart.emit, selected_only=True))
         self.list.keep.connect(self._keep)
-        self.list.open_copy.connect(lambda r, i: self.opened.emit(self.list.shown(self.groups[r])[i].id))
+        self.list.open_copy.connect(lambda r, i: self.compared.emit([c.id for c in self.list.shown(self.groups[r])], i))
         self.list.selectionModel().selectionChanged.connect(lambda *_: self._update_text())
         self._update_text()
 
@@ -290,6 +291,27 @@ class DuplicatesView(QWidget):
         self._kept[frozenset(c.id for c in g.copies)] = g.keeper.id
         self.list.viewport().update()
 
+    def _group_of(self, photo_id):
+        return next((g for g in self.groups if any(c.id == photo_id for c in g.copies)), None)
+
+    def copy_info(self, photo_id) -> tuple[str, str]:
+        """For the viewer: ("Copy 1 of 2 · ✓ Keep", "4,032 × 3,024 · 3.2 MB · 2024/IMG_1.jpg")."""
+        g = self._group_of(photo_id)
+        if g is None:
+            return "Not a duplicate any more", ""
+        shown = self.list.shown(g)
+        i = next(i for i, c in enumerate(shown) if c.id == photo_id)
+        c = shown[i]
+        kept = "✓ Keep" if c.id == g.keeper.id else ("Same file" if g.how == "exact" else "Extra copy")
+        size = f"{c.width:,} × {c.height:,} · " if c.width else ""
+        return f"Copy {i + 1} of {len(shown)} · {kept}", f"{size}{human_size(c.size)} · {relative(c.path, self.list.library)}"
+
+    def keep_photo(self, photo_id):
+        """Keep this copy of its group (from the viewer)."""
+        g = self._group_of(photo_id)
+        if g is not None:
+            self._keep(self.groups.index(g), [c.id for c in self.list.shown(g)].index(photo_id))
+
     def _update_text(self):
         extras = sum(len(g.extras) for g in self.groups)
         chosen = self.selected()
@@ -299,7 +321,8 @@ class DuplicatesView(QWidget):
             self.title.setText(f"{len(self.groups):,} group{'s' if len(self.groups) != 1 else ''} of duplicates, "
                                f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}")
         hint = ("The copy with the ring is kept (the one with the most pixels, then the biggest file); the "
-                "dimmed ones are the extras. Click a copy to keep it instead. Double-click to see it large. "
+                "dimmed ones are the extras. Click a copy to keep it instead. Double-click to compare them large "
+                "(← → to switch, K to keep). "
                 "Select groups (Ctrl-click the space beside them) to act on just those.")
         if self.pending:
             hint = (f"Still looking at {self.pending:,} photos (after indexing): more may turn up. " + hint)

@@ -115,6 +115,16 @@ def load_photo_faces(photo_id):
         db.close()
 
 
+def load_copies(ids):
+    """Those photos, in that order (any gone are left out)."""
+    db = open_db()
+    try:
+        found = {it.id: it for it in load_items(db, f"id IN ({','.join('?' * len(ids))})", tuple(ids))}
+        return [found[i] for i in ids if i in found]
+    finally:
+        db.close()
+
+
 def load_item(photo_id):
     db = open_db()
     try:
@@ -319,7 +329,7 @@ class MainWindow(QMainWindow):
         self.person_faces.opened.connect(self._open_face_photo)
         self.dupes.set_aside.connect(self.dedupe.set_aside)
         self.dupes.apart.connect(self.dedupe.apart)
-        self.dupes.opened.connect(self.open_photo)
+        self.dupes.compared.connect(self.compare_copies)
         self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
         self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is it?"))
         self.person_faces.hidden.connect(self.naming.hide)
@@ -599,6 +609,18 @@ class MainWindow(QMainWindow):
     def _sync_viewer(self):
         """After files changed under the viewer: keep showing the same photo, or the next one if it's gone."""
         if self.stack.currentWidget() is not self.viewer:
+            return
+        if self.viewer.compare is not None:  # a duplicate's copies: the same ones again
+            v = self.viewer
+            ids, shown = [it.id for it in v.items], v.items[v.index].id
+
+            def done(items, err):
+                if err is None:
+                    if len(items) < 2:
+                        return self.close_viewer()
+                    at = [it.id for it in items]
+                    v.show_items(items, at.index(shown) if shown in at else 0)
+            workers.run(load_copies, done, ids)
             return
         if self._viewer_from is not self.timeline:  # one photo, opened from a face: is it still there?
             shown = self.viewer.items[self.viewer.index]
@@ -891,6 +913,7 @@ class MainWindow(QMainWindow):
         def done(items, err):
             if err is None and items:
                 self._viewer_from = self.stack.currentWidget()
+                self.viewer.compare = None
                 self.viewer.show_items(items, 0)
                 self._show(self.viewer)
                 self.viewer.setFocus()
@@ -1136,13 +1159,29 @@ class MainWindow(QMainWindow):
 
     def open_viewer(self, index: int):
         self._viewer_from = self.timeline
+        self.viewer.compare = None
         self.viewer.show_items(self.timeline.items, index)
         self._show(self.viewer)
         self.viewer.setFocus()
 
+    def compare_copies(self, ids, index):
+        """A duplicate's copies, large: the arrows go from one to the next, K keeps the one shown."""
+        def done(items, err):
+            if err is None and items:
+                at = [it.id for it in items]
+                first = ids[index] if ids[index] in at else at[0]
+                self._viewer_from = self.dupes
+                self.viewer.compare = (lambda i: self.dupes.copy_info(self.viewer.items[i].id),
+                                       lambda i: self.dupes.keep_photo(self.viewer.items[i].id))
+                self.viewer.show_items(items, at.index(first))
+                self._show(self.viewer)
+                self.viewer.setFocus()
+        workers.run(load_copies, done, ids)
+
     def close_viewer(self):
         if self.stack.currentWidget() is not self.viewer:
             return
+        self.viewer.compare = None
         if self.isFullScreen():
             self.showNormal()
         i, back = self.viewer.index, self._viewer_from or self.timeline
