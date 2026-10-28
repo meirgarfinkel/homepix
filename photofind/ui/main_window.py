@@ -31,12 +31,14 @@ from ..core import (
     SearchIndex,
     add_folder,
     data_dir,
+    excluded_folders,
     library_folders,
     load_settings,
     named_people,
     open_db,
     pictures_folder,
     remove_folder,
+    set_excluded,
 )
 from ..core import fileops as files
 from ..core import people as known_people
@@ -77,12 +79,12 @@ def load_library(place):
     whether there are unnamed faces to ask about)."""
     db = open_db()
     try:
-        library = library_folders()
-        items = (load_items(db, folder=_folder(place), person=person_of(place), library=library)
+        library, excluded = library_folders(), excluded_folders()
+        items = (load_items(db, folder=_folder(place), person=person_of(place), library=library, excluded=excluded)
                  if shows_photos(place) else [])
         counts = folder_counts(db)
         unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
-        total = sum(n for f, n in counts.items() if not set_aside(f, library))
+        total = sum(n for f, n in counts.items() if not set_aside(f, library, excluded))
         return group_by_month(items), counts, total, named_people(db), bool(unnamed)
     finally:
         db.close()
@@ -161,6 +163,7 @@ class SearchBox(QLineEdit):
         super().__init__(parent)
         self.setMouseTracking(True)
         self.textChanged.connect(lambda _: self.update())
+        self._over_clear = False
 
     def _clear_rect(self) -> QRect:
         return QRect(self.width() - 34, (self.height() - 24) // 2, 24, 24)
@@ -171,6 +174,11 @@ class SearchBox(QLineEdit):
         if self.icon is not None:
             self.icon.paint(p, QRect(14, (self.height() - 18) // 2, 18, 18))
         if self.text() and self.clear_icon is not None:
+            if self._over_clear:
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(theme.color("hoverStrong"))
+                p.drawEllipse(self._clear_rect())
             self.clear_icon.paint(p, self._clear_rect().adjusted(4, 4, -4, -4))
         p.end()
 
@@ -184,7 +192,16 @@ class SearchBox(QLineEdit):
     def mouseMoveEvent(self, e):
         over = bool(self.text()) and self._clear_rect().contains(e.position().toPoint())
         self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.IBeamCursor)
+        if over != self._over_clear:
+            self._over_clear = over
+            self.update()
         super().mouseMoveEvent(e)
+
+    def leaveEvent(self, e):
+        if self._over_clear:
+            self._over_clear = False
+            self.update()
+        super().leaveEvent(e)
 
     def focusInEvent(self, e):
         super().focusInEvent(e)
@@ -242,10 +259,18 @@ class MainWindow(QMainWindow):
         self.page_header.setObjectName("pageHeader")
         head = QHBoxLayout(self.page_header)
         head.setContentsMargins(24, 18, 24 + Scrubber.WIDTH, 4)
+        self.page_back = QToolButton()
+        self.page_back.setObjectName("pageBack")
+        self.page_back.setText("People")
+        self.page_back.setToolTip("Back to everyone")
+        self.page_back.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.page_back.clicked.connect(lambda: self.show_place(PEOPLE))
+        self.page_back.hide()
         self.page_title = QLabel("All photos")
         self.page_title.setObjectName("pageTitle")
         self.count_label = QLabel()
         self.count_label.setObjectName("pageCount")
+        head.addWidget(self.page_back)
         head.addWidget(self.page_title)
         head.addStretch()
         head.addWidget(self.count_label)
@@ -357,6 +382,7 @@ class MainWindow(QMainWindow):
             action.setIcon(theme.icon(name))
         self.search_box.icon = theme.icon("search")
         self.search_box.clear_icon = theme.icon("clear", "muted")
+        self.page_back.setIcon(theme.icon("back", "muted"))
         self.search_box.update()
         self.brand.setPixmap(theme.brand_mark())
         self.timeline.viewport().update()
@@ -767,7 +793,24 @@ class MainWindow(QMainWindow):
         if os.path.isdir(path):
             menu.addAction("Organize this folder...", lambda: self.organizer.preview(path))
         menu.addAction("Show in file manager", lambda: desktop.open_file(path))
+        menu.addSeparator()
+        menu.setToolTipsVisible(True)
+        excluded = excluded_folders()
+        if path in excluded:
+            menu.addAction("Include in library again", lambda: self._exclude(path, False))
+        elif not set_aside(path, [], excluded):  # (not inside one already left out)
+            ex = menu.addAction("Exclude from library", lambda: self._exclude(path, True))
+            ex.setToolTip("Hide its photos from All photos, people and search. Nothing is deleted, and "
+                          "opening the folder still shows them.")
         menu.exec(pos)
+
+    def _exclude(self, path, excluded: bool):
+        set_excluded(path, excluded)
+        name = Path(path).name
+        self.statusBar().showMessage(
+            f"{name} is left out of All photos, people and search. Right-click it to include it again."
+            if excluded else f"{name} is back in the library.", 8000)
+        self.reload()
 
     # --- people ---------------------------------------------------------------------------------------
 
@@ -870,7 +913,7 @@ class MainWindow(QMainWindow):
         roots = library_folders()
         self.people_names = {p["id"]: p["name"] for p in people}
         self.sidebar.set_folders(roots, counts, total, len(people) if people or self.unnamed else None,
-                                 self.dedupe.count if total else None)
+                                 self.dedupe.count if total else None, excluded_folders())
         pid = person_of(self.place) if person_of(self.place) is not None else faces_of(self.place)
         gone = (pid is not None and pid not in self.people_names) or (
             not self.sidebar.select(self.place) and self.place not in (WHO, DUPES))
@@ -934,6 +977,7 @@ class MainWindow(QMainWindow):
             title = {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates"}.get(
                 self.place) or Path(self.place).name or self.place
         self.page_title.setText(title)
+        self.page_back.setVisible(pid is not None and not self.query)
 
     def _place_name(self) -> str:
         """" in 2023", " of Mom", or nothing for all photos."""

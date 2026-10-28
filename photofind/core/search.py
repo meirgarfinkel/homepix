@@ -10,7 +10,7 @@ import numpy as np
 from . import duplicates
 from .config import MATCH_STRICTNESS, MAX_NEAR, NEAR_STRICTNESS
 from .db import open_db
-from .settings import library_folders
+from .settings import excluded_folders, library_folders
 
 
 def split_matches(scores: np.ndarray):
@@ -49,6 +49,7 @@ class SearchIndex:
         self.built = 0.0
         self.rows, self.ids, self.mat = [], np.zeros(0, np.int64), np.zeros((0, 512), np.float32)
         self.aside = np.zeros(0, bool)
+        self._aside_for = None  # (library, excluded) that aside was worked out for
         self._text = None
         self._text_lock = threading.Lock()
 
@@ -65,14 +66,18 @@ class SearchIndex:
                 self.rows = [{"id": r["id"], "path": r["path"], "taken": r["taken"], "qhash": r["qhash"],
                               "kind": r["kind"] or "photo"} for r in rows]
                 self.ids = np.array([r["id"] for r in rows], np.int64)
-                library = library_folders()  # the duplicates set aside aren't searched
-                self.aside = np.array([duplicates.set_aside(r["path"], library) for r in rows], bool)
+                self._aside_for = None
                 if rows:
                     blob = b"".join(r["clip"] for r in rows)
                     self.mat = np.frombuffer(blob, np.float16).reshape(len(rows), -1).astype(np.float32)
                 else:
                     self.mat = np.zeros((0, 512), np.float32)
                 self.version, self.built = version, time.time()
+            # the duplicates set aside and the folders excluded aren't searched
+            hidden = (tuple(library_folders()), tuple(excluded_folders()))
+            if hidden != self._aside_for:
+                self.aside = np.array([duplicates.set_aside(r["path"], *hidden) for r in self.rows], bool)
+                self._aside_for = hidden
             return self.rows, self.ids, self.mat
 
     def text_model(self):
@@ -94,7 +99,7 @@ class SearchIndex:
         rows, ids, mat = self.vectors()
         keep = np.ones(len(rows), bool)
         aside = self.aside
-        if len(aside) == len(rows) and (folder is None or not duplicates.set_aside(folder, library_folders())):
+        if len(aside) == len(rows) and (folder is None or not duplicates.set_aside(folder, *self._aside_for)):
             keep &= ~aside
         sel = np.flatnonzero(keep)
         if person_id is not None or folder is not None:

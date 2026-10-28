@@ -56,15 +56,18 @@ def folders_of(library) -> list[str]:
     return [os.path.join(os.path.abspath(f), DUPLICATES) for f in library]
 
 
-def set_aside(path, library) -> bool:
-    """Is path in a Duplicates/ folder (where known duplicates are kept)?"""
+def set_aside(path, library, excluded=()) -> bool:
+    """Is path in a Duplicates/ folder (where known duplicates are kept), or in one of the folders
+    excluded (left out of the library's views)?"""
     path = os.path.abspath(path)
-    return any(path == d or path.startswith(os.path.join(d, "")) for d in folders_of(library))
+    hidden = [*folders_of(library), *(os.path.abspath(f) for f in excluded)]
+    return any(path == d or path.startswith(os.path.join(d, "")) for d in hidden)
 
 
-def outside_sql(library) -> tuple[str, tuple]:
-    """A WHERE clause (and its parameters) for files not in a Duplicates/ folder."""
-    prefixes = [os.path.join(d, "") for d in folders_of(library)]
+def outside_sql(library, excluded=()) -> tuple[str, tuple]:
+    """A WHERE clause (and its parameters) for files not in a Duplicates/ folder, nor in a folder
+    excluded."""
+    prefixes = [os.path.join(d, "") for d in [*folders_of(library), *(os.path.abspath(f) for f in excluded)]]
     if not prefixes:
         return "1=1", ()
     sql = " AND ".join("substr(path, 1, ?) != ?" for _ in prefixes)

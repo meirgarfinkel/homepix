@@ -35,12 +35,13 @@ class Month:
         return int(self.key[5:7])
 
 
-def load_items(db, where: str = "1=1", params=(), folder=None, person=None, library=()) -> list[Item]:
+def load_items(db, where: str = "1=1", params=(), folder=None, person=None, library=(), excluded=()) -> list[Item]:
     """Every showable item, newest first; folder: only those in it or below it; person (an id): only
     photos they're in. Photos that couldn't be read have no thumbnail to show. library: its folders,
-    to leave out the duplicates set aside in their Duplicates/ folders (unless that's the folder shown)."""
-    if library and not (folder is not None and duplicates.set_aside(folder, library)):
-        outside, more = duplicates.outside_sql(library)
+    to leave out the duplicates set aside in their Duplicates/ folders, and the folders excluded
+    (unless the folder shown is one of those or inside one)."""
+    if (library or excluded) and not (folder is not None and duplicates.set_aside(folder, library, excluded)):
+        outside, more = duplicates.outside_sql(library, excluded)
         where, params = f"({where}) AND {outside}", (*params, *more)
     if person is not None:
         where, params = f"({where}) AND id IN (SELECT photo_id FROM faces WHERE person_id = ?)", (*params, person)

@@ -35,6 +35,28 @@ def library_folders() -> list[str]:
     return list(load_settings().get("folders", []))
 
 
+def excluded_folders() -> list[str]:
+    """Folders left out of the library's views: their photos stay indexed, and show when the folder
+    itself is opened, but not in All photos, someone's photos or search."""
+    return list(load_settings().get("excluded", []))
+
+
+def set_excluded(path: str, excluded: bool):
+    """Leave a folder out (or take it back in). A folder inside one already left out needs nothing
+    more; leaving out a folder that holds some already left out replaces them."""
+    path = os.path.abspath(path)
+    s = load_settings()
+    current = [os.path.abspath(f) for f in s.get("excluded", [])]
+    inside = os.path.join(path, "")
+    if excluded:
+        if not any(path == f or path.startswith(os.path.join(f, "")) for f in current):
+            current = [f for f in current if not f.startswith(inside)] + [path]
+    else:
+        current = [f for f in current if f != path]
+    s["excluded"] = current
+    save_settings(s)
+
+
 def add_folder(path) -> Path:
     """Add a folder to the library. Adding a folder that holds library folders replaces them.
     Raises ValueError, with a message to show, if it can't be added."""
