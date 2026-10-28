@@ -131,26 +131,15 @@ def test_the_perceptual_hash_sees_through_resizing_and_saving_again():
 
 # --- doing something about them ----------------------------------------------------------------------
 
-def test_extras_go_to_duplicates_named_after_their_keeper_and_undo_brings_them_back(home, lib, planted):
-    pf, db, fo, duplicates = home
-    groups = groups_of(home, lib)
-    fo.run(db, "duplicates", "Set aside", duplicates.plan_extras(db, groups, "duplicates", [lib]))
-    aside = sorted(os.listdir(lib / "Duplicates"))
-    assert aside == ["2020_01_01_10_00_00.jpg", "2021_02_02_10_00_00.jpg", "2022_03_03_10_00_00.jpg",
-                     "2023_04_04_10_00_00.png", "v.mp4"]
-    assert groups_of(home, lib) == []  # nothing left to review
-    known = duplicates.known(db, [lib])
-    keepers = {db.execute("SELECT path FROM photos WHERE id=?", (k,)).fetchone()[0] for k, _ in known.values()}
-    assert keepers == {str(planted[x]) for x in ("a", "b", "c", "d", "v")}
-    fo.undo(db)
-    assert not os.listdir(lib / "Duplicates") and len(groups_of(home, lib)) == 5
-
-
-def test_extras_to_the_trash(home, lib, planted):
+def test_extras_go_to_the_trash_and_undo_brings_them_back(home, lib, planted):
     _, db, fo, duplicates = home
-    groups = [g for g in groups_of(home, lib) if g.how == "exact"]
-    fo.run(db, "trash", "Trash", duplicates.plan_extras(db, groups, "trash", [lib]))
-    assert not planted["a exact"].exists() and not planted["v copy"].exists() and planted["a"].exists()
+    fo.run(db, "trash", "Trash", duplicates.plan_extras(db, groups_of(home, lib)))
+    assert groups_of(home, lib) == []  # nothing left to review
+    assert all(planted[x].exists() for x in ("a", "b", "c", "d", "v"))
+    assert not any(planted[x].exists() for x in ("a exact", "b small", "c again", "d png", "v copy"))
+    assert not (lib / "Duplicates").exists()  # never a folder of their own
+    fo.undo(db)
+    assert len(groups_of(home, lib)) == 5
 
 
 def test_choosing_another_keeper(home, lib, planted):
@@ -158,8 +147,8 @@ def test_choosing_another_keeper(home, lib, planted):
     g = next(g for g in groups_of(home, lib) if planted_name(g, planted) == "b")
     small = next(c for c in g.copies if c.path == str(planted["b small"]))
     g.keep(small.id)
-    fo.run(db, "duplicates", "Set aside", duplicates.plan_extras(db, [g], "duplicates", [lib]))
-    assert planted["b small"].exists() and os.listdir(lib / "Duplicates") == ["b.jpg"]
+    fo.run(db, "trash", "Trash", duplicates.plan_extras(db, [g]))
+    assert planted["b small"].exists() and not planted["b"].exists()
 
 
 def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
@@ -320,7 +309,7 @@ def test_going_through_duplicates_in_the_window(home, lib, set_aside, monkeypatc
         wait_until(app, lambda: len(v.groups) == 3)
         assert v.tabs.tabText(ASIDE) == "In Duplicates/ (4)"
         assert v.title.text() == "4 files in Duplicates/, 1 with no copy in the library"
-        assert v.aside_trash_button.isVisible() and not v.aside_button.isVisible()
+        assert v.aside_trash_button.isVisible() and not v.trash_button.isVisible()
         assert v.copy_info(v.groups[2].keeper.id)[0] == "Copy 1 of 1 · No copy in the library"
         b = next(i for i, g in enumerate(v.groups) if g.keeper.path == str(set_aside["b"]))
         v._keep(b, 1)  # the copy in Duplicates/ instead
@@ -388,16 +377,42 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
         wait_until(app, lambda: len(w.dupes.groups) == 4 and not w.ops.busy)
         assert w.dupes.groups[[planted_name(g, planted) for g in w.dupes.groups].index("b")].keeper.path \
             == str(planted["b small"])  # still the one chosen
-        w.dupes.aside_button.click()
-        wait_until(app, lambda: (lib / "Duplicates").is_dir() and len(os.listdir(lib / "Duplicates")) == 4
-                   and not w.ops.busy)
-        assert os.path.join("Duplicates", "b.jpg") in shown[0] and planted["b small"].exists() and not planted["b"].exists()
-        wait_until(app, lambda: w.dupes.groups == [])
+        # not sure about c yet: skipped, it goes to the end and is left alone
+        c = [planted_name(g, planted) for g in w.dupes.groups].index("c")
+        w.dupes.skip(c)
+        assert [planted_name(g, planted) for g in w.dupes.groups][-1] == "c"
+        assert w.dupes.list.first_skipped == 3 and w.dedupe.count == 3
+        assert w.dupes.title.text() == "3 groups of duplicates, 3 extra copies, 1 skipped"
+        w.dupes.trash_button.click()
+        wait_until(app, lambda: not w.ops.busy and not planted["b"].exists())
+        assert set(shown[0]) == {"Trash"} and planted["b small"].exists() and planted["c again"].exists()
+        assert not (lib / "Duplicates").exists()
+        wait_until(app, lambda: [planted_name(g, planted) for g in w.dupes.groups] == ["c"])
+        assert w.dupes.is_skipped(w.dupes.groups[0])  # still skipped, after the reload
+        w.dupes.skip(0)  # decide it now after all
+        assert not w.dupes.is_skipped(w.dupes.groups[0]) and w.dedupe.count == 1
         w.ops.undo()
         wait_until(app, lambda: len(w.dupes.groups) == 4 and not w.ops.busy)
         assert planted["b"].exists()
     finally:
         w.close()
+
+
+def test_skipped_groups_are_remembered(home, lib, planted):
+    from test_faces_ui import app as _app
+
+    from photofind.ui.views.duplicates import DuplicatesView
+
+    _app.__wrapped__()
+    groups = groups_of(home, lib)
+    v = DuplicatesView()
+    v.set_groups(groups, [lib])
+    v.skip(0)
+    first = v.groups[-1]
+    again = DuplicatesView()  # as after closing the app
+    again.set_groups(groups_of(home, lib), [lib])
+    assert again.is_skipped(again.groups[-1]) and {c.id for c in again.groups[-1].copies} == {c.id for c in first.copies}
+    assert again.to_decide() == 4
 
 
 def test_comparing_a_groups_copies_large(home, lib, planted):

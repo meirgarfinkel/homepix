@@ -8,10 +8,10 @@ again: it looks the same), never a burst of different shots.
   A raw file (DNG) is only ever an exact copy: the JPEG beside it is the same shot, kept on purpose.
 - The keeper of a group: the most pixels, then the biggest file (then a name already organized).
 
-The library's Duplicates/ folder holds the duplicates already set aside (the Sep 2026 pipeline put
-6,641 there, and the review screen sends more): they're left out of the timeline and search, and of
-the groups to review. Nothing is moved or deleted here: plan_extras() works out the moves, which
-fileops.run() makes, undoably.
+Extras go to the Trash, never to a folder of their own. A Duplicates/ folder left by the Sep 2026
+pipeline (6,641 files) is left out of the timeline and search, and gone through on its own
+(aside_groups) until it's emptied. Nothing is moved or deleted here: plan_extras() works out the
+steps, which fileops.run() makes, undoably.
 """
 
 import csv
@@ -454,25 +454,12 @@ def _base_stem(path: str) -> str:
 
 # --- doing something about them ----------------------------------------------------------------------
 
-def plan_extras(db, groups, to: str, library) -> list[dict]:
-    """Steps that set every group's extras aside: to="duplicates" moves each into its library's
-    Duplicates/ folder, named after its keeper (2022_04_01_07_32_31.jpg -> Duplicates/2022_04_01_07_32_31.jpg,
-    _1, _2 ... if taken); to="trash" moves them to the Trash. A Live Photo's clip goes with its photo."""
+def plan_extras(db, groups) -> list[dict]:
+    """Steps that move every group's extras to the Trash (a Live Photo's clip goes with its photo,
+    unless the copy kept is as much its photo)."""
     from . import fileops
-    from .organize import root_of
 
-    extras = [(c, g.keeper) for g in groups for c in g.extras]
-    if to == "trash":
-        return fileops.plan_trash(fileops.with_companions(db, [c.path for c, _ in extras]))
-    clips = fileops.companions(db, [c.path for c, _ in extras])
-    pairs = []
-    for c, keeper in extras:
-        folder = os.path.join(root_of(c.path, library) or os.path.dirname(c.path), DUPLICATES)
-        stem = os.path.splitext(os.path.basename(keeper.path))[0]
-        pairs.append((c.path, os.path.join(folder, stem + os.path.splitext(c.path)[1].lower())))
-        if c.path in clips:
-            pairs.append((clips[c.path], os.path.join(folder, stem + os.path.splitext(clips[c.path])[1].lower())))
-    return fileops.plan_moves(pairs)
+    return fileops.plan_trash(fileops.with_companions(db, [c.path for g in groups for c in g.extras]))
 
 
 def plan_apart(db, groups) -> dict | None:

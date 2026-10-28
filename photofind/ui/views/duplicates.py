@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.info import human_size
+from ...core.settings import set_skipped_duplicates, skipped_duplicates
 from .. import theme
 from ..thumbs import ThumbLoader
 from .changes_dialog import relative
@@ -27,6 +28,9 @@ GAP = 22
 PAD = 16
 RING = 4  # the keeper's ring sits this far outside its picture
 RADIUS = 6
+HEADER = 56  # the "Skipped for now" heading
+SKIP_W = 132  # the Skip button
+SKIP = "skip"  # (row, SKIP): the mouse is over that row's Skip button
 _ROOT = QModelIndex()
 # how a copy in Duplicates/ was found to be one (see core.duplicates.known)
 MARKS = {"exact": "Same file", "near": "Looks the same", "mapping": "Listed as a copy", "name": "Same name: check it"}
@@ -78,7 +82,12 @@ class _Row(QStyledItemDelegate):
         return self.view.fontMetrics().height()
 
     def sizeHint(self, option, index):
-        return QSize(0, PAD * 2 + RING + TILE + 10 + self.lines() * 3)
+        return QSize(0, PAD * 2 + RING + TILE + 10 + self.lines() * 3
+                     + (HEADER if index.row() == self.view.first_skipped else 0))
+
+    def body(self, rect: QRect, row: int) -> QRect:
+        """The row without the "Skipped for now" heading the first skipped group has above it."""
+        return rect.adjusted(0, HEADER, 0, 0) if row == self.view.first_skipped else rect
 
     def tile_rect(self, rect: QRect, i: int) -> QRect:
         return QRect(rect.left() + PAD + RING + i * (TILE + GAP), rect.top() + PAD + RING, TILE, TILE)
@@ -86,9 +95,19 @@ class _Row(QStyledItemDelegate):
     def tile_at(self, rect: QRect, pos, n: int) -> int | None:
         for i in range(n):
             r = self.tile_rect(rect, i)
+            if r.right() > self.tiles_end(rect):
+                break
             if r.left() <= pos.x() <= r.right() and r.top() <= pos.y() <= r.bottom() + self.lines() * 3:
                 return i
         return None
+
+    def tiles_end(self, rect: QRect) -> int:
+        """Where the copies stop: room is left for the Skip button on the right."""
+        return rect.right() - (SKIP_W + PAD if self.view.skippable else 0)
+
+    def skip_rect(self, rect: QRect) -> QRect:
+        h = self.view.fontMetrics().height() + 14
+        return QRect(rect.right() - PAD - SKIP_W, rect.top() + PAD + RING, SKIP_W, h)
 
     def paint(self, p: QPainter, option, index):
         row = index.row()
@@ -96,18 +115,37 @@ class _Row(QStyledItemDelegate):
         c_ = theme.color
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.body(option.rect, row)
+        if rect != option.rect:
+            p.setFont(theme.font(16, QFont.Weight.Bold))
+            p.setPen(c_("text"))
+            head = QRect(option.rect.left() + PAD, option.rect.top() + 14, option.rect.width() - 2 * PAD, HEADER - 14)
+            p.drawText(head, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                       f"Skipped for now ({len(self.view.model().groups) - row:,})")
+            p.setPen(QPen(c_("border")))
+            p.drawLine(option.rect.left(), option.rect.top() + 6, option.rect.right(), option.rect.top() + 6)
         if option.state & QStyle.StateFlag.State_Selected:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(c_("accentSoft"))
-            p.drawRoundedRect(QRectF(option.rect).adjusted(4, 4, -4, -4), 14, 14)
+            p.drawRoundedRect(QRectF(rect).adjusted(4, 4, -4, -4), 14, 14)
         p.setPen(QPen(c_("border")))
         p.drawLine(option.rect.bottomLeft(), option.rect.bottomRight())
+        if self.view.skippable:
+            skipped = self.view.is_skipped(g)
+            s = self.skip_rect(rect)
+            over_skip = self.view.hover == (row, SKIP)
+            p.setPen(QPen(c_("border")) if not over_skip else Qt.PenStyle.NoPen)
+            p.setBrush(c_("hoverStrong") if over_skip else Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(s), s.height() / 2, s.height() / 2)
+            p.setFont(theme.font(12, QFont.Weight.DemiBold))
+            p.setPen(c_("text"))
+            p.drawText(s, Qt.AlignmentFlag.AlignCenter, "Decide now" if skipped else "Skip for now")
         fm, lh = self.view.fontMetrics(), self.lines()
         bold = theme.font(12, QFont.Weight.Bold)
         hover = self.view.hover
         for i, c in enumerate(self.view.shown(g)):
-            r = self.tile_rect(option.rect, i)
-            if r.left() > option.rect.right():
+            r = self.tile_rect(rect, i)
+            if r.right() > self.tiles_end(rect):
                 break
             keep = c.id == g.keeper.id
             over = hover == (row, i)
@@ -155,18 +193,21 @@ class _Row(QStyledItemDelegate):
 class _List(QListView):
     keep = Signal(int, int)  # row, copy (as shown)
     open_copy = Signal(int, int)
+    skip = Signal(int)  # row: skip it for now (or decide it now, if skipped)
 
     def __init__(self, loader, parent=None):
         super().__init__(parent)
         self.loader = loader
         self.library = []
-        self.hover = None  # (row, copy) under the mouse
+        self.hover = None  # (row, copy) or (row, SKIP) under the mouse
+        self.skippable = False  # rows have a Skip button
+        self.first_skipped = None  # the row the skipped groups start at (the heading sits above it)
+        self.is_skipped = lambda g: False
         self._order = {}  # {its copies' ids: the order they're shown in}, so a click doesn't move them
         self.setModel(_Groups(self))
         self.setItemDelegate(_Row(self))
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.setUniformItemSizes(True)
         self.setMouseTracking(True)
         self.setFrameShape(QListView.Shape.NoFrame)
         loader.ready.connect(lambda _q: self.viewport().update())
@@ -178,16 +219,25 @@ class _List(QListView):
         return sorted(g.copies, key=lambda c: order.index(c.id))
 
     def _hit(self, pos):
+        """(row, copy as shown), (row, SKIP), or (row or None, None)."""
         index = self.indexAt(pos)
         if not index.isValid():
             return None, None
-        n = len(self.model().groups[index.row()].copies)
-        return index.row(), self.itemDelegate().tile_at(self.visualRect(index), pos, n)
+        row, d = index.row(), self.itemDelegate()
+        rect = d.body(self.visualRect(index), row)
+        if self.skippable and d.skip_rect(rect).contains(pos):
+            return row, SKIP
+        return row, d.tile_at(rect, pos, len(self.model().groups[row].copies))
 
     def mousePressEvent(self, e):
         row, i = self._hit(e.position().toPoint())
-        if row is not None and i is not None and e.button() == Qt.MouseButton.LeftButton \
-                and not e.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+        plain = e.button() == Qt.MouseButton.LeftButton and not e.modifiers() & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        if i == SKIP:
+            if plain:
+                self.skip.emit(row)
+            return
+        if row is not None and i is not None and plain:
             self.keep.emit(row, i)
         super().mousePressEvent(e)
 
@@ -208,7 +258,7 @@ class _List(QListView):
 
     def mouseDoubleClickEvent(self, e):
         row, i = self._hit(e.position().toPoint())
-        if row is not None and i is not None:
+        if row is not None and i is not None and i != SKIP:
             self.open_copy.emit(row, i)
 
     def paintEvent(self, e):
@@ -216,7 +266,9 @@ class _List(QListView):
         groups = self.model().groups
         first = self.indexAt(self.viewport().rect().topLeft())
         start = first.row() if first.isValid() else 0
-        rows = range(start, min(len(groups), start + self.viewport().height() // max(1, self.sizeHintForRow(0)) + 2))
+        last = self.indexAt(self.viewport().rect().bottomLeft())
+        end = last.row() + 2 if last.isValid() else len(groups)
+        rows = range(start, min(len(groups), end))
         self.loader.want([(c.qhash, c.path) for r in rows for c in groups[r].copies])
         if not groups:
             p = QPainter(self.viewport())
@@ -230,12 +282,14 @@ LIBRARY, ASIDE = 0, 1  # the tabs: duplicates in the library, and what Duplicate
 
 
 class DuplicatesView(QWidget):
-    """Two tabs: the duplicates in the library, and the files in Duplicates/ beside the photos they're
-    copies of. set_aside(groups, to): to is "duplicates" or "trash"; apart(groups); aside_trash(groups):
-    be rid of copies in Duplicates/; put_back(groups): move them back into the library; compared(its
-    copies' ids as shown, the one double-clicked): to look at them large, one after another."""
+    """Two tabs: the duplicates in the library (a group can be skipped for now: it's shown last, to
+    decide later), and the files in Duplicates/ beside the photos they're copies of.
+    trash_extras(groups); apart(groups); aside_trash(groups): be rid of copies in Duplicates/;
+    put_back(groups): move them back into the library; compared(its copies' ids as shown, the one
+    double-clicked): to look at them large, one after another."""
 
-    set_aside = Signal(list, str)
+    trash_extras = Signal(list)
+    deciding = Signal(int)  # a group was skipped (or taken back): how many are left to decide
     apart = Signal(list)
     aside_trash = Signal(list)
     put_back = Signal(list)
@@ -248,6 +302,7 @@ class DuplicatesView(QWidget):
         self.sets = {LIBRARY: [], ASIDE: None}  # None: not worked out yet
         self.pending = 0  # photos not looked at yet
         self._kept = {}  # {its copies' ids: the one chosen to keep}
+        self._skipped = skipped_duplicates()  # {its copies' ids} of the groups skipped for now
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 18, 24, 8)
         self.title = QLabel()
@@ -265,9 +320,8 @@ class DuplicatesView(QWidget):
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         lay.addWidget(self.hint)
         row = QHBoxLayout()
-        self.aside_button = QPushButton("Move extras to Duplicates/...")
-        self.aside_button.setToolTip("Into your library's Duplicates folder, named after the copy kept")
         self.trash_button = QPushButton("Move extras to Trash...")
+        self.trash_button.setToolTip("Each group keeps the copy marked Keep. Skipped groups are left as they are.")
         self.apart_button = QPushButton("Not duplicates")
         self.apart_button.setToolTip("Never offer these as duplicates again")
         self.aside_trash_button = QPushButton("Move copies to Trash...")
@@ -275,30 +329,31 @@ class DuplicatesView(QWidget):
                                            "the library photo's place, if you chose a copy)")
         self.put_back_button = QPushButton("Put back in the library...")
         self.put_back_button.setToolTip("Into their year's folder, named by when they were taken")
-        for b in (self.aside_button, self.trash_button, self.apart_button, self.aside_trash_button,
-                  self.put_back_button):
+        for b in (self.trash_button, self.apart_button, self.aside_trash_button, self.put_back_button):
             row.addWidget(b)
         row.addStretch()
         lay.addLayout(row)
         self.list = _List(self.loader)
+        self.list.is_skipped = self.is_skipped
         lay.addWidget(self.list, 1)
         self.list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.loader.set_size(round(TILE * self.devicePixelRatioF()))
-        self.aside_button.clicked.connect(lambda: self._act(lambda gs: self.set_aside.emit(gs, "duplicates")))
-        self.trash_button.clicked.connect(lambda: self._act(lambda gs: self.set_aside.emit(gs, "trash")))
+        self.trash_button.clicked.connect(self._trash)
         self.apart_button.clicked.connect(lambda: self._act(self.apart.emit, selected_only=True))
         self.aside_trash_button.clicked.connect(self._aside_trash)
         self.put_back_button.clicked.connect(self._put_back)
         self.list.keep.connect(self._keep)
+        self.list.skip.connect(self.skip)
         self.list.open_copy.connect(lambda r, i: self.compared.emit([c.id for c in self.list.shown(self.groups[r])], i))
         self.list.selectionModel().selectionChanged.connect(lambda *_: self._update_text())
         self._show_tab()
 
     def set_groups(self, groups, library, pending=0):
-        """The duplicates in the library."""
+        """The duplicates in the library (those skipped for now last)."""
         self.list.library = library
         self.pending = pending
-        self.sets[LIBRARY] = self._chosen(groups)
+        groups = self._chosen(groups)
+        self.sets[LIBRARY] = [g for g in groups if not self.is_skipped(g)] + [g for g in groups if self.is_skipped(g)]
         if self.tabs.currentIndex() == LIBRARY:
             self._show_tab()
         else:
@@ -329,13 +384,44 @@ class DuplicatesView(QWidget):
         else:
             self.list.empty_text = ("No duplicates found yet." if self.pending else
                                     "No duplicates. Every photo and video here is the only one of its kind.")
-        for b in (self.aside_button, self.trash_button, self.apart_button):
+        for b in (self.trash_button, self.apart_button):
             b.setVisible(not aside)
         for b in (self.aside_trash_button, self.put_back_button):
             b.setVisible(aside)
+        self.list.skippable = not aside
+        self.list.first_skipped = None if aside else next(
+            (i for i, g in enumerate(self.groups) if self.is_skipped(g)), None)
         self.list.model().set_groups(self.groups)
         self.list.viewport().update()
         self._update_text()
+
+    # --- skipping a group for now ---
+
+    @staticmethod
+    def _key(g) -> frozenset:
+        return frozenset(c.id for c in g.copies)
+
+    def is_skipped(self, g) -> bool:
+        return self._key(g) in self._skipped
+
+    def to_decide(self) -> int:
+        """The groups in the library not skipped."""
+        return sum(not self.is_skipped(g) for g in self.sets[LIBRARY])
+
+    def skip(self, row: int):
+        """Skip that group for now (to the end, under Skipped for now), or decide it now if it was skipped."""
+        key = self._key(self.groups[row])
+        self._skipped ^= {key}
+        current = {self._key(g) for g in self.sets[LIBRARY]}
+        self._skipped &= current  # (groups decided since are forgotten)
+        set_skipped_duplicates(self._skipped)
+        groups = self.sets[LIBRARY]
+        self.sets[LIBRARY] = [g for g in groups if not self.is_skipped(g)] + [g for g in groups if self.is_skipped(g)]
+        bar = self.list.verticalScrollBar()
+        at = bar.value()
+        self._show_tab()
+        bar.setValue(at)  # the next group takes its place
+        self.deciding.emit(self.to_decide())
 
     def selected(self) -> list:
         rows = sorted({i.row() for i in self.list.selectionModel().selectedRows()})
@@ -345,6 +431,11 @@ class DuplicatesView(QWidget):
         groups = self.selected() or ([] if selected_only else list(self.groups))
         if groups:
             do(groups)
+
+    def _trash(self):
+        groups = self.selected() or [g for g in self.groups if not self.is_skipped(g)]
+        if groups:
+            self.trash_extras.emit(groups)
 
     def _aside_trash(self):
         groups = [g for g in (self.selected() or self.groups) if g.how != "alone"]
@@ -413,25 +504,27 @@ class DuplicatesView(QWidget):
         self.tabs.setTabText(ASIDE, "In Duplicates/" + (f" ({files:,})" if aside is not None else ""))
         if self.tabs.currentIndex() == ASIDE:
             return self._update_aside_text(files)
-        extras = sum(len(g.extras) for g in self.groups)
+        deciding = [g for g in self.groups if not self.is_skipped(g)]
+        skipped = len(self.groups) - len(deciding)
+        extras = sum(len(g.extras) for g in deciding)
         chosen = self.selected()
         if not self.groups:
             self.title.setText("Duplicates")
         else:
-            self.title.setText(f"{len(self.groups):,} group{'s' if len(self.groups) != 1 else ''} of duplicates, "
-                               f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}")
+            self.title.setText(f"{len(deciding):,} group{'s' if len(deciding) != 1 else ''} of duplicates, "
+                               f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}"
+                               + (f", {skipped:,} skipped" if skipped else ""))
         hint = ("The copy with the ring is kept (the one with the most pixels, then the biggest file); the "
-                "dimmed ones are the extras. Click a copy to keep it instead. Double-click to compare them large "
+                "dimmed ones are the extras. Click a copy to keep it instead. Not sure yet? Skip for now puts "
+                "the group at the end, to decide later. Double-click to compare them large "
                 "(← → to switch, ↑ ↓ for other duplicates, K to keep). "
                 "Select groups (Ctrl-click the space beside them) to act on just those.")
         if self.pending:
             hint = (f"Still looking at {self.pending:,} photos (after indexing): more may turn up. " + hint)
         self.hint.setText(hint)
         which = f" ({len(chosen):,} selected)" if chosen else ""
-        self.aside_button.setText(f"Move extras to Duplicates/{which}...")
         self.trash_button.setText(f"Move extras to Trash{which}...")
-        for b in (self.aside_button, self.trash_button):
-            b.setEnabled(bool(self.groups))
+        self.trash_button.setEnabled(bool(chosen or deciding))
         self.apart_button.setEnabled(bool(chosen))
         self.apart_button.setToolTip("Never offer the selected groups as duplicates again" if chosen
                                      else "Select the groups that aren't duplicates first")
