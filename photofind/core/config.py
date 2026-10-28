@@ -9,6 +9,7 @@ THUMB_SIZE = 320          # photo thumbnails in the results grid
 MIN_FACE_PX = 36          # ignore tiny background faces (in WORK_SIZE pixels)
 FACE_SCORE = 0.85         # face detector confidence needed
 CLUSTER_SIM = 0.40        # how alike two faces must be to group them
+SUBGROUP_SIM = 0.55       # ...and to sit side by side inside a group (Who is this?)
 ASSIGN_SIM = 0.42         # how alike a face must be to a named person to auto-tag it
 ASSIGN_MARGIN = 0.05      # ...and how much better than the next-closest person
 MATCH_STRICTNESS = 2.0    # search: how far above a typical photo's score counts as a match

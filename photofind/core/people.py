@@ -10,7 +10,7 @@ Naming someone recognizes them in more photos too: those faces are part of the s
 
 import numpy as np
 
-from .config import ASSIGN_MARGIN, ASSIGN_SIM, CLUSTER_SIM
+from .config import ASSIGN_MARGIN, ASSIGN_SIM, CLUSTER_SIM, SUBGROUP_SIM
 from .db import from_blob
 from .util import normalize
 
@@ -246,11 +246,62 @@ def face_rows(db, where: str, params=()) -> list[dict]:
 
 
 def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
-    """Unnamed faces in groups of look-alikes, biggest first, clearest face first in each: who to ask
-    about. Changes nothing (it takes about a second for 40,000 faces)."""
+    """Unnamed faces in groups of look-alikes, biggest first: who to ask about. In each group the
+    clearest face comes first and the closest look-alikes sit together (see likeness_order); each
+    face has its "emb" (normalized), to sort by. Changes nothing (about a second for 40,000 faces)."""
     groups = [g for _, g in cluster_unnamed(db, save=False) if len(g) >= min_faces]
     keep = ("id", "photo_id", "x", "y", "w", "h", "score", "path", "qhash")
-    return [[{k: r[k] for k in keep} for r in sorted(g, key=lambda r: -r["score"] * r["w"])] for g in groups]
+    out = []
+    for g in groups:
+        embs = normalize(np.stack([from_blob(r["emb"]) for r in g]))
+        quality = np.array([r["score"] * min(r["w"], r["h"]) for r in g])
+        out.append([{**{k: g[i][k] for k in keep}, "emb": embs[i]} for i in likeness_order(embs, quality)])
+    return out
+
+
+def likeness_order(embs, quality) -> list[int]:
+    """An order for one group's faces (normalized embeddings) in which look-alikes sit together: the
+    faces split into tighter sets (each started by its clearest face, which leads it), the set of the
+    clearest face first, then each time the set most like the one before; in a set, after its first
+    face, the ones most like the set first."""
+    n = len(embs)
+    cents, sums, members = np.empty_like(embs), np.empty_like(embs), []
+    for i in np.argsort(-quality, kind="stable"):
+        k = len(members)
+        if k:
+            sims = cents[:k] @ embs[i]
+            j = int(np.argmax(sims))
+            if sims[j] >= SUBGROUP_SIM:
+                members[j].append(i)
+                sums[j] += embs[i]
+                cents[j] = normalize(sums[j])
+                continue
+        cents[k] = sums[k] = embs[i]
+        members.append([i])
+    k = len(members)
+    cents = cents[:k]
+    order, left, last = [], np.ones(k, bool), 0
+    for _ in range(k):
+        left[last] = False
+        head, rest = members[last][0], members[last][1:]
+        order += [head] + sorted(rest, key=lambda i: -float(embs[i] @ cents[last]))
+        if not left.any():
+            break
+        sims = np.where(left, cents @ cents[last], -2.0)
+        last = int(np.argmax(sims))
+    assert len(order) == n
+    return [int(i) for i in order]
+
+
+def by_likeness(faces: list[dict], to: list[dict]) -> list[dict]:
+    """faces (with "emb"s) reordered: those in `to` first, as they were, then the rest most like
+    them first."""
+    chosen = {f["id"] for f in to}
+    if not to:
+        return list(faces)
+    cent = normalize(np.mean([f["emb"] for f in to], axis=0))
+    rest = sorted((f for f in faces if f["id"] not in chosen), key=lambda f: -float(f["emb"] @ cent))
+    return [f for f in faces if f["id"] in chosen] + rest
 
 
 def person_faces(db, pid: int) -> list[dict]:

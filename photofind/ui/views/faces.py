@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core import face_thumb
+from ...core.people import by_likeness
 from .. import workers
 from .people import CROP
 
@@ -98,6 +99,7 @@ class FaceGrid(QListWidget):
         self.faces = []
         self._loaded = 0  # faces whose pictures were asked for (the first ones; the rest as they're scrolled to)
         self._generation = 0
+        self._items, self._asked = {}, set()  # face id -> its tile; ids whose pictures were asked for
         self.itemDoubleClicked.connect(lambda it: self.opened.emit(self.faces[self.row(it)]))
 
     def set_faces(self, faces: list[dict], selected: bool = False):
@@ -106,7 +108,7 @@ class FaceGrid(QListWidget):
         self.faces = faces
         self._loaded = min(len(faces), 600)  # (set first: adding items can repaint)
         self._generation += 1
-        gen = self._generation
+        self._items, self._asked = {}, set()
         blank = self._blank()
         for f in faces:
             item = QListWidgetItem(blank, "")
@@ -114,17 +116,41 @@ class FaceGrid(QListWidget):
             item.setToolTip(os.path.basename(f["path"]))
             self.addItem(item)
             item.setSelected(selected)
-        for row, f in enumerate(faces[:600]):  # (more load as they're scrolled to: see paintEvent)
-            workers.run(face_thumb, lambda file, err, row=row: gen == self._generation and self._ready(row, file, err),
-                        f, CROP)
+            self._items[f["id"]] = item
+        self._ask(faces[:600])  # (more as they're scrolled to: see paintEvent)
+
+    def reorder(self, faces: list[dict]):
+        """The same faces in another order, keeping their pictures and what's ticked."""
+        assert {f["id"] for f in faces} == {f["id"] for f in self.faces}
+        ticked = {f["id"] for f in self.selected_faces()}
+        self.blockSignals(True)
+        while self.count():
+            self.takeItem(0)
+        for f in faces:
+            self.addItem(self._items[f["id"]])
+            self._items[f["id"]].setSelected(f["id"] in ticked)
+        self.blockSignals(False)
+        self.faces = faces
+        self._ask(faces[:self._loaded])
+        self.scrollToTop()
+        self.itemSelectionChanged.emit()
+
+    def _ask(self, faces):
+        """Make the pictures of these faces, if they haven't been asked for."""
+        gen = self._generation
+        for f in faces:
+            if f["id"] not in self._asked:
+                self._asked.add(f["id"])
+                workers.run(face_thumb, lambda file, err, fid=f["id"]: gen == self._generation
+                            and self._ready(fid, file, err), f, CROP)
 
     def _blank(self) -> QIcon:
         pm = QPixmap(TILE, TILE)
         pm.fill(self.palette().color(QPalette.ColorRole.AlternateBase))
         return QIcon(pm)
 
-    def _ready(self, row, file, err):
-        item = self.item(row)
+    def _ready(self, fid, file, err):
+        item = self._items.get(fid)
         if err is None and item is not None:
             pm = QPixmap(str(file))
             if not pm.isNull():
@@ -146,10 +172,8 @@ class FaceGrid(QListWidget):
         if self._loaded < len(self.faces) and self.count():  # the rest, once they come into view
             last = self.indexAt(self.viewport().rect().bottomRight())
             if not last.isValid() or last.row() >= self._loaded - 50:
-                gen, start, self._loaded = self._generation, self._loaded, min(len(self.faces), self._loaded + 600)
-                for row in range(start, self._loaded):
-                    workers.run(face_thumb, lambda file, err, row=row: gen == self._generation
-                                and self._ready(row, file, err), self.faces[row], CROP)
+                start, self._loaded = self._loaded, min(len(self.faces), self._loaded + 600)
+                self._ask(self.faces[start:self._loaded])
         if self.count() == 0 and self.empty_text:
             p = QPainter(self.viewport())
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
@@ -306,10 +330,15 @@ class WhoView(QWidget):
                                     "the whole group if none are)")
         self.hide_button.clicked.connect(
             lambda: self.hidden.emit([f["id"] for f in self._chosen() or self.grid.faces]))
+        self.sort_button = QPushButton("Most like ticked")
+        self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most "
+                                    "alike to least")
+        self.sort_button.clicked.connect(self._sort)
         row = QHBoxLayout()
         row.addWidget(self.name, 1)
         row.addWidget(self.name_button)
         row.addSpacing(12)
+        row.addWidget(self.sort_button)
         row.addWidget(self.skip_button)
         row.addWidget(self.hide_button)
         lay = QVBoxLayout(self)
@@ -373,7 +402,8 @@ class WhoView(QWidget):
         self.title.setText("Who is this?" if group else "No one to ask about")
         after = f"{n - 1:,} more group{'s' if n != 2 else ''} after this" if n > 1 else "the last group"
         self.hint.setText(f"{len(group)} faces that look alike; {after}. Click the faces of the same person to "
-                          "tick them (Ctrl+A ticks them all); double-click to see its photo."
+                          "tick them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the front); "
+                          "double-click to see its photo."
                           if group else "")
 
     def _chosen(self):
@@ -384,6 +414,10 @@ class WhoView(QWidget):
         self.name_button.setEnabled(n > 0 and bool(self.name.text().strip()))
         self.name_button.setText(f"Name {n} face{'s' if n != 1 else ''}" if n else "Name them")
         self.hide_button.setEnabled(bool(self.grid.faces))
+        self.sort_button.setEnabled(n > 0 and n < len(self.grid.faces) and "emb" in self.grid.faces[0])
+
+    def _sort(self):
+        self.grid.reorder(by_likeness(self.grid.faces, self._chosen()))
 
     def _name(self):
         faces, name = self._chosen(), self.name.text().strip()
