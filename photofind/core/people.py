@@ -305,12 +305,10 @@ def by_likeness(faces: list[dict], to: list[dict]) -> list[dict]:
 
 
 def person_faces(db, pid: int) -> list[dict]:
-    """Someone's faces, least like the rest of theirs first: where wrong matches are."""
-    rows = face_rows(db, "f.person_id = ?", (pid,))
-    if len(rows) < 2:
-        return rows
-    embs = {r["id"]: r for r in rows}
+    """Someone's faces, least like the rest of theirs first: where wrong matches are. Each has its
+    "emb" (normalized), to sort by."""
+    rows = {r["id"]: r for r in face_rows(db, "f.person_id = ?", (pid,))}
     found, vecs = load_faces(db, "f.person_id = ?", (pid,))
-    sims = vecs @ normalize(vecs.mean(axis=0))
-    order = [found[i]["id"] for i in np.argsort(sims)]
-    return [embs[i] for i in order if i in embs]
+    sims = vecs @ normalize(vecs.mean(axis=0)) if len(found) else np.zeros(0)
+    order = np.argsort(sims, kind="stable")
+    return [{**rows[found[i]["id"]], "emb": vecs[i]} for i in order if found[i]["id"] in rows]
