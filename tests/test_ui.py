@@ -193,6 +193,29 @@ def test_thumbnail_loader_decodes_square_tiles(pf, lib, app):
     loader.stop()
 
 
+def test_exact_copies_share_one_tile_and_the_budget_stays_true(pf, lib, app):
+    """Exact copies have the same qhash (a duplicates group shows them side by side). Asked for
+    together, they used to be loaded twice and counted twice, so the budget filled with tiles that
+    weren't there and the cache emptied itself over and over: the Duplicates page blinked."""
+    import shutil
+
+    from photofind.ui.thumbs import ThumbLoader
+
+    loader = ThumbLoader(workers=2, budget=10 * 50 * 50 * 4)  # room for 10 tiles
+    loader.set_size(50)
+    got = []
+    loader.ready.connect(got.append)
+    for n in range(30):
+        p = photo(lib / f"{n}.jpg")
+        shutil.copy2(p, lib / f"{n} copy.jpg")
+        loader.want([(f"q{n}", str(p)), (f"q{n}", str(lib / f"{n} copy.jpg"))])
+        wait_until(app, lambda n=n: f"q{n}" in got)
+    real = sum(img.sizeInBytes() for img in loader._cache.values())
+    assert loader._bytes == real and len(loader._cache) == 10
+    assert got.count("q0") == 1  # loaded once
+    loader.stop()
+
+
 def test_viewer_shows_photo_and_steps(pf, lib, app):
     from photofind.ui.views.viewer import Viewer
 

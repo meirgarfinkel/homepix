@@ -59,10 +59,12 @@ class ThumbLoader(QObject):
 
     def want(self, items):
         """items: [(qhash, path)] to load, most wanted first. Replaces any earlier wish list, so
-        photos scrolled past are no longer loaded."""
+        photos scrolled past are no longer loaded. Copies with the same content (the same qhash) share
+        one tile: it's loaded once."""
         with self._lock:
+            seen = set()
             self._queue = [(q, p) for q, p in items if q not in self._cache and q not in self._busy
-                           and q not in self._failed]
+                           and q not in self._failed and not (q in seen or seen.add(q))]
             self._queue.reverse()  # pop() from the end takes the most wanted
             if self._queue:
                 self._wake.notify_all()
@@ -82,6 +84,8 @@ class ThumbLoader(QObject):
                 if self._stop:
                     return
                 qhash, path = self._queue.pop()
+                if qhash in self._cache or qhash in self._busy:
+                    continue  # (loaded meanwhile)
                 size = self._size
                 self._busy.add(qhash)
             img = None
@@ -98,6 +102,9 @@ class ThumbLoader(QObject):
                 if img is None:
                     self._failed.add(qhash)
                 else:
+                    old = self._cache.pop(qhash, None)
+                    if old is not None:
+                        self._bytes -= old.sizeInBytes()
                     self._cache[qhash] = img
                     self._bytes += img.sizeInBytes()
                     while self._bytes > self._budget and len(self._cache) > 1:
