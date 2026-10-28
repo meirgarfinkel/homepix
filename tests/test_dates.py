@@ -6,6 +6,7 @@ import os
 import subprocess
 
 import pytest
+from conftest import et_command
 from test_metadata import edit_and_run, index, make_photo, row
 
 from photofind.core import dates
@@ -105,7 +106,7 @@ def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(ho
     w.release()
     local = dt.datetime(2021, 3, 4, 10, 0, 1)
     utc = local.astimezone(dt.UTC).replace(tzinfo=None)
-    subprocess.run(["exiftool", "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
+    subprocess.run([*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
                     str(clip)], check=True)
     index(pf, lib)
     r = row(db, clip)
@@ -213,7 +214,7 @@ def test_a_phone_that_names_photos_in_utc_keeps_its_motion_clip(home, lib):
     for _ in range(10):
         w.write(np.zeros((32, 32, 3), np.uint8))
     w.release()
-    subprocess.run(["exiftool", "-q", "-overwrite_original", "-QuickTime:CreateDate=2023:10:01 06:09:20",
+    subprocess.run([*et_command(), "-q", "-overwrite_original", "-QuickTime:CreateDate=2023:10:01 06:09:20",
                     "-Keys:CreationDate=2023:10:01 09:09:20+03:00", str(clip)], check=True)
     index(pf, lib)
     assert row(db, photo)["taken"] == "2023-10-01 06:09:18"  # as its name says

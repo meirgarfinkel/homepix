@@ -8,7 +8,7 @@ import sys
 import textwrap
 
 import pytest
-from conftest import own_trash, photo, trash_records, trashed_files
+from conftest import own_trash, photo, rel, trash_records, trashed_files
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def contents(lib) -> dict[str, str]:
     for d, _, names in os.walk(lib):
         for n in names:
             p = os.path.join(d, n)
-            out[os.path.relpath(p, lib)] = digest(p)
+            out[rel(p, lib)] = digest(p)
     return out
 
 

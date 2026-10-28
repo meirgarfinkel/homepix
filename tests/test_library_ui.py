@@ -83,7 +83,7 @@ class FakeText:
 def _clip_of(pf, name):
     db = pf.open_db()
     try:
-        r = db.execute("SELECT id, clip FROM photos WHERE path LIKE ?", (f"%{name}",)).fetchone()
+        r = db.execute("SELECT id, clip FROM photos WHERE path LIKE ?", (f"%{os.path.normpath(name)}",)).fetchone()
         return r["id"], pf.from_blob(r["clip"])
     finally:
         db.close()

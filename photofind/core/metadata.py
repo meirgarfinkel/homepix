@@ -46,7 +46,21 @@ _MAPS = {1: ((1, 0, 0, 1), (0, 0)), 2: ((-1, 0, 0, 1), (1, 0)), 3: ((-1, 0, 0, -
 # Turning what's shown: shown' = M @ shown + t
 TURNS = {"right": ((0, -1, 1, 0), (1, 0)), "left": ((0, 1, -1, 0), (0, 1)),
          "flip-h": ((-1, 0, 0, 1), (1, 0)), "flip-v": ((1, 0, 0, -1), (0, 1))}
-HEIC_ROTATION = {1: 0, 8: 90, 3: 180, 6: 270}  # QuickTime:Rotation is counter-clockwise
+HEIC_ROTATION = {1: 0, 8: 90, 3: 180, 6: 270}  # degrees counter-clockwise
+
+
+def _quarter_turns() -> bool:
+    """Does ExifTool give QuickTime:Rotation (HEIC's rotation box) in quarter turns (0-3)? It has
+    since 12.85; before, in degrees."""
+    return exiftool().version() >= 12.85
+
+
+def heic_degrees(raw) -> int:
+    return int(raw or 0) * (90 if _quarter_turns() else 1) % 360
+
+
+def heic_raw(degrees: int) -> int:
+    return degrees // 90 if _quarter_turns() else degrees
 
 
 def _compose(a, b):
@@ -134,7 +148,7 @@ def details(path, tags: dict) -> Details:
         pass
     if d.kind == "HEIC" and "QuickTime:Rotation" in tags:
         rot = {v: k for k, v in HEIC_ROTATION.items()}
-        d.orientation = rot.get(int(tags["QuickTime:Rotation"] or 0) % 360, 1)
+        d.orientation = rot.get(heic_degrees(tags["QuickTime:Rotation"]), 1)
     else:
         try:
             d.orientation = int(tags.get("IFD0:Orientation") or 1)
@@ -259,7 +273,7 @@ def changes(path, d: Details, edit: Edit, shown: dt.datetime | None = None) -> d
                 raise CantChange("HEIC photos can be turned, but not flipped")
             if "QuickTime:Rotation" not in has:
                 raise CantChange("this HEIC photo can't be turned")
-            out["QuickTime:Rotation"] = HEIC_ROTATION[new]
+            out["QuickTime:Rotation"] = heic_raw(HEIC_ROTATION[new])
             if "IFD0:Orientation" in has:
                 out["IFD0:Orientation"] = new
         else:

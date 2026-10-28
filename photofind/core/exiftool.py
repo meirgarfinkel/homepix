@@ -64,6 +64,7 @@ class ExifTool:
         self._n = 0
         self._err = []
         self._err_ready = threading.Condition()
+        self._version = None
 
     def _start(self):
         env = dict(os.environ)
@@ -127,6 +128,15 @@ class ExifTool:
         except ValueError:
             return {}
         return {ours.get(_key(f), f): d for d in found if (f := d.pop("SourceFile", None))}
+
+    def version(self) -> float:
+        """ExifTool's version, e.g. 13.59 (asked once)."""
+        if self._version is None:
+            try:
+                self._version = float(self.run(["-ver"])[0].decode().strip())
+            except ValueError:
+                self._version = 0.0
+        return self._version
 
     def close(self):
         with self._lock:

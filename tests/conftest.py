@@ -66,11 +66,26 @@ def copy(src, dst):
     return dst
 
 
+def rel(path, lib) -> str:
+    """path relative to lib, with / between folders (as the tests write them on every system)."""
+    return os.path.relpath(path, lib).replace(os.sep, "/")
+
+
+def et_command() -> list[str]:
+    """How to run ExifTool (the bundled one on Windows)."""
+    from photofind.core import exiftool
+
+    b = exiftool.bundled()
+    if b and (b / "perl" / "so").is_dir():  # the Linux bundle's Perl needs its own libraries
+        return ["env", f"LD_LIBRARY_PATH={b / 'perl' / 'so'}", *exiftool.command()]
+    return exiftool.command()
+
+
 def rows(pf, lib):
     """{path relative to lib: row} for everything indexed."""
     db = pf.open_db()
     try:
-        return {r["path"][len(str(lib)) + 1:]: dict(r) for r in db.execute("SELECT * FROM photos")}
+        return {rel(r["path"], lib): dict(r) for r in db.execute("SELECT * FROM photos")}
     finally:
         db.close()
 

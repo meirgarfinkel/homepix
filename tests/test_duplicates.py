@@ -264,7 +264,7 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
         w.dupes.aside_button.click()
         wait_until(app, lambda: (lib / "Duplicates").is_dir() and len(os.listdir(lib / "Duplicates")) == 4
                    and not w.ops.busy)
-        assert "Duplicates/b.jpg" in shown[0] and planted["b small"].exists() and not planted["b"].exists()
+        assert os.path.join("Duplicates", "b.jpg") in shown[0] and planted["b small"].exists() and not planted["b"].exists()
         wait_until(app, lambda: w.dupes.groups == [])
         w.ops.undo()
         wait_until(app, lambda: len(w.dupes.groups) == 4 and not w.ops.busy)
