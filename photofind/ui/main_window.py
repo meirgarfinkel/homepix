@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
         self.viewer.current_changed.connect(lambda i: self.info.show_photo(self.viewer.items[i].id))
         self.sidebar.chosen.connect(self.show_place)
         self.people.chosen.connect(lambda pid: self.show_place(person_place(pid)))
+        self.people.who_chosen.connect(lambda: self.show_place(WHO))
         self.people.menu_requested.connect(self._person_menu)
         self.who.named.connect(lambda ids, name: self._answer_who(ids, lambda: self.naming.name(ids, name)))
         self.who.hidden.connect(lambda ids: self._answer_who(ids, lambda: self.naming.hide(ids)))
@@ -817,7 +818,7 @@ class MainWindow(QMainWindow):
             groups, names = res
             self.who.set_groups(groups, names)
             self.who_count = self.who.remaining()
-            self.sidebar.set_count(WHO, f"{self.who_count:,}")
+            self.people.set_who(self.who_count if self.unnamed else None)
         self._faces_jobs.run(load_who, done)
 
     def _load_person_faces(self, pid):
@@ -868,15 +869,18 @@ class MainWindow(QMainWindow):
         self.loaded = True
         roots = library_folders()
         self.people_names = {p["id"]: p["name"] for p in people}
-        self.sidebar.set_folders(roots, counts, total, people, self.who_count if self.unnamed else None,
+        self.sidebar.set_folders(roots, counts, total, len(people) if people or self.unnamed else None,
                                  self.dedupe.count if total else None)
-        if not self.sidebar.select(self.place) and self.place not in (WHO, DUPES):  # that folder or person is gone
+        pid = person_of(self.place) if person_of(self.place) is not None else faces_of(self.place)
+        gone = (pid is not None and pid not in self.people_names) or (
+            not self.sidebar.select(self.place) and self.place not in (WHO, DUPES))
+        if gone:  # that folder or person is gone
             self.place = ALL
             return self.reload(fresh=True)
         if not roots and not total:
             self._show(self.welcome)
             return
-        self.people.set_people(people)
+        self.people.set_people(people, self.who_count if self.unnamed else None)
         self.faces_action.setVisible(person_of(self.place) is not None or faces_of(self.place) is not None)
         self.faces_action.setChecked(faces_of(self.place) is not None)
         if not shows_photos(self.place):

@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 import shiboken6
-from PySide6.QtCore import QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QFont, QFontMetrics, QPainter
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
 
 from .. import theme
@@ -64,44 +64,48 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
     return tree
 
 
+CHEVRON = 22  # room at the right of every row for the open/close arrow (so counts line up)
+RIGHT = 10  # space after it
+
+
 class CountDelegate(QStyledItemDelegate):
-    """The counts column: muted numbers, and the "who is this?" count as an accent badge."""
+    """The counts column: the muted number, then, for a row with folders inside, the arrow that
+    opens and closes it."""
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         option.text = ""  # drawn below instead, so it isn't drawn twice
 
     def sizeHint(self, option, index):
-        """Wide enough for the number (the drawn one, not the blanked text)."""
+        """Wide enough for the number (the drawn one, not the blanked text) and the arrow."""
         size = super().sizeHint(option, index)
-        text = index.data() or ""
-        if index.siblingAtColumn(0).data(PATH_ROLE) == WHO:
-            width = QFontMetrics(theme.font(11, QFont.Weight.Bold)).horizontalAdvance(text) + 14
-        else:
-            width = QFontMetrics(option.font).horizontalAdvance(text)
-        size.setWidth(max(size.width(), width + 16))
+        width = QFontMetrics(option.font).horizontalAdvance(index.data() or "")
+        size.setWidth(max(size.width(), width + 8 + CHEVRON + RIGHT))
         return size
 
     def paint(self, p, option, index):
         text = index.data()
         super().paint(p, option, index)  # the row's background
-        if not text:
-            return
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = option.rect.adjusted(0, 0, -12, 0)
-        if index.siblingAtColumn(0).data(PATH_ROLE) == WHO:
-            p.setFont(theme.font(11, QFont.Weight.Bold))
-            w = p.fontMetrics().horizontalAdvance(text) + 14
-            badge = QRectF(rect.right() - w, rect.center().y() - 10, w, 20)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(theme.color("accent"))
-            p.drawRoundedRect(badge, 10, 10)
-            p.setPen(theme.color("accentInk"))
-            p.drawText(badge, Qt.AlignmentFlag.AlignCenter, text)
-        else:
-            p.setPen(theme.color("muted"))
-            p.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
+        muted = theme.color("muted")
+        arrow = QRectF(option.rect.right() - RIGHT - CHEVRON, option.rect.top(), CHEVRON, option.rect.height())
+        if text:
+            p.setPen(muted)
+            p.drawText(option.rect.adjusted(0, 0, -RIGHT - CHEVRON, 0),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
+        first = index.siblingAtColumn(0)
+        if index.model().hasChildren(first):
+            pen = QPen(muted, 1.6)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(pen)
+            c, w = arrow.center(), 4.0
+            h = -2.0 if self.parent().isExpanded(first) else 2.0  # ▴ open, ▾ closed
+            path = QPainterPath(QPointF(c.x() - w, c.y() - h))
+            path.lineTo(c.x(), c.y() + h)
+            path.lineTo(c.x() + w, c.y() - h)
+            p.drawPath(path)
         p.restore()
 
 
@@ -120,6 +124,9 @@ class Sidebar(QTreeWidget):
         self.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.setIndentation(16)
+        self.setRootIsDecorated(False)  # no arrows at the left: they're at the right (CountDelegate)
+        self.setExpandsOnDoubleClick(False)  # (double-click chooses it, like a click)
+        self.setMouseTracking(True)  # (the hand over an arrow)
         self.setUniformRowHeights(True)
         self.setMinimumWidth(220)
         self.itemSelectionChanged.connect(self._picked)
@@ -127,39 +134,25 @@ class Sidebar(QTreeWidget):
         self._quiet = False
         self.set_folders([], {}, 0)
 
-    def set_folders(self, roots: list[str], counts: dict, total: int, people=(), who=None, dupes=None):
-        """Rebuild, keeping what was open and what was chosen. people: as from core.named_people;
-        who: None if there are no unnamed faces, else how many groups of them to ask about ("" if
-        not known yet); dupes: groups of duplicates to review ("" if none or not known yet), None to
-        leave the review out."""
+    def set_folders(self, roots: list[str], counts: dict, total: int, people=None, dupes=None):
+        """Rebuild, keeping what was open and what was chosen; everything starts closed. people: how
+        many are named, or None to leave People out (no one named and no faces to ask about);
+        dupes: groups of duplicates to review ("" if none or not known yet), None to leave the
+        review out."""
         opened = {it.data(0, PATH_ROLE) for it in self._all_items() if it.isExpanded()}
-        had_people = any(it.data(0, PATH_ROLE) == PEOPLE for it in self._all_items())
         chosen = self.current_path()
-        first = not opened and self.topLevelItemCount() == 0
         self._quiet = True
         self.clear()
         everything = QTreeWidgetItem(["All photos", f"{total:,}"])
         everything.setData(0, PATH_ROLE, ALL)
         self._style_count(everything)
         self.addTopLevelItem(everything)
-        if people:
-            group = QTreeWidgetItem(["People", f"{len(people):,}"])
+        if people is not None:
+            group = QTreeWidgetItem(["People", f"{people:,}" if people else ""])
             group.setData(0, PATH_ROLE, PEOPLE)
+            group.setToolTip(0, "Everyone you've named, and Who is this? to name more")
             self._style_count(group)
             self.addTopLevelItem(group)
-            for person in people:
-                item = QTreeWidgetItem([person["name"], f"{person['photos']:,}"])
-                item.setData(0, PATH_ROLE, person_place(person["id"]))
-                self._style_count(item)
-                group.addChild(item)
-            if not had_people:  # new: open, to show who's there
-                opened.add(PEOPLE)
-        if who is not None:
-            ask = QTreeWidgetItem(["Who is this?", f"{who:,}" if isinstance(who, int) else ""])
-            ask.setData(0, PATH_ROLE, WHO)
-            ask.setToolTip(0, "Name the people in your photos")
-            self._style_count(ask)
-            self.addTopLevelItem(ask)
         if dupes is not None:
             review = QTreeWidgetItem(["Duplicates", f"{dupes:,}" if isinstance(dupes, int) and dupes else ""])
             review.setData(0, PATH_ROLE, DUPES)
@@ -167,15 +160,14 @@ class Sidebar(QTreeWidget):
             self._style_count(review)
             self.addTopLevelItem(review)
         heading = QTreeWidgetItem(["FOLDERS", ""])
-        heading.setFlags(Qt.ItemFlag.ItemIsEnabled)
+        heading.setFlags(Qt.ItemFlag.NoItemFlags)  # a label, not a place
         font = theme.font(11, QFont.Weight.Bold)
         font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108)
         heading.setFont(0, font)
         heading.setForeground(0, theme.color("muted"))
         self.addTopLevelItem(heading)
-        heading.setExpanded(True)
         for root, node in folder_tree(roots, counts).items():
-            item = self._add(heading, node)
+            item = self._add(None, node)
             item.setToolTip(0, root)
             if not Path(root).is_dir():
                 item.setText(0, f"{node['name']} (not connected)")
@@ -184,8 +176,6 @@ class Sidebar(QTreeWidget):
                 italic = QFont(self.font())
                 italic.setItalic(True)
                 item.setFont(0, italic)
-            if first:
-                item.setExpanded(True)
         for it in self._all_items():
             if it.data(0, PATH_ROLE) in opened:
                 it.setExpanded(True)
@@ -196,7 +186,10 @@ class Sidebar(QTreeWidget):
         item = QTreeWidgetItem([node["name"], f"{node['total']:,}" if node["total"] else ""])
         item.setData(0, PATH_ROLE, node["path"])
         self._style_count(item)
-        parent.addChild(item)
+        if parent is None:
+            self.addTopLevelItem(item)
+        else:
+            parent.addChild(item)
         for name in sorted(node["children"], key=str.lower):
             self._add(item, node["children"][name])
         return item
@@ -233,8 +226,8 @@ class Sidebar(QTreeWidget):
     def select(self, place: str) -> bool:
         """Choose a place without saying so (no chosen signal). False if it isn't here (All photos
         is chosen instead)."""
-        if faces_of(place) is not None:  # their faces: still them
-            place = person_place(faces_of(place))
+        if place == WHO or person_of(place) is not None or faces_of(place) is not None:
+            place = PEOPLE  # (people aren't listed one by one)
         was, self._quiet = self._quiet, True
         for it in self._all_items():
             if it.data(0, PATH_ROLE) == place:
@@ -246,6 +239,25 @@ class Sidebar(QTreeWidget):
             found = place == ALL
         self._quiet = was
         return found
+
+    def _arrow_hit(self, pos) -> QTreeWidgetItem | None:
+        """The row whose open/close arrow is at pos, if any."""
+        item = self.itemAt(pos)
+        if item is None or item.childCount() == 0:
+            return None
+        return item if pos.x() >= self.viewport().width() - RIGHT - CHEVRON - 6 else None
+
+    def mousePressEvent(self, e):
+        item = self._arrow_hit(e.position().toPoint())
+        if item is not None and e.button() == Qt.MouseButton.LeftButton:
+            item.setExpanded(not item.isExpanded())
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        on = self._arrow_hit(e.position().toPoint()) is not None
+        self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if on else Qt.CursorShape.ArrowCursor)
+        super().mouseMoveEvent(e)
 
     def contextMenuEvent(self, e):
         item = self.itemAt(self.viewport().mapFromGlobal(e.globalPos()))

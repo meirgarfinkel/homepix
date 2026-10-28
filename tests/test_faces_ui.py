@@ -75,10 +75,13 @@ def settle(app, window):
 
 
 def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
-    from photofind.ui.views.sidebar import WHO
+    from photofind.ui.views.people import WHO_TILE
+    from photofind.ui.views.sidebar import PEOPLE
 
-    wait_until(app, lambda: window.sidebar.select(WHO))  # it's in the sidebar
-    window.show_place(WHO)
+    window.show_place(PEOPLE)  # it's the first circle on the People page
+    wait_until(app, lambda: window.people.count() and window.people.item(0).data(256) == WHO_TILE)
+    wait_until(app, lambda: window.people.item(0).text() == "Who is this?\n2 to name")
+    window.people.itemClicked.emit(window.people.item(0))
     wait_until(app, lambda: window.stack.currentWidget() is window.who and window.who.grid.count() == 5)
     assert window.who.remaining() == 2
     assert len(window.who.grid.selected_faces()) == 5  # all ticked to start with
@@ -137,7 +140,12 @@ def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
 
 def test_rename_and_forget_from_the_people_page(window, pf, app, monkeypatch):
     from photofind.ui import people_actions
+    from photofind.ui.views.people import WHO_TILE
     from photofind.ui.views.sidebar import PEOPLE
+
+    def named():  # the people's circles (not "Who is this?")
+        items = [window.people.item(i) for i in range(window.people.count())]
+        return [it for it in items if it.data(256) != WHO_TILE]
 
     db = pf.open_db()
     faces = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY photo_id")]
@@ -145,18 +153,18 @@ def test_rename_and_forget_from_the_people_page(window, pf, app, monkeypatch):
     window.naming.name(faces[:5], "Ann")
     settle(app, window)
     window.show_place(PEOPLE)
-    wait_until(app, lambda: window.people.count() == 1)
-    pid = window.people.item(0).data(256)
+    wait_until(app, lambda: len(named()) == 1)
+    pid = named()[0].data(256)
     monkeypatch.setattr(people_actions, "ask_name", lambda *a, **k: "Anna")
     window.naming.rename(pid)
     settle(app, window)
-    wait_until(app, lambda: window.people.count() == 1 and window.people.item(0).text().startswith("Anna"))
+    wait_until(app, lambda: len(named()) == 1 and named()[0].text().startswith("Anna"))
     monkeypatch.setattr(QtWidgets.QMessageBox, "question",
                         staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))
     window.naming.forget(pid)
     settle(app, window)
     assert names(pf) == [None] * 8
-    wait_until(app, lambda: window.people.count() == 0)
+    wait_until(app, lambda: named() == [])
     window.ops.undo()
     settle(app, window)
     assert names(pf)[:5] == ["Anna"] * 5
