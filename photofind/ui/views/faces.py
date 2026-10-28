@@ -97,6 +97,7 @@ class FaceGrid(QListWidget):
         self.fade_unchosen = False
         self.setItemDelegate(_Tile(self))
         self.faces = []
+        self._loaded = 0  # faces whose pictures were asked for (the first ones; the rest as they're scrolled to)
         self._generation = 0
         self.itemDoubleClicked.connect(lambda it: self.opened.emit(self.faces[self.row(it)]))
 
@@ -104,6 +105,7 @@ class FaceGrid(QListWidget):
         self.faces = []
         self.clear()  # (says the selection changed: with no faces left)
         self.faces = faces
+        self._loaded = min(len(faces), 600)  # (set first: adding items can repaint)
         self._generation += 1
         gen = self._generation
         blank = self._blank()
@@ -116,7 +118,6 @@ class FaceGrid(QListWidget):
         for row, f in enumerate(faces[:600]):  # (more load as they're scrolled to: see paintEvent)
             workers.run(face_thumb, lambda file, err, row=row: gen == self._generation and self._ready(row, file, err),
                         f, CROP)
-        self._loaded = min(len(faces), 600)
 
     def _blank(self) -> QIcon:
         pm = QPixmap(TILE, TILE)

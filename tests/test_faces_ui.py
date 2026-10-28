@@ -183,3 +183,16 @@ def test_face_boxes_in_the_viewer(window, pf, app):
     v.toggle_faces()
     assert not v._current_faces()
     assert window.settings.value("viewer/faces") == "false"
+
+
+def test_a_face_grid_can_be_drawn_before_it_has_faces(app, monkeypatch):
+    import sys
+
+    from photofind.ui.views.faces import FaceGrid
+
+    errors = []
+    monkeypatch.setattr(sys, "excepthook", lambda *e: errors.append(e[1]))
+    grid = FaceGrid()
+    grid.resize(400, 300)
+    grid.grab()  # (paints it)
+    assert errors == []
