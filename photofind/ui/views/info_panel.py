@@ -1,4 +1,5 @@
-"""The info panel: date and where it came from, camera, size, dimensions, GPS, people, path."""
+"""The info panel: when it was taken and where that came from, camera, size, dimensions, GPS, people,
+path."""
 
 import datetime as dt
 import html
@@ -21,11 +22,12 @@ def _lookup(photo_id):
 
 
 def nice_date(taken: str) -> str:
+    """"Friday, April 1, 2022 at 07:32:31"."""
     try:
         d = dt.datetime.fromisoformat(taken)
     except (TypeError, ValueError):
         return taken or "Unknown"
-    return f"{d:%A, %B} {d.day}, {d.year} at {d:%H:%M}"
+    return f"{d:%A, %B} {d.day}, {d.year} at {d:%H:%M:%S}"
 
 
 class InfoPanel(QScrollArea):
@@ -38,7 +40,7 @@ class InfoPanel(QScrollArea):
         body.setObjectName("infoBody")
         lay = QVBoxLayout(body)
         lay.setContentsMargins(20, 20, 20, 16)
-        self.head = QLabel()  # name and date
+        self.head = QLabel()  # its name
         self.head.setWordWrap(True)
         self.head.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lay.addWidget(self.head)
@@ -97,11 +99,7 @@ class InfoPanel(QScrollArea):
                             f"<td style='padding-bottom: 10px'>{value}{extra}</td></tr>")
 
         video = info.get("kind") == "video"
-        when = e(nice_date(info["taken"]))
-        if info.get("date_source"):
-            when += f" · {e(info['date_source'])}"
-        self.head.setText(f"<p style='font-size:14px; font-weight:700; margin:0'>{e(info['name'])}</p>"
-                          f"<p style='color:{muted}; margin:3px 0 0 0'>{when}</p>")
+        self.head.setText(f"<p style='font-size:14px; font-weight:700; margin:0'>{e(info['name'])}</p>")
         self.head.show()
         head = ""
         if self._count > 1:
@@ -113,6 +111,8 @@ class InfoPanel(QScrollArea):
             head += f"<p style='color:{danger}'>This file couldn't be read: {e(info['error'])}</p>"
         if info.get("description"):
             head += f"<p>{e(info['description']).replace(chr(10), '<br>')}</p>"
+        day, _, time = nice_date(info["taken"]).partition(" at ")
+        row("Taken", e(day) + (f"<br>{e(time)}" if time else ""), info.get("date_source"))
         row("Keywords", e(", ".join(info.get("keywords", []))))
         if info.get("duration"):
             row("Length", e(clock(info["duration"])))

@@ -233,3 +233,22 @@ def test_photo_info_reads_exif_and_index(pf, lib):
     assert photo_info(db, pid)["offline"] is True
     assert photo_info(db, 999) is None
     db.close()
+
+
+def test_the_info_panel_says_when_it_was_taken(pf, lib, app):
+    from photofind.ui.views.info_panel import InfoPanel
+
+    img = Image.new("RGB", (40, 30), "red")
+    exif = Image.Exif()
+    exif[0x8769] = {0x9003: "2022:04:01 07:32:31"}  # DateTimeOriginal
+    img.save(lib / "cam.jpg", exif=exif)
+    pf.index_folder(lib, want_faces=False)
+    db = pf.open_db()
+    pid = db.execute("SELECT id FROM photos").fetchone()[0]
+    db.close()
+    panel = InfoPanel()
+    panel.show_photo(pid)
+    wait_until(app, lambda: "Taken" in panel.label.text())
+    text = panel.label.text()
+    assert "Friday, April 1, 2022<br>07:32:31" in text and "written in the photo (EXIF)" in text
+    panel.close()
