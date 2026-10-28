@@ -222,6 +222,15 @@ remembered; all of it is undoable. The info panel doesn't say what a file in `Du
 **Done when:** the test suite passes on Windows, and the installer's app passes its self-test there
 (AI included), built and checked by CI on every pull request.
 
+*Status: done.* CI runs the whole test suite on Windows and builds `PhotoFinderSetup.exe` on every
+pull request; its app's self-test (AI, HEIC, thumbnails, ExifTool, the window) passes there. Delete
+goes to the Recycle Bin the way Explorer does it (a `$R` file and its `$I` record, so Explorer shows
+and restores it too), with undo and crash recovery as on Linux; CI checks Windows lists it.
+ExifTool's official Windows build (same version, its own Perl) is bundled. Clipboard cut and copy
+speak Explorer's format, and a rename that only changes case isn't numbered. Found along the way,
+for both systems: ExifTool 12.85 changed HEIC rotation to quarter turns, so the bundled 13.59 refused
+to turn HEIC photos; fixed. Version 1.0.0; a `v1.0.0` tag publishes both downloads as a Release.
+
 ## Main risks
 
 | Risk | Mitigation |
