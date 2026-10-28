@@ -331,6 +331,8 @@ class MainWindow(QMainWindow):
         self.person_faces.opened.connect(self._open_face_photo)
         self.dupes.set_aside.connect(self.dedupe.set_aside)
         self.dupes.apart.connect(self.dedupe.apart)
+        self.dupes.aside_trash.connect(self.dedupe.aside_trash)
+        self.dupes.put_back.connect(self.dedupe.put_back)
         self.dupes.compared.connect(self.compare_copies)
         self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
         self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is it?"))

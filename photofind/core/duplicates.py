@@ -148,8 +148,9 @@ class Copy:
 @dataclass
 class Group:
     copies: list[Copy]  # the keeper first
-    how: str  # "exact" (the same bytes) or "near" (looks the same)
+    how: str  # "exact" (the same bytes) or "near" (looks the same); set aside: also "alone" (see aside_groups)
     pairs: list = field(default_factory=list, repr=False)  # [(id, id)] that matched
+    marks: dict = field(default_factory=dict, repr=False)  # set aside: {copy's id: how it was found (see known)}
 
     @property
     def keeper(self) -> Copy:
@@ -371,6 +372,75 @@ def known(db, library) -> dict[int, tuple[int | None, str]]:
         else:
             out[d["id"]] = (None, "")
     return out
+
+
+def aside_groups(db, library) -> list[Group]:
+    """What the Duplicates/ folders hold, to review: each photo in the library with the copies of it
+    set aside (the library's one first, as the keeper), newest first; then each file set aside that no
+    photo in the library was found for, alone (how="alone": the only one there is). marks says how each
+    copy was found: "exact", "near", "mapping" or "name" (only its name says so: worth a look)."""
+    found = known(db, library)
+    if not found:
+        return []
+    rows = {r["id"]: r for r in db.execute(f"SELECT {_COLS} FROM photos")}
+    by_keeper, alone = {}, []
+    for d, (k, how) in found.items():
+        if d not in rows:
+            continue
+        if k is None or k not in rows:
+            alone.append(Group([_copy(rows[d])], "alone"))
+        else:
+            by_keeper.setdefault(k, []).append((d, how))
+    groups = []
+    for k, ds in by_keeper.items():
+        ds.sort(key=lambda x: _keeper_order(_copy(rows[x[0]])))
+        hows = {h for _, h in ds}
+        groups.append(Group([_copy(rows[k])] + [_copy(rows[d]) for d, _ in ds],
+                            "exact" if hows == {"exact"} else "near", marks=dict(ds)))
+    newest = lambda g: g.keeper.taken or ""  # noqa: E731
+    return sorted(groups, key=newest, reverse=True) + sorted(alone, key=newest, reverse=True)
+
+
+def plan_aside_trash(db, groups, library) -> list[dict]:
+    """Steps to be rid of set-aside copies: each group's copies but the one kept go to the Trash. Where
+    a copy from Duplicates/ is kept instead of the library's photo, it takes that photo's place (its
+    name, with the copy's own extension) once the photo is in the Trash. A file with no copy in the
+    library is never in these (it's the only one)."""
+    from . import fileops
+
+    trash, moves = [], []
+    for g in groups:
+        if g.how == "alone":
+            continue
+        mine = next((c for c in g.copies if not set_aside(c.path, library)), None)
+        if mine is None:
+            continue
+        aside = [c.path for c in g.extras if c is not mine]
+        trash += fileops.with_companions(db, aside) + ([mine.path] if g.keeper is not mine else [])
+        if g.keeper is not mine:
+            stem = os.path.splitext(mine.path)[0]
+            moves.append({"action": "move", "src": os.path.abspath(g.keeper.path),
+                          "dst": os.path.abspath(stem + os.path.splitext(g.keeper.path)[1].lower())})
+    return fileops.plan_trash(trash) + moves  # the moves last: each place is free by then
+
+
+def plan_put_back(db, groups, library) -> list[dict]:
+    """Steps that move set-aside copies back into the library, where tidying would put them: named by
+    when they were taken, in their year's folder (Unsorted/ with their own name if there's no date)."""
+    from . import fileops
+    from .organize import _place, root_of
+
+    pairs = []
+    for g in groups:
+        for c in g.copies:
+            if not set_aside(c.path, library):
+                continue
+            root = root_of(c.path, library)
+            row = db.execute("SELECT taken, taken_source FROM photos WHERE id=?", (c.id,)).fetchone()
+            real = row is not None and row["taken"] and row["taken_source"] not in (None, "file-modified")
+            folder, stem, _ = _place(root, c.path, dt.datetime.fromisoformat(row["taken"]) if real else None)
+            pairs.append((c.path, os.path.join(folder, stem + os.path.splitext(c.path)[1].lower())))
+    return fileops.plan_moves(pairs)
 
 
 def _base_stem(path: str) -> str:

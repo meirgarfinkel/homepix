@@ -194,11 +194,13 @@ def _set(db, step, **fields):
 
 # --- planning ---------------------------------------------------------------------------------------
 
-def plan_moves(pairs) -> list[dict]:
+def plan_moves(pairs, freed=()) -> list[dict]:
     """[(src, wanted dst)] -> move steps. A wanted name that's taken (and not being vacated by another
-    file in the same operation) gets _1, _2, ...; files already where they're wanted are left out."""
+    file in the same operation, or going to the Trash first: freed) gets _1, _2, ...; files already
+    where they're wanted are left out."""
     # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
     srcs = {os.path.normcase(os.path.abspath(s)) for s, d in pairs if os.path.abspath(s) != os.path.abspath(d)}
+    srcs |= {os.path.normcase(os.path.abspath(p)) for p in freed}
     planned, steps = set(), []
     for src, dst in pairs:
         src, dst = os.path.abspath(src), os.path.abspath(dst)
@@ -401,6 +403,31 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
             db.commit()
             last_commit = time.monotonic()
 
+    # Trash that makes room for a move (a copy kept instead takes its original's place): first
+    room = {os.path.normcase(r["dst"]) for r in rows if r["action"] == "move" and r["dst"]}
+    early = set()
+    for r in rows:
+        if r["action"] != "trash" or os.path.normcase(r["src"]) not in room:
+            continue
+        early.add(r["id"])
+        if not os.path.lexists(r["src"]):
+            skipped(r, "it isn't there any more")
+            continue
+        try:
+            dst = trashcan.reserve(r["src"])
+        except OSError as e:
+            skipped(r, e.strerror or str(e))
+            continue
+        _set(db, r, dst=dst, done=UNDER_WAY)
+        db.commit()
+        try:
+            rename_noreplace(r["src"], dst)
+        except OSError as e:
+            trashcan.unreserve(dst)
+            skipped(r, e.strerror or str(e))
+            continue
+        finished(r, dst)
+
     # moves, phase 1: each file to its hidden name beside itself
     moves = [r for r in rows if r["action"] == "move"]
     staged = []
@@ -443,7 +470,7 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
     # Trash: every name in it is chosen (and reserved) first
     trashing = []
     for r in rows:
-        if r["action"] != "trash" or result.stopped:
+        if r["action"] != "trash" or result.stopped or r["id"] in early:
             continue
         if not os.path.lexists(r["src"]):
             skipped(r, "it isn't there any more")
@@ -637,7 +664,10 @@ def inverse(db, op_id: int) -> list[dict]:
         elif r["action"] in INDEX_ONLY:
             c = json.loads(r["before"])
             out.append((r["action"], None, None, {"old": c["new"], "new": c["old"]}))
-    moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"])
+    moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"],  # (trash making room goes first)
+                       freed=[s for a, s, _, _ in out if a == "trash"])
+    # a place a move empties first (restores come after moves) is free for a restore
+    vacated = {os.path.normcase(m["src"]) for m in moves} - {os.path.normcase(m["dst"]) for m in moves}
     others = []
     taken = {}
     for a, s, d, before in out:
@@ -645,7 +675,9 @@ def inverse(db, op_id: int) -> list[dict]:
             others.append({"action": "trash", "src": s, "dst": None})
         elif a == "restore":
             folder = os.path.dirname(d)
-            name = free_name(folder, os.path.basename(d), taken.setdefault(folder, set()))
+            mine = taken.setdefault(folder, set())
+            free = os.path.normcase(d) in vacated and os.path.basename(d) not in mine
+            name = os.path.basename(d) if free else free_name(folder, os.path.basename(d), mine)
             taken[folder].add(name)
             others.append({"action": "restore", "src": s, "dst": os.path.join(folder, name), "before": before})
         elif a == "meta":
