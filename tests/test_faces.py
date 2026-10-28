@@ -70,6 +70,34 @@ def test_naming_a_group_recognizes_the_rest_and_undo_takes_it_all_back(db):
     assert all(names(db)[f] == "Ann" for f in ann)
 
 
+def test_look_alikes_in_a_group_sit_together(db):
+    """Two people who look alike end up in one group (siblings, say). Their faces used to come in
+    order of clearness, mixed together; now each one's faces come together, the clearest face first."""
+    rng = np.random.default_rng(5)
+
+    def sibling(n):
+        v = np.zeros(128, np.float32)
+        v[0], v[n] = 1, 1  # alike enough to be grouped, not to be the same person
+        return unit(v + rng.normal(0, 0.1 / np.sqrt(128), 128))
+
+    who = [1, 2] * 5
+    for i, n in enumerate(who):
+        pid = db.execute("INSERT INTO photos (path, qhash, taken) VALUES (?, ?, '2020-01-01 00:00:00')",
+                         (f"/s/{i}.jpg", f"s{i}")).lastrowid
+        db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, ?, ?, .99, ?)",
+                   (pid, .3 - i * .01, .3 - i * .01, to_blob(sibling(n))))
+    db.commit()
+    (group,) = people.who_groups(db)
+    first = [who[f["photo_id"] - 1] for f in group]
+    assert first == [1] * 5 + [2] * 5
+    assert group[0]["photo_id"] == 1  # the clearest
+
+    # Most like ticked: the ticked first, then the ones most like them
+    ticked = [f for f in group if who[f["photo_id"] - 1] == 2][:1]
+    order = people.by_likeness(group, ticked)
+    assert order[0] is ticked[0] and [who[f["photo_id"] - 1] for f in order[1:5]] == [2] * 4
+
+
 def test_naming_someone_known_adds_to_them(db):
     a = add_faces(db, [1, 1], seed=1)
     do(db, people.plan_name(db, a[:1], "Ann"))

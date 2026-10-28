@@ -11,7 +11,7 @@ from test_faces import look
 from photofind.core.db import to_blob
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6 import QtWidgets  # noqa: E402
+from PySide6 import QtCore, QtWidgets  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -72,6 +72,29 @@ def settle(app, window):
     wait_until(app, lambda: not window.ops.busy)
     for _ in range(20):
         app.processEvents()
+
+
+def test_most_like_ticked_brings_their_look_alikes_to_the_front(app):
+    from photofind.ui import workers
+    from photofind.ui.views.faces import WhoView
+
+    rng = np.random.default_rng(1)
+    who = [1, 2, 1, 2, 1, 2]
+    group = [{"id": i, "path": f"/x/{i}.jpg", "emb": look(n, rng)} for i, n in enumerate(who)]
+    real, workers.run = workers.run, lambda *a, **k: None  # (no pictures to make)
+    try:
+        v = WhoView()
+        v.set_groups([group], [])
+        assert not v.sort_button.isEnabled()  # nothing ticked
+        v.grid.item(1).setSelected(True)
+        assert v.sort_button.isEnabled()
+        v.sort_button.click()
+        ids = [f["id"] for f in v.grid.faces]
+        assert ids[0] == 1 and set(ids[1:3]) == {3, 5} and set(ids[3:]) == {0, 2, 4}
+        assert [f["id"] for f in v.grid.selected_faces()] == [1]  # still ticked
+        assert v.grid.item(0).data(QtCore.Qt.ItemDataRole.UserRole) == 1
+    finally:
+        workers.run = real
 
 
 def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
