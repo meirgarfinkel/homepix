@@ -303,6 +303,8 @@ class MainWindow(QMainWindow):
         self.naming = PeopleActions(self)
         self.organizer = Organizer(self)
         self.dedupe = Dedupe(self)
+        self._copies_jobs = workers.Latest()  # comparing: only the group asked for last is shown
+        self._copies_coming = None  # the ids of that group, until it's shown
         self._build_toolbar()
         self._build_file_actions()
         self._build_menus()
@@ -1176,6 +1178,7 @@ class MainWindow(QMainWindow):
     def compare_copies(self, ids, index):
         """A duplicate's copies, large: the arrows go from one to the next, K keeps the one shown."""
         def done(items, err):
+            self._copies_coming = None
             if err is None and items:
                 at = [it.id for it in items]
                 first = ids[index] if ids[index] in at else at[0]
@@ -1186,11 +1189,14 @@ class MainWindow(QMainWindow):
                 self.viewer.show_items(items, at.index(first))
                 self._show(self.viewer)
                 self.viewer.setFocus()
-        workers.run(load_copies, done, ids)
+        self._copies_coming = ids
+        self._copies_jobs.run(load_copies, done, ids)
 
     def _compare_other(self, i, step):
-        """Comparing: on to the next group of duplicates (or back to the one before), still large."""
-        ids = self.dupes.other_group(self.viewer.items[i].id, step)
+        """Comparing: on to the next group of duplicates (or back to the one before), still large. With
+        the key held down, each step goes on from the group still loading, not the one on screen."""
+        here = self._copies_coming[0] if self._copies_coming else self.viewer.items[i].id
+        ids = self.dupes.other_group(here, step)
         if ids is None:
             self.statusBar().showMessage("That was the last group of duplicates." if step > 0
                                          else "That's the first group of duplicates.", 3000)
