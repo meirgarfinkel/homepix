@@ -299,6 +299,7 @@ def test_comparing_a_groups_copies_large(home, lib, planted):
         wait_until(app, lambda: w.stack.currentWidget() is v and len(v.items) == 2)
         assert [it.id for it in v.items] == order and v.index == 0
         assert v.compare[0](0)[0] == "Copy 1 of 2 · ✓ Keep"
+        assert v.compare[0](0)[1].startswith(f"Duplicates {row + 1} of 5 · ")
 
         def key(k):
             app.sendEvent(v, QKeyEvent(QKeyEvent.Type.KeyPress, k, Qt.KeyboardModifier.NoModifier))
@@ -312,6 +313,14 @@ def test_comparing_a_groups_copies_large(home, lib, planted):
         key(Qt.Key.Key_K)
         assert g.keeper.id == order[1] and v.compare[0](1)[0] == "Copy 2 of 2 · ✓ Keep"
         assert [c.id for c in w.dupes.list.shown(g)] == order  # nothing moved on the page
+        key(Qt.Key.Key_Down)  # the next group, still large
+        assert row + 1 < len(w.dupes.groups)  # (b isn't the last group)
+        nxt = w.dupes.groups[row + 1]
+        wait_until(app, lambda: [it.id for it in v.items] == [c.id for c in w.dupes.list.shown(nxt)])
+        assert w.stack.currentWidget() is v and v.index == 0
+        assert w.dupes.list.currentIndex().row() == row + 1
+        key(Qt.Key.Key_Up)
+        wait_until(app, lambda: [it.id for it in v.items] == order)
         key(Qt.Key.Key_Escape)
         wait_until(app, lambda: w.stack.currentWidget() is w.dupes)
         assert v.compare is None

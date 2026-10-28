@@ -304,7 +304,23 @@ class DuplicatesView(QWidget):
         c = shown[i]
         kept = "✓ Keep" if c.id == g.keeper.id else ("Same file" if g.how == "exact" else "Extra copy")
         size = f"{c.width:,} × {c.height:,} · " if c.width else ""
-        return f"Copy {i + 1} of {len(shown)} · {kept}", f"{size}{human_size(c.size)} · {relative(c.path, self.list.library)}"
+        n = self.groups.index(g)
+        return (f"Copy {i + 1} of {len(shown)} · {kept}",
+                f"Duplicates {n + 1} of {len(self.groups)} · {size}{human_size(c.size)} · "
+                f"{relative(c.path, self.list.library)}")
+
+    def other_group(self, photo_id, step: int):
+        """The group step after (or before) this photo's: its copies' ids as shown, or None at either end.
+        It's made the current row on the page, so going back lands on it."""
+        g = self._group_of(photo_id)
+        row = (self.groups.index(g) if g is not None else -1) + step
+        if not 0 <= row < len(self.groups):
+            return None
+        index = self.list.model().index(row, 0)
+        self.list.selectionModel().clearSelection()
+        self.list.setCurrentIndex(index)
+        self.list.scrollTo(index)
+        return [c.id for c in self.list.shown(self.groups[row])]
 
     def keep_photo(self, photo_id):
         """Keep this copy of its group (from the viewer)."""
@@ -322,7 +338,7 @@ class DuplicatesView(QWidget):
                                f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}")
         hint = ("The copy with the ring is kept (the one with the most pixels, then the biggest file); the "
                 "dimmed ones are the extras. Click a copy to keep it instead. Double-click to compare them large "
-                "(← → to switch, K to keep). "
+                "(← → to switch, ↑ ↓ for other duplicates, K to keep). "
                 "Select groups (Ctrl-click the space beside them) to act on just those.")
         if self.pending:
             hint = (f"Still looking at {self.pending:,} photos (after indexing): more may turn up. " + hint)

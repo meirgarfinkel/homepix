@@ -62,8 +62,9 @@ class Viewer(QWidget):
         self.show_faces = False
         self.faces = []  # the faces in the photo shown, when show_faces
         self._faces_of = None  # whose: the photo's id
-        # comparing the copies of a duplicate: (describe(index) -> (title, detail), keep(index)). The
-        # arrows go round them, and zoom stays at the same size on screen from one to the next.
+        # comparing the copies of a duplicate: (describe(index) -> (title, detail), keep(index),
+        # other_group(index, +1 or -1)). Left and right go round the copies, and zoom stays at the same
+        # size on screen from one to the next; up and down go to the group before or after.
         self.compare = None
         self._carry_width = None  # (comparing) the zoomed width to show the next copy at
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -228,7 +229,7 @@ class Viewer(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         big, small = theme.font(15, QFont.Weight.Bold), theme.font(12)
         fm_big, fm_small = QFontMetrics(big), QFontMetrics(small)
-        w = max(fm_big.horizontalAdvance(title), fm_small.horizontalAdvance(detail)) + 32
+        w = max(fm_big.horizontalAdvance(title), fm_small.horizontalAdvance(detail)) + 48
         h = fm_big.height() + fm_small.height() + 22
         box = QRectF(20, 20, min(w, self.width() - 40), h)
         p.setPen(Qt.PenStyle.NoPen)
@@ -241,8 +242,8 @@ class Viewer(QWidget):
         p.setPen(QColor(255, 255, 255, 200))
         p.setFont(small)
         p.drawText(box.adjusted(16, 12 + fm_big.height(), -16, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-                   fm_small.elidedText(detail, Qt.TextElideMode.ElideMiddle, int(box.width()) - 32))
-        keys = "← →  switch copies   ·   K  keep this one   ·   Esc  back"
+                   fm_small.elidedText(detail, Qt.TextElideMode.ElideLeft, int(box.width()) - 28))
+        keys = "← →  switch copies   ·   ↑ ↓  other duplicates   ·   K  keep this one   ·   Esc  back"
         kw = fm_small.horizontalAdvance(keys) + 32
         bar = QRectF((self.width() - kw) / 2, self.height() - fm_small.height() - 40, kw, fm_small.height() + 16)
         p.setPen(Qt.PenStyle.NoPen)
@@ -391,6 +392,8 @@ class Viewer(QWidget):
                 self.window().showNormal()
             else:
                 self.closed.emit()
+        elif key in (Qt.Key.Key_Up, Qt.Key.Key_Down) and self.compare is not None:
+            self.compare[2](self.index, 1 if key == Qt.Key.Key_Down else -1)
         elif key == Qt.Key.Key_K and self.compare is not None:
             self.compare[1](self.index)
             self.update()
