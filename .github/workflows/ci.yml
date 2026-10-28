@@ -44,6 +44,7 @@ jobs:
 
   test-windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -57,9 +58,9 @@ jobs:
           key: exiftool-windows-${{ hashFiles('packaging/bundle_exiftool.ps1') }}
       - name: Install
         run: |
-          pip install -r requirements.txt pytest
+          pip install -r requirements.txt pytest pytest-timeout
           powershell -ExecutionPolicy Bypass -File packaging\bundle_exiftool.ps1 build\exiftool
       - name: Tests
         run: |
           $env:PHOTOFIND_EXIFTOOL_DIR = "$PWD\build\exiftool"
-          pytest -q
+          pytest -v --timeout 120
