@@ -105,8 +105,14 @@ fetch "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256" "$TOOL"
 fetch "$RUNTIME_URL" "$RUNTIME_SHA256" "$RUNTIME"
 chmod +x "$TOOL"
 OUT="${PHOTOFIND_OUT:-$ROOT}/PhotoFinder-$ARCH.AppImage"
-# --appimage-extract-and-run lets the tool work even where FUSE isn't installed
-ARCH="$ARCH" "$TOOL" --appimage-extract-and-run --no-appstream --runtime-file "$RUNTIME" "$APPDIR" "$OUT" >/dev/null 2>&1
+# --appimage-extract-and-run lets the tool work even where FUSE isn't installed. It writes beside
+# the old file and then swaps it in, which works even while the old one is running.
+if ! ARCH="$ARCH" "$TOOL" --appimage-extract-and-run --no-appstream --runtime-file "$RUNTIME" "$APPDIR" \
+    "$OUT.new" > "$BUILD/appimagetool.log" 2>&1; then
+  cat "$BUILD/appimagetool.log"
+  exit 1
+fi
+mv -f "$OUT.new" "$OUT"
 
 echo
 echo "Done: $OUT ($(du -h "$OUT" | cut -f1))"
