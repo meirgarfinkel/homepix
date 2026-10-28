@@ -77,6 +77,8 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
 - **By hand** (Actions tab > **Build Photo Finder** > **Run workflow**): the same. After 15–25 minutes, download **PhotoFinder-Linux** and **PhotoFinder-Windows** under **Artifacts**.
 - **A version tag** such as `v0.2.0` does everything and publishes a GitHub Release with both files.
 
+A pull request merges itself (`.github/workflows/automerge.yml`) once CI and, when they ran, the builds have all passed. To hold one back, make it a draft or give it the label `no-automerge`.
+
 ---
 
 ## Releasing an update

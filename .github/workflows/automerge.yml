@@ -1,0 +1,57 @@
+# Merges a pull request by itself once everything on it has passed: CI, and the builds when they
+# ran. (GitHub's own auto-merge needs branch rules, which private repos only get on a paid plan.)
+# To hold a pull request back, mark it as a draft or give it the label "no-automerge".
+#
+# It looks again whenever CI or the builds finish, and when a pull request is opened or marked
+# ready, so it merges after whichever finishes last.
+name: Auto-merge
+
+on:
+  workflow_run:
+    workflows: ["CI", "Build Photo Finder"]
+    types: [completed]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, ready_for_review, unlabeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  actions: read
+
+concurrency:
+  group: automerge-${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Merge if everything passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          pr=$(gh pr list --repo "$REPO" --state open --base main --json number,headRefOid,isDraft,labels \
+            --jq "[.[] | select(.headRefOid == \"$SHA\" and (.isDraft | not)
+                   and ([.labels[].name] | index(\"no-automerge\") | not))][0].number // empty")
+          if [ -z "$pr" ]; then echo "No open, ready pull request at $SHA."; exit 0; fi
+
+          ci=$(gh run list --repo "$REPO" --commit "$SHA" --workflow CI --json status,conclusion \
+            --jq '.[0] | "\(.status) \(.conclusion)"')
+          if [ "$ci" != "completed success" ]; then echo "CI isn't done and green yet ($ci)."; exit 0; fi
+
+          # every other check on that commit: none still running, none failed
+          gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \
+            --jq '.check_runs[] | select(.name != "automerge") | "\(.status) \(.conclusion) \(.name)"' > checks
+          cat checks
+          if grep -v '^completed \(success\|skipped\|neutral\) ' checks; then
+            echo "Some checks are still running or didn't pass (above)."; exit 0
+          fi
+
+          echo "Everything passed: merging #$pr."
+          gh pr merge "$pr" --repo "$REPO" --squash --match-head-commit "$SHA" \
+            || [ "$(gh pr view "$pr" --repo "$REPO" --json state --jq .state)" = MERGED ]
