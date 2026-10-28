@@ -101,7 +101,6 @@ def test_what_is_already_in_order_is_left_alone(home, lib):
     shot(lib / "2020" / "2020_01_02_03_04_05_3.jpg", "2020:01:02 03:04:05")  # its number is kept
     shot(lib / "2020" / "Trip" / "2020_06_07_08_09_10.jpg", "2020:06:07 08:09:10")  # a year's own folder
     shot(lib / "Unsorted" / "old" / "scan.jpg")
-    shot(lib / "Duplicates" / "IMG_9.jpg", "2020:01:02 03:04:05")  # the duplicates' business
     before = files(lib)
     p = plan(home, lib)
     assert p.changes == [] and p.looked_at == 4

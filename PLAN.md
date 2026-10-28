@@ -24,7 +24,7 @@ photofind/
     metadata.py         exiftool (one long-running process): read all, write date/description/
                         keywords/GPS/orientation, old values journaled
     organize.py         plan / preview / apply via fileops (both modes)
-    dedupe.py           exact + near duplicates, keeper rule, adopt Duplicates/ + mapping CSV
+    dedupe.py           exact + near duplicates, keeper rule
   cli.py                the command line, on top of core
   ui/                   PySide6 widgets
     app.py, main_window.py
@@ -206,9 +206,11 @@ the same bytes, 5,034 look the same, 133 by name). Still in the library: 1,668 g
 extra copies, 91% of them a smaller copy with the same camera date (the Sep 2026 pipeline hashed
 photos without turning them upright first, so it missed copies saved turned). Finding them takes
 2 s; working out every photo's look the first time took 15 minutes (it's done after indexing).
-`Duplicates/` stays out of the timeline, person pages and search; the review screen sends extras
-there (named after the copy kept) or to the Trash after a preview, and "not duplicates" is
-remembered; all of it is undoable. The info panel doesn't say what a file in `Duplicates/` copies yet.
+The review screen sends extras to the Trash after a preview, "not duplicates" is remembered, and
+a group can be skipped for later; all of it is undoable. Extras never go to a folder of their own.
+Once `Duplicates/` was emptied (Oct 2026: its files moved back into the library, to be found again
+as ordinary duplicates), the code that adopted it was removed: the In Duplicates/ tab, hiding it
+from the timeline and search, organizing leaving it alone, and reading `duplicate_mapping.csv`.
 
 ### M9 — Scene labels and filters
 - Zero-shot labels: screenshots, documents, receipts, food, beach…

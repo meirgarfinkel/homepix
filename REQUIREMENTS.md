@@ -100,8 +100,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Exact duplicates (byte-identical), photos and videos | v1 |
 | Near duplicates (resized/recompressed): perceptual hash, cross-checked with search-model similarity; bursts never touched | v1 |
 | Keeper: highest resolution, then larger file; manual override | v1 |
-| Review screen: side-by-side groups; send extras to `Duplicates/` or the Trash in bulk, with a preview; never automatic | v1 |
-| Adopt the existing `Duplicates/` folder and `duplicate_mapping.csv`; known duplicates stay out of search and the timeline | v1 |
+| Review screen: side-by-side groups; send extras to the Trash in bulk, with a preview, or skip a group for later; never automatic, and never a `Duplicates/` folder | v1 |
 
 ## Not planned
 

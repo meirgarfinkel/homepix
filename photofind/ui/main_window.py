@@ -32,6 +32,7 @@ from ..core import (
     add_folder,
     data_dir,
     excluded_folders,
+    left_out,
     library_folders,
     load_settings,
     named_people,
@@ -42,7 +43,6 @@ from ..core import (
 )
 from ..core import fileops as files
 from ..core import people as known_people
-from ..core.duplicates import set_aside
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
 from . import desktop, theme, workers
 from . import portable as portable_ui
@@ -80,12 +80,12 @@ def load_library(place):
     whether there are unnamed faces to ask about)."""
     db = open_db()
     try:
-        library, excluded = library_folders(), excluded_folders()
-        items = (load_items(db, folder=_folder(place), person=person_of(place), library=library, excluded=excluded)
+        excluded = excluded_folders()
+        items = (load_items(db, folder=_folder(place), person=person_of(place), excluded=excluded)
                  if shows_photos(place) else [])
         counts = folder_counts(db)
         unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
-        total = sum(n for f, n in counts.items() if not set_aside(f, library, excluded))
+        total = sum(n for f, n in counts.items() if not left_out(f, excluded))
         return group_by_month(items), counts, total, named_people(db), bool(unnamed)
     finally:
         db.close()
@@ -332,8 +332,6 @@ class MainWindow(QMainWindow):
         self.dupes.trash_extras.connect(self.dedupe.trash_extras)
         self.dupes.deciding.connect(self.dedupe.recount)
         self.dupes.apart.connect(self.dedupe.apart)
-        self.dupes.aside_trash.connect(self.dedupe.aside_trash)
-        self.dupes.put_back.connect(self.dedupe.put_back)
         self.dupes.compared.connect(self.compare_copies)
         self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
         self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is it?"))
@@ -825,7 +823,7 @@ class MainWindow(QMainWindow):
         excluded = excluded_folders()
         if path in excluded:
             menu.addAction("Include in library again", lambda: self._exclude(path, False))
-        elif not set_aside(path, [], excluded):  # (not inside one already left out)
+        elif not left_out(path, excluded):  # (not inside one already left out)
             ex = menu.addAction("Exclude from library", lambda: self._exclude(path, True))
             ex.setToolTip("Hide its photos from All photos, people and search. Nothing is deleted, and "
                           "opening the folder still shows them.")

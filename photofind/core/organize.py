@@ -3,9 +3,8 @@ others taken in the same second) and kept in its year's folder (<library>/2022/)
 date (only when it was last changed) goes to <library>/Unsorted/ with its own name.
 
 The date is the one the app shows everywhere (dates.py), so organizing agrees with the timeline. A
-Live Photo's clip and a photo's sidecar files (.aae, .xmp, .json) are named and moved with it. Files
-in Duplicates/ are left alone, and so are a year folder's own subfolders (a file in 2022/Trip/ from
-2022 stays there). Nothing is done here: plan() works out the moves, which fileops.run() makes, and
+Live Photo's clip and a photo's sidecar files (.aae, .xmp, .json) are named and moved with it. A year
+folder's own subfolders are left alone (a file in 2022/Trip/ from 2022 stays there). Nothing is done here: plan() works out the moves, which fileops.run() makes, and
 which can be undone like any other.
 """
 
@@ -17,7 +16,6 @@ from . import dates
 from .fileops import companions
 
 UNSORTED = "Unsorted"
-LEFT_ALONE = ("Duplicates",)  # the duplicates (M8) are named after the photos they duplicate
 SIDECAR_EXTS = (".aae", ".xmp", ".json")
 
 
@@ -130,7 +128,7 @@ def plan(db, folders, scope=None) -> Plan:
     files, not_ready = [], 0
     for r in rows:
         root = root_of(r["path"], roots)
-        if root is None or any(_under(r["path"], os.path.join(root, d)) for d in LEFT_ALONE):
+        if root is None:
             continue
         if r["error"] is not None:
             continue  # unreadable: left as it is

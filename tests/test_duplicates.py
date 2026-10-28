@@ -1,14 +1,13 @@
 """M8: duplicates. A test library with planted copies (exact, resized, saved again, converted, a video)
-and bursts of different shots: every copy is found, no burst is, and setting extras aside (or saying
-they aren't duplicates) is undoable. Duplicates/ is adopted: its files are known copies, kept out of
-the timeline and search."""
+and bursts of different shots: every copy is found, no burst is, and moving extras to the Trash (or
+saying they aren't duplicates) is undoable."""
 
 import os
 import shutil
 
 import numpy as np
 import pytest
-from conftest import own_trash, rel
+from conftest import own_trash
 from PIL import Image, ImageDraw
 
 from photofind.core.util import quick_hash
@@ -91,7 +90,7 @@ def planted(home, lib):
 
 def groups_of(home, lib):
     _, db, _, duplicates = home
-    return duplicates.find(db, [lib])
+    return duplicates.find(db)
 
 
 def as_names(groups, planted):
@@ -161,175 +160,6 @@ def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
     assert ["d", "d png"] in as_names(groups_of(home, lib), planted)
 
 
-# --- adopting what the old pipeline set aside --------------------------------------------------------
-
-def test_the_duplicates_folder_is_known_and_out_of_the_timeline_and_search(home, lib):
-    pf, db, _, duplicates = home
-    keeper = save(scene(1), lib / "2020" / "2020_01_01_10_00_00.jpg", "2020:01:01 10:00:00")
-    shutil.copy2(keeper, lib / "2020" / "x.tmp")
-    save(scene(2), lib / "2021" / "2021_02_02_10_00_00.jpg", "2021:02:02 10:00:00")
-    save(scene(3), lib / "2022" / "2022_03_03_10_00_00.png")
-    (lib / "Duplicates").mkdir()
-    os.rename(lib / "2020" / "x.tmp", lib / "Duplicates" / "2020_01_01_10_00_00.jpg")  # an exact copy
-    save(scene(2).resize((320, 240)), lib / "Duplicates" / "IMG_4.jpg")  # a smaller one
-    save(scene(32), lib / "Duplicates" / "2022_03_03_10_00_00_1.jpg")  # named after its keeper (edited since)
-    save(scene(30), lib / "Duplicates" / "BSEA6346.jpg")  # the csv knows its keeper (renamed since)
-    save(scene(31), lib / "2016" / "2016_01_01_00_00_00.jpg")
-    (lib / "duplicate_mapping.csv").write_text(
-        "kept_original_path,duplicate_original_path,duplicate_current_path_in_Duplicates\n"
-        "2016/2016_01_01_00_00_00.jpg,Unsorted/BSEA6346.jpg,Duplicates/BSEA6346.jpg\n")
-    pf.index_folder(lib, want_faces=False)
-    known = duplicates.known(db, [lib])
-    path = {r[0]: r[1] for r in db.execute("SELECT id, path FROM photos")}
-    got = {os.path.basename(path[d]): (rel(path[k], lib), how) for d, (k, how) in known.items()}
-    assert got == {"2020_01_01_10_00_00.jpg": ("2020/2020_01_01_10_00_00.jpg", "exact"),
-                   "IMG_4.jpg": ("2021/2021_02_02_10_00_00.jpg", "near"),
-                   "2022_03_03_10_00_00_1.jpg": ("2022/2022_03_03_10_00_00.png", "name"),
-                   "BSEA6346.jpg": ("2016/2016_01_01_00_00_00.jpg", "mapping")}
-    assert duplicates.find(db, [lib]) == []  # set aside already: nothing to review
-
-    from photofind.core.timeline import load_items
-
-    shown = {os.path.relpath(it.path, lib) for it in load_items(db, library=[lib])}
-    assert not any(p.startswith("Duplicates") for p in shown) and len(shown) == 4
-    assert len(load_items(db, folder=lib / "Duplicates", library=[lib])) == 4  # it can still be opened
-    assert len(load_items(db, folder=lib, library=[lib])) == 4
-
-    from photofind.core.search import SearchIndex
-
-    index = SearchIndex()
-    index.text_model = lambda: type("T", (), {"query": staticmethod(lambda q: np.ones(512, np.float32))})()
-    assert index.search("anything")["total"] == 4
-    assert index.search("anything", folder=str(lib / "Duplicates"))["total"] == 4
-
-
-@pytest.fixture
-def set_aside(home, lib):
-    """A library with Duplicates/ from before: two copies of a (one exact), a smaller one of b, and one
-    whose photo isn't in the library at all."""
-    pf, _, _, _ = home
-    p = {"a": save(scene(1), lib / "2020" / "2020_01_01_10_00_00.jpg", "2020:01:01 10:00:00"),
-         "b": save(scene(2), lib / "2021" / "2021_02_02_10_00_00.jpg", "2021:02:02 10:00:00")}
-    p["a exact"] = lib / "Duplicates" / "2020_01_01_10_00_00.jpg"
-    p["a exact"].parent.mkdir()
-    shutil.copy2(p["a"], p["a exact"])
-    p["a small"] = save(scene(1).resize((320, 240)), lib / "Duplicates" / "IMG_9.jpg")
-    p["b small"] = save(scene(2).resize((320, 240)), lib / "Duplicates" / "IMG_4.jpg")
-    p["lone"] = save(scene(40), lib / "Duplicates" / "BSEA6346.jpg", "2018:05:05 10:00:00")
-    pf.index_folder(lib, want_faces=False)
-    return p
-
-
-def aside_names(groups, planted):
-    back = {str(v): k for k, v in planted.items()}
-    return [[back[c.path] for c in g.copies] for g in groups]
-
-
-def test_what_duplicates_holds_is_shown_beside_the_photos_in_the_library(home, lib, set_aside):
-    _, db, _, duplicates = home
-    groups = duplicates.aside_groups(db, [lib])
-    assert aside_names(groups, set_aside) == [["b", "b small"], ["a", "a exact", "a small"], ["lone"]]
-    assert [g.how for g in groups] == ["near", "near", "alone"]
-    a = groups[1]
-    assert {set_aside_name(c, set_aside): a.marks[c.id] for c in a.extras} == {"a exact": "exact", "a small": "near"}
-
-
-def set_aside_name(c, planted):
-    return {str(v): k for k, v in planted.items()}[c.path]
-
-
-def test_the_copies_set_aside_go_to_the_trash_and_the_lone_one_stays(home, lib, set_aside):
-    _, db, fo, duplicates = home
-    before = sorted(rel(p, lib) for p in lib.rglob("*") if p.is_file())
-    steps = duplicates.plan_aside_trash(db, duplicates.aside_groups(db, [lib]), [lib])
-    assert sorted(rel(s["src"], lib) for s in steps) == [
-        "Duplicates/2020_01_01_10_00_00.jpg", "Duplicates/IMG_4.jpg", "Duplicates/IMG_9.jpg"]
-    fo.run(db, "trash", "Duplicates to Trash", steps)
-    assert sorted(os.listdir(lib / "Duplicates")) == ["BSEA6346.jpg"]
-    assert set_aside["a"].exists() and set_aside["b"].exists()
-    fo.undo(db)
-    assert sorted(rel(p, lib) for p in lib.rglob("*") if p.is_file()) == before
-
-
-def test_keeping_the_copy_set_aside_puts_it_in_the_photos_place(home, lib, set_aside):
-    _, db, fo, duplicates = home
-    small = set_aside["b small"].read_bytes()
-    groups = duplicates.aside_groups(db, [lib])
-    b = next(g for g in groups if aside_names([g], set_aside)[0][0] == "b")
-    b.keep(next(c.id for c in b.copies if c.path == str(set_aside["b small"])))
-    fo.run(db, "trash", "Duplicates to Trash", duplicates.plan_aside_trash(db, [b], [lib]))
-    assert set_aside["b"].read_bytes() == small  # in its place, by its name
-    assert not set_aside["b small"].exists()
-    fo.undo(db)
-    assert set_aside["b small"].read_bytes() == small and set_aside["b"].read_bytes() != small
-    fo.redo(db)
-    assert set_aside["b"].read_bytes() == small and not set_aside["b small"].exists()
-    assert sorted(os.listdir(lib / "2021")) == ["2021_02_02_10_00_00.jpg"]
-
-
-def test_putting_one_back_names_it_into_its_years_folder(home, lib, set_aside):
-    _, db, fo, duplicates = home
-    lone = [g for g in duplicates.aside_groups(db, [lib]) if g.how == "alone"]
-    steps = duplicates.plan_put_back(db, lone, [lib])
-    assert [(rel(s["src"], lib), rel(s["dst"], lib)) for s in steps] == [
-        ("Duplicates/BSEA6346.jpg", "2018/2018_05_05_10_00_00.jpg")]
-    fo.run(db, "move", "Put back", steps)
-    assert (lib / "2018" / "2018_05_05_10_00_00.jpg").exists()
-    assert [g.how for g in duplicates.aside_groups(db, [lib])] == ["near", "near"]
-    fo.undo(db)
-    assert set_aside["lone"].exists()
-
-
-def test_going_through_duplicates_in_the_window(home, lib, set_aside, monkeypatch):
-    from test_faces_ui import app as _app
-    from test_faces_ui import wait_until
-
-    from photofind.ui.main_window import MainWindow
-    from photofind.ui.views import changes_dialog
-    from photofind.ui.views.duplicates import ASIDE
-    from photofind.ui.views.sidebar import DUPES
-
-    app = _app.__wrapped__()
-    shown = []
-
-    def exec_(dlg):
-        model = dlg.table.model()
-        shown.append([(model.data(model.index(r, 0)), model.data(model.index(r, 1))) for r in range(model.rowCount())])
-        return 1
-
-    monkeypatch.setattr(changes_dialog.ChangesDialog, "exec", exec_)
-    small = set_aside["b small"].read_bytes()
-    w = MainWindow(index=False)
-    w.show()
-    wait_until(app, lambda: w.loaded)
-    v = w.dupes
-    try:
-        w.show_place(DUPES)
-        v.tabs.setCurrentIndex(ASIDE)
-        wait_until(app, lambda: len(v.groups) == 3)
-        assert v.tabs.tabText(ASIDE) == "In Duplicates/ (4)"
-        assert v.title.text() == "4 files in Duplicates/, 1 with no copy in the library"
-        assert v.aside_trash_button.isVisible() and not v.trash_button.isVisible()
-        assert v.copy_info(v.groups[2].keeper.id)[0] == "Copy 1 of 1 · No copy in the library"
-        b = next(i for i, g in enumerate(v.groups) if g.keeper.path == str(set_aside["b"]))
-        v._keep(b, 1)  # the copy in Duplicates/ instead
-        v.aside_trash_button.click()
-        wait_until(app, lambda: not w.ops.busy and sorted(os.listdir(lib / "Duplicates")) == ["BSEA6346.jpg"])
-        assert ("Duplicates/IMG_4.jpg", "2021/2021_02_02_10_00_00.jpg") in [(a.replace(os.sep, "/"), b.replace(os.sep, "/")) for a, b in shown[0]]
-        assert set_aside["b"].read_bytes() == small
-        wait_until(app, lambda: [g.how for g in v.groups] == ["alone"])
-        v.put_back_button.click()
-        wait_until(app, lambda: not w.ops.busy and (lib / "2018" / "2018_05_05_10_00_00.jpg").exists())
-        wait_until(app, lambda: v.groups == [])
-        w.ops.undo()
-        wait_until(app, lambda: not w.ops.busy and set_aside["lone"].exists())
-        w.ops.undo()
-        wait_until(app, lambda: not w.ops.busy and len(os.listdir(lib / "Duplicates")) == 4)
-        wait_until(app, lambda: len(v.groups) == 3)
-    finally:
-        w.close()
-
-
 def test_the_command_line_reports(home, lib, planted, capsys):
     from types import SimpleNamespace
 
@@ -337,7 +167,7 @@ def test_the_command_line_reports(home, lib, planted, capsys):
 
     cli.cmd_duplicates(SimpleNamespace(show=10))
     out = capsys.readouterr().out
-    assert "Set aside in Duplicates/: 0" in out and "5 groups, 5 extra copies" in out
+    assert "Duplicates: 5 groups, 5 extra copies" in out
 
 
 # --- in the app ----------------------------------------------------------------------------------
@@ -477,7 +307,7 @@ def test_a_raw_file_and_its_jpeg_are_not_duplicates(home, lib):
     os.rename(dng, lib / "2023" / "2023_01_02_03_04_05.dng")  # (its preview is what's read)
     pf.index_folder(lib, want_faces=False)
     assert db.execute("SELECT COUNT(*) FROM photos WHERE phash IS NOT NULL").fetchone()[0] == 2
-    assert duplicates.find(db, [lib]) == []
+    assert duplicates.find(db) == []
 
 
 def test_a_burst_in_one_second_with_smaller_copies_of_each_shot(home, lib):
@@ -490,7 +320,7 @@ def test_a_burst_in_one_second_with_smaller_copies_of_each_shot(home, lib):
              quality=95 - 3 * i)
         save(big.resize((400, 300)), lib / "2023" / f"small_{i}.jpg", "2023:02:26 15:35:26")
     pf.index_folder(lib, want_faces=False)
-    groups = duplicates.find(db, [lib])
+    groups = duplicates.find(db)
     pairs = sorted((os.path.basename(g.keeper.path), [os.path.basename(c.path) for c in g.extras]) for g in groups)
     assert all(len(extras) == 1 for _, extras in pairs)
     for keeper, (extra,) in pairs:
@@ -504,4 +334,4 @@ def test_a_series_without_dates_is_not_duplicates(home, lib):
     for i in range(5):
         save(scene(60, shift=i), lib / "2024" / f"2024_01_01_00_00_00_{i}.jpg")
     pf.index_folder(lib, want_faces=False)
-    assert duplicates.find(db, [lib]) == []
+    assert duplicates.find(db) == []

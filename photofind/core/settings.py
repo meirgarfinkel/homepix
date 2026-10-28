@@ -41,6 +41,21 @@ def excluded_folders() -> list[str]:
     return list(load_settings().get("excluded", []))
 
 
+def left_out(path, excluded) -> bool:
+    """Is path one of the folders excluded, or inside one?"""
+    path = os.path.abspath(path)
+    return any(path == d or path.startswith(os.path.join(d, "")) for d in map(os.path.abspath, excluded))
+
+
+def left_out_sql(excluded) -> tuple[str, tuple]:
+    """A WHERE clause (and its parameters) for files not in a folder excluded."""
+    prefixes = [os.path.join(os.path.abspath(f), "") for f in excluded]
+    if not prefixes:
+        return "1=1", ()
+    sql = " AND ".join("substr(path, 1, ?) != ?" for _ in prefixes)
+    return sql, tuple(x for p in prefixes for x in (len(p), p))
+
+
 def set_excluded(path: str, excluded: bool):
     """Leave a folder out (or take it back in). A folder inside one already left out needs nothing
     more; leaving out a folder that holds some already left out replaces them."""

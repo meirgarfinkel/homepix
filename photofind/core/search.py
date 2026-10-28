@@ -7,10 +7,9 @@ import time
 
 import numpy as np
 
-from . import duplicates
 from .config import MATCH_STRICTNESS, MAX_NEAR, NEAR_STRICTNESS
 from .db import open_db
-from .settings import excluded_folders, library_folders
+from .settings import excluded_folders, left_out
 
 
 def split_matches(scores: np.ndarray):
@@ -48,8 +47,8 @@ class SearchIndex:
         self.version = None
         self.built = 0.0
         self.rows, self.ids, self.mat = [], np.zeros(0, np.int64), np.zeros((0, 512), np.float32)
-        self.aside = np.zeros(0, bool)
-        self._aside_for = None  # (library, excluded) that aside was worked out for
+        self.hidden = np.zeros(0, bool)
+        self._hidden_for = None  # the folders excluded that hidden was worked out for
         self._text = None
         self._text_lock = threading.Lock()
 
@@ -66,18 +65,18 @@ class SearchIndex:
                 self.rows = [{"id": r["id"], "path": r["path"], "taken": r["taken"], "qhash": r["qhash"],
                               "kind": r["kind"] or "photo"} for r in rows]
                 self.ids = np.array([r["id"] for r in rows], np.int64)
-                self._aside_for = None
+                self._hidden_for = None
                 if rows:
                     blob = b"".join(r["clip"] for r in rows)
                     self.mat = np.frombuffer(blob, np.float16).reshape(len(rows), -1).astype(np.float32)
                 else:
                     self.mat = np.zeros((0, 512), np.float32)
                 self.version, self.built = version, time.time()
-            # the duplicates set aside and the folders excluded aren't searched
-            hidden = (tuple(library_folders()), tuple(excluded_folders()))
-            if hidden != self._aside_for:
-                self.aside = np.array([duplicates.set_aside(r["path"], *hidden) for r in self.rows], bool)
-                self._aside_for = hidden
+            # the folders excluded aren't searched
+            hidden = tuple(excluded_folders())
+            if hidden != self._hidden_for:
+                self.hidden = np.array([left_out(r["path"], hidden) for r in self.rows], bool)
+                self._hidden_for = hidden
             return self.rows, self.ids, self.mat
 
     def text_model(self):
@@ -98,9 +97,9 @@ class SearchIndex:
         person_id: only photos with that person in them. folder: only photos in it or below it."""
         rows, ids, mat = self.vectors()
         keep = np.ones(len(rows), bool)
-        aside = self.aside
-        if len(aside) == len(rows) and (folder is None or not duplicates.set_aside(folder, *self._aside_for)):
-            keep &= ~aside
+        hidden = self.hidden
+        if len(hidden) == len(rows) and (folder is None or not left_out(folder, self._hidden_for)):
+            keep &= ~hidden
         sel = np.flatnonzero(keep)
         if person_id is not None or folder is not None:
             own = db is None
