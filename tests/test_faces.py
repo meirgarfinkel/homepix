@@ -254,6 +254,61 @@ def test_naming_a_face_someone_else_and_forgetting_keep_the_marks_straight(db):
     assert db.execute("SELECT not_person FROM faces WHERE id=?", (a[3],)).fetchone()[0] == ann
 
 
+def _face(db, v, px=None):
+    """A face with this embedding, in a photo of its own."""
+    n = db.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+    pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/w/{n}.jpg", f"w{n}")).lastrowid
+    return db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, .2, .2, .99, ?, ?)",
+                      (pid, to_blob(unit(v)), px)).lastrowid
+
+
+def _people_and_others(db):
+    """Ann and Bob named; unnamed: someone new (4 faces), 6 that might be Bob, and 3 of Ann too
+    small to be recognized by themselves."""
+    rng = np.random.default_rng(11)
+    e = np.eye(128, dtype=np.float32)
+
+    def some(v, n, px=None):
+        return [_face(db, v + rng.normal(0, .02, 128), px) for _ in range(n)]
+    ann, bob = some(e[1], 3), some(e[2], 3)
+    new, maybe_bob, small_ann = some(e[3], 4), some(e[2] + 1.6 * e[5], 6), some(e[1], 3, px=40)
+    db.commit()
+    do(db, people.plan_name(db, ann, "Ann"))
+    do(db, people.plan_name(db, bob, "Bob"))
+    return new, maybe_bob, small_ann
+
+
+def test_who_is_this_asks_about_new_faces_first(db):
+    new, maybe_bob, small_ann = _people_and_others(db)
+    groups = people.who_groups(db)
+    assert [{f["id"] for f in g} for g in groups] == [set(new), set(maybe_bob), set(small_ann)]
+    assert [(g[0]["tier"], g[0]["like"]) for g in groups] == [
+        (people.NEW, None), (people.MAYBE, "Bob"), (people.KNOWN, "Ann")]
+
+
+def test_the_faces_that_might_be_someone_just_named(db):
+    new, maybe_bob, small_ann = _people_and_others(db)
+    assert {f["id"] for f in people.follow_up(db, "Ann")} == set(small_ann)  # from any group, never others'
+    got = [f["id"] for f in people.follow_up(db, "Bob")]
+    assert set(got) == set(maybe_bob)
+    assert len(people.follow_up(db, "Bob", limit=4)) == 4
+    assert people.follow_up(db, "Nobody") == []
+
+    # Is this Bob? two are; the rest aren't (still unnamed, free to be anyone else)
+    do(db, people.plan_confirm(db, maybe_bob[:2], maybe_bob[2:], "Bob"))
+    got = names(db)
+    assert [got[f] for f in maybe_bob] == ["Bob"] * 2 + [None] * 4
+    bob = people.person_id(db, "Bob")
+    rows = db.execute(f"SELECT locked, not_person FROM faces WHERE id IN ({','.join(map(str, maybe_bob[2:]))})")
+    assert {tuple(r) for r in rows} == {(0, bob)}
+    assert people.follow_up(db, "Bob") == []  # not asked about as Bob again
+    people.auto_assign(db)
+    assert all(names(db)[f] is None for f in maybe_bob[2:])  # nor recognized as him
+    fileops.undo(db)
+    assert all(names(db)[f] is None for f in maybe_bob)
+    assert db.execute("SELECT COUNT(*) FROM faces WHERE not_person IS NOT NULL").fetchone()[0] == 0
+
+
 def test_moving_wrong_faces_to_someone_else(db):
     a = add_faces(db, [1, 1, 1, 2], seed=1)
     do(db, people.plan_name(db, a, "Ann"))  # one of them is really Bob

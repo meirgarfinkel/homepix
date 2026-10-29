@@ -98,6 +98,53 @@ def test_most_like_ticked_brings_their_look_alikes_to_the_front(app):
         workers.run = real
 
 
+def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
+    from photofind.core.people import KNOWN, NEW
+    from photofind.ui import workers
+    from photofind.ui.views.faces import WhoView
+
+    rng = np.random.default_rng(2)
+
+    def faces(start, n, tier=NEW, like=None):
+        return [{"id": i, "path": f"/x/{i}.jpg", "emb": look(1, rng), "tier": tier, "like": like}
+                for i in range(start, start + n)]
+    new, known = faces(0, 3), faces(10, 3, KNOWN, "Ann")
+    real, workers.run = workers.run, lambda *a, **k: None  # (no pictures to make)
+    try:
+        v = WhoView()
+        named, confirmed = [], []
+        v.named.connect(lambda ids, name: (named.append((ids, name)), v.drop(ids)))  # (as the window does)
+        v.confirmed.connect(lambda yes, no, name: (confirmed.append((yes, no, name)), v.drop(yes + no)))
+        v.set_groups([new, known], ["Ann"])
+        assert "Someone new?" in v.hint.text() and v.rest_button.isHidden()
+        for i in range(2):
+            v.grid.item(i).setSelected(True)
+        v.name.setText("Cy")
+        v.name_button.click()
+        assert named == [([0, 1], "Cy")] and v.waiting_for == "Cy" and v.grid.count() == 0
+
+        v.set_groups([known], ["Ann", "Cy"])  # (worked out before the naming was done: still waiting)
+        assert v.waiting_for == "Cy"
+        maybe = faces(20, 4)
+        v.set_groups([known], ["Ann", "Cy"], maybe)
+        assert v.title.text() == "Is this Cy?" and v.name.text() == "Cy" and v.grid.count() == 4
+        assert not v.rest_button.isHidden() and v.rest_button.text() == "The rest aren't Cy"
+        v.grid.item(0).setSelected(True)
+        v.rest_button.click()
+        assert confirmed == [([20], [21, 22, 23], "Cy")]
+        assert v.follow is None and v.waiting_for is None  # just the once: on to the groups
+        assert v.title.text() == "Who is this?" and "Looks like Ann." in v.hint.text()
+        assert v.name.text() == "Ann"  # a guess, already typed
+        for i in range(3):
+            v.grid.item(i).setSelected(True)
+        v.name_button.click()
+        assert v.waiting_for == "Ann"
+        v.set_groups([], ["Ann", "Cy"], [])  # nothing more like her: no follow-up
+        assert v.follow is None and v.title.text() == "No one to ask about"
+    finally:
+        workers.run = real
+
+
 def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
     from photofind.ui.views.people import WHO_TILE
     from photofind.ui.views.sidebar import PEOPLE
@@ -115,8 +162,10 @@ def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
         window.who.grid.item(i).setSelected(True)
     assert window.who.name_button.text() == "Name 4 faces"
     window.who.name_button.click()
-    assert window.who.grid.count() == 3  # on to the next group at once
+    assert window.who.waiting_for == "Ann"  # looking for faces that might be Ann too...
     settle(app, window)
+    wait_until(app, lambda: window.who.grid.count() == 3)  # none (Bob's are nothing like her): on to the next group
+    assert window.who.follow is None
     assert names(pf) == ["Ann"] * 5 + [None] * 3  # the one left out was recognized, being so alike
     wait_until(app, lambda: window.who.remaining() == 1)
     assert "Ann" in window.people_names.values()
