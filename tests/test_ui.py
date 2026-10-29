@@ -193,6 +193,25 @@ def test_thumbnail_loader_decodes_square_tiles(pf, lib, app):
     loader.stop()
 
 
+def test_tiles_keep_the_thumbnails_fine_detail(pf, lib, app):
+    """Tiles used to be shrunk while decoding (Qt's quick way), which smeared fine detail: 3 px
+    stripes shrunk to a third should be 1 px stripes, and came out up to a quarter wrong."""
+    from PIL import Image
+
+    from homepix.core.thumbs import thumbs_dir
+    from homepix.ui.thumbs import ThumbLoader
+
+    stripes = Image.new("L", (320, 240))
+    stripes.putdata([255 if (x // 3) % 2 else 0 for _ in range(240) for x in range(320)])
+    stripes.convert("RGB").save(thumbs_dir("photos") / "stripes.jpg", quality=100, subsampling=0)
+    tile = ThumbLoader._decode("stripes", "", 80)  # the middle 240 px square -> 80
+    assert (tile.width(), tile.height()) == (80, 80)
+    src = [255 if (x // 3) % 2 else 0 for x in range(320)]
+    want = [sum(src[40 + 3 * x:43 + 3 * x]) / 3 for x in range(80)]  # (the square starts at x=40)
+    off = [abs(tile.pixelColor(x, 40).red() - want[x]) for x in range(4, 76)]
+    assert sum(off) / len(off) < 8
+
+
 def test_exact_copies_share_one_tile_and_the_budget_stays_true(pf, lib, app):
     """Exact copies have the same qhash (a duplicates group shows them side by side). Asked for
     together, they used to be loaded twice and counted twice, so the budget filled with tiles that

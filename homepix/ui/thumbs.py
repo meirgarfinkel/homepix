@@ -2,14 +2,15 @@
 cache with a size budget.
 
 They come from the core's thumbnail files (made while indexing); a missing one is made on the spot.
-Each is decoded straight to the tile size and cropped square, so a tile costs only its own pixels.
+Each is cropped square and shrunk to the tile size, so a tile in memory costs only its own pixels.
 """
 
 import threading
 from collections import OrderedDict
 
-from PySide6.QtCore import QObject, QRect, QSize, Signal
-from PySide6.QtGui import QImage, QImageReader
+from PIL import Image
+from PySide6.QtCore import QObject, Signal
+from PySide6.QtGui import QImage
 
 from ..core import photo_thumb
 from ..core.thumbs import thumbs_dir
@@ -117,16 +118,19 @@ class ThumbLoader(QObject):
 
     @staticmethod
     def _decode(qhash: str, path: str, size: int):
+        """The thumbnail file, cropped square from its middle and shrunk with Lanczos: Qt's
+        shrink-while-decoding is quicker but loses much of the detail (a 170 px tile kept about 70%)."""
         file = thumbs_dir("photos") / f"{qhash}.jpg"
         if not file.exists():
             file = photo_thumb(qhash, path)  # raises if the photo can't be read (e.g. its drive is out)
-        reader = QImageReader(str(file))
-        w, h = reader.size().width(), reader.size().height()
+        with Image.open(file) as im:
+            im = im.convert("RGB")
+        w, h = im.size
         if w <= 0 or h <= 0:
             return None
-        scale = size / min(w, h)
-        sw, sh = max(size, round(w * scale)), max(size, round(h * scale))
-        reader.setScaledSize(QSize(sw, sh))
-        reader.setScaledClipRect(QRect((sw - size) // 2, (sh - size) // 2, size, size))
-        img = reader.read()
-        return None if img.isNull() else img.convertToFormat(QImage.Format.Format_RGB32)
+        s = min(w, h)
+        left, top = (w - s) / 2, (h - s) / 2
+        im = im.resize((size, size), Image.LANCZOS, box=(left, top, left + s, top + s))
+        data = im.tobytes()
+        return QImage(data, size, size, 3 * size, QImage.Format.Format_RGB888).convertToFormat(
+            QImage.Format.Format_RGB32)  # (a copy: data needn't outlive it)
