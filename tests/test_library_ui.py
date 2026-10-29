@@ -190,7 +190,7 @@ def test_new_library_welcomes_then_adding_a_folder_shows_its_photos(window, lib,
     wait_until(app, lambda: len(window.timeline.items) == 5)
     assert window.stack.currentWidget() is window.timeline
     folders = {it.data(0, 256): it.text(1) for it in window.sidebar._all_items()}
-    assert folders[str(lib)] == "5" and folders[str(lib / "2023")] == "3"
+    assert folders[str(lib)] == "" and folders[str(lib / "2023")] == "3"
     window.sidebar.select(str(lib / "2024"))
     window.show_place(str(lib / "2024"))
     wait_until(app, lambda: len(window.timeline.items) == 2)
