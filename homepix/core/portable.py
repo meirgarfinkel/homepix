@@ -332,6 +332,8 @@ def _bring_in(db, cp, found: dict) -> int:
             elif c == "person_id" and v is not None:
                 v = people.get(v)
                 named.add(v)
+            elif c == "not_person" and v is not None:
+                v = people.get(v)  # (people here have ids of their own)
             values.append(v)
         db.execute(f"INSERT INTO faces ({', '.join(fcols)}) VALUES ({', '.join('?' * len(fcols))})", values)
     for a, b in cp.execute("SELECT a, b FROM apart"):

@@ -156,3 +156,30 @@ def test_a_copy_is_never_replaced_by_an_empty_one_or_another_librarys(pf, lib, t
 
 def test_a_folder_that_isnt_there_is_skipped(pf, tmp_path):
     assert portable.write_copy(tmp_path / "unplugged") is None
+
+
+def test_who_a_face_isnt_comes_along_too(pf, lib, tmp_path, monkeypatch):
+    """A "that isn't them" mark names a person by their id, which is another one on another computer."""
+    setup_library(pf, lib)
+    db = pf.open_db()
+    bob = db.execute("INSERT INTO people (name) VALUES ('Bob')").lastrowid
+    b = db.execute("SELECT id FROM photos WHERE path = ?", (str(lib / "b.jpg"),)).fetchone()[0]
+    db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?, .3, .3, .4, .4, .99, ?, ?)",
+               (b, to_blob(np.ones(128)), bob))
+    db.execute("UPDATE faces SET not_person = ? WHERE person_id != ?", (bob, bob))  # Ann's faces aren't Bob
+    db.commit()
+    db.close()
+    portable.write_copy(lib)
+    new_computer(monkeypatch, tmp_path)
+    db = pf.open_db()
+    db.executemany("INSERT INTO people (name) VALUES (?)", [("Zed",), ("Yan",), ("Xia",)])  # other ids here
+    db.commit()
+    db.close()
+    pf.add_folder(lib)
+    portable.read_copy(lib)
+    db = pf.open_db()
+    try:
+        marks = {n for (n,) in db.execute("SELECT pe.name FROM faces f JOIN people pe ON pe.id = f.not_person")}
+        assert marks == {"Bob"}
+    finally:
+        db.close()
