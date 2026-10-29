@@ -13,7 +13,10 @@ SUBGROUP_SIM = 0.55       # ...and to sit side by side inside a group (Who is th
 ASSIGN_SIM = 0.55         # how alike a face must be to the faces someone was named on (the 3 most alike,
                           # on average) to be recognized as them...
 ASSIGN_MARGIN = 0.08      # ...and how much more than to anyone else's
-ASSIGN_MIN_PX = 80        # faces smaller than this (in the pixels they were read from) are never
+MAYBE_SIM = 0.40          # a face this alike to someone (but not enough to be recognized) might be them:
+                          # asked about right after naming them, and Who is this? leaves it till later
+FOLLOW_UP_FACES = 30      # ...at most this many at a time
+ASSIGN_MIN_PX = 80       # faces smaller than this (in the pixels they were read from) are never
                           # recognized by themselves: too blurry to tell people apart (they can still be named)
 FACE_READ_PX = 112        # a face smaller than this in the WORK_SIZE photo is read again from a bigger decode
 FACE_READ_MAX = 4096      # ...of at most this many pixels on its long side

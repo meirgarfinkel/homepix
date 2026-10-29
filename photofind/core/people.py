@@ -10,14 +10,15 @@ Naming someone recognizes them in more photos too: those faces are part of the s
 
 import numpy as np
 
-from .config import ASSIGN_MARGIN, ASSIGN_MIN_PX, ASSIGN_SIM, CLUSTER_SIM, SUBGROUP_SIM
+from .config import ASSIGN_MARGIN, ASSIGN_MIN_PX, ASSIGN_SIM, CLUSTER_SIM, FOLLOW_UP_FACES, MAYBE_SIM, SUBGROUP_SIM
 from .db import backup, from_blob
 from .util import normalize
 
 
 def load_faces(db, where="1=1", params=()):
     rows = db.execute(
-        f"SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.emb, f.cluster, f.person_id, f.locked, p.path, p.qhash "
+        f"SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.emb, f.cluster, f.person_id, f.locked, "
+        f"f.not_person, p.path, p.qhash "
         f"FROM faces f JOIN photos p ON p.id = f.photo_id WHERE {where}",
         params,
     ).fetchall()
@@ -43,6 +44,19 @@ def references(db):
     with, so a wrong match is never a reason for more. Returns their people ids and embeddings."""
     rows, embs = load_faces(db, "f.person_id IS NOT NULL AND f.locked = 1 AND f.hidden = 0")
     return np.array([r["person_id"] for r in rows], dtype=np.int64), embs
+
+
+def likeness_to(embs, owners, refs, people):
+    """How alike each face is to each of people: on average, to the RECOGNIZE_K most like it of the
+    faces they were named on (from references). A faces × people array."""
+    sims = np.empty((len(embs), len(people)), np.float32)
+    cols = [np.flatnonzero(owners == p) for p in people]
+    for start in range(0, len(embs), 2048):  # (a block at a time: faces × named faces can be big)
+        block = embs[start:start + 2048] @ refs.T
+        for j, c in enumerate(cols):
+            k = min(RECOGNIZE_K, len(c))
+            sims[start:start + 2048, j] = -np.partition(-block[:, c], k - 1, axis=1)[:, :k].mean(axis=1)
+    return sims
 
 
 NOT_THEM_OTHERS = 200  # the other people's named faces most like someone, as more examples of not them
@@ -111,17 +125,12 @@ def auto_assign(db, write: bool = True):
                             "AND (f.px IS NULL OR f.px >= ?)", (ASSIGN_MIN_PX,)) if people else ([], None)
     if not rows:
         return 0 if write else []
-    cols = [np.flatnonzero(owners == p) for p in people]
-    sims = np.empty((len(rows), len(people)), np.float32)
-    for start in range(0, len(rows), 2048):  # (a block at a time: faces × named faces can be big)
-        block = embs[start:start + 2048] @ refs.T
-        for j, c in enumerate(cols):
-            k = min(RECOGNIZE_K, len(c))
-            sims[start:start + 2048, j] = -np.partition(-block[:, c], k - 1, axis=1)[:, :k].mean(axis=1)
+    sims = likeness_to(embs, owners, refs, people)
     order = np.argsort(-sims, axis=1)
     best = sims[np.arange(len(rows)), order[:, 0]]
     second = sims[np.arange(len(rows)), order[:, 1]] if len(people) > 1 else np.full(len(rows), -1.0)
     ok = (best >= ASSIGN_SIM) & (best - second >= ASSIGN_MARGIN)
+    ok &= np.array([r["not_person"] != people[j] for r, j in zip(rows, order[:, 0], strict=True)])
     for j in set(order[ok, 0].tolist()):  # what "that isn't them" taught can still say no
         model = _not_them_model(db, people[j], owners, refs)
         if model is not None:
@@ -243,14 +252,14 @@ def _faces_now(db, face_ids) -> dict:
 
 
 def _change(db, faces: dict, people: dict | None = None, recognize: bool = False,
-            learn: bool = False) -> dict | None:
+            learn: bool = False, teach=()) -> dict | None:
     """The step that sets these faces ({face id: [person id, locked, hidden, not person]}, the last
     left out to keep it) and people ({person id: name or None}); recognize: and tags the faces that
     naming makes recognizable; learn: a face taken from someone is remembered as not them, and the
     faces recognized as them that it then says aren't are unnamed. None if it changes nothing."""
     people = {str(k): v for k, v in (people or {}).items()}
     faces = {str(k): list(v) for k, v in faces.items()}
-    taught = set()
+    taught = set(teach)  # (people faces are now marked not to be)
     if learn and faces:
         for k, (was, *_rest) in _faces_now(db, faces).items():
             v = faces[k]
@@ -325,6 +334,15 @@ def plan_not(db, face_ids):
     return _change(db, {f: [None, 1, 0] for f in face_ids}, learn=True)
 
 
+def plan_confirm(db, yes, no, name: str):
+    """After naming someone, of the faces that might be them: yes are them, no aren't (still unnamed
+    and free to be anyone else, but remembered as not them, to learn from). One change."""
+    pid, people = _new_person(db, name)
+    now = _faces_now(db, no) if no else {}
+    faces = {**{f: [*now[str(f)][:3], pid] for f in no if str(f) in now}, **{f: [pid, 1, 0] for f in yes}}
+    return _change(db, faces, people, recognize=True, learn=True, teach={pid} if no else ())
+
+
 def plan_hide(db, face_ids):
     """Not a face, or no one to name: never asked about or recognized again."""
     return _change(db, {f: [None, 1, 1] for f in face_ids})
@@ -368,18 +386,55 @@ def face_rows(db, where: str, params=()) -> list[dict]:
         "AND p.error IS NULL AND p.qhash IS NOT NULL", params)]
 
 
+NEW, MAYBE, KNOWN = 0, 1, 2  # how much a group looks like someone named (its faces' "tier")
+_KEEP = ("id", "photo_id", "x", "y", "w", "h", "score", "path", "qhash")
+
+
 def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
-    """Unnamed faces in groups of look-alikes, biggest first: who to ask about. In each group the
-    clearest face comes first and the closest look-alikes sit together (see likeness_order); each
-    face has its "emb" (normalized), to sort by. Changes nothing (about a second for 40,000 faces)."""
+    """Unnamed faces in groups of look-alikes: who to ask about. Those least like anyone named come
+    first (NEW: someone not named yet), then those that might be someone named (MAYBE), then those
+    that look like them (KNOWN); within each, the biggest and clearest first. In each group the
+    clearest face comes first and the closest look-alikes sit together (see likeness_order). Each
+    face has its "emb" (normalized), to sort by, and its group's "tier" and "like": the name of who
+    it looks like (None for NEW). Changes nothing (about a second for 40,000 faces)."""
     groups = [g for _, g in cluster_unnamed(db, save=False) if len(g) >= min_faces]
-    keep = ("id", "photo_id", "x", "y", "w", "h", "score", "path", "qhash")
+    owners, refs = references(db)
+    people = sorted(set(owners.tolist()))
+    names = dict(db.execute("SELECT id, name FROM people"))
+    embs_of = [normalize(np.stack([from_blob(r["emb"]) for r in g])) for g in groups]
+    if people and groups:  # (all at once: quicker than group by group)
+        every = likeness_to(np.vstack(embs_of), owners, refs, people)
+        ends = np.cumsum([len(g) for g in groups])
     out = []
-    for g in groups:
-        embs = normalize(np.stack([from_blob(r["emb"]) for r in g]))
+    for n, (g, embs) in enumerate(zip(groups, embs_of, strict=True)):
         quality = np.array([r["score"] * min(r["w"], r["h"]) for r in g])
-        out.append([{**{k: g[i][k] for k in keep}, "emb": embs[i]} for i in likeness_order(embs, quality)])
-    return out
+        tier, like = NEW, None
+        if people:
+            alike = every[ends[n] - len(g):ends[n]].mean(axis=0)  # the group, to each person
+            j = int(np.argmax(alike))
+            if alike[j] >= MAYBE_SIM:
+                tier, like = (KNOWN if alike[j] >= ASSIGN_SIM else MAYBE), names.get(people[j])
+        faces = [{**{k: g[i][k] for k in _KEEP}, "emb": embs[i], "tier": tier, "like": like}
+                 for i in likeness_order(embs, quality)]
+        out.append((tier, -len(g), -float(quality.mean()), faces))
+    out.sort(key=lambda t: t[:3])
+    return [faces for *_, faces in out]
+
+
+def follow_up(db, name: str, limit: int = FOLLOW_UP_FACES) -> list[dict]:
+    """Right after naming someone: the unnamed faces that might be them (at least MAYBE_SIM alike,
+    not yet enough to be recognized, or held back), from all the groups, most alike first. None
+    that were said not to be them. Each with its "emb", as in who_groups."""
+    pid = person_id(db, name)
+    owners, refs = references(db)
+    if pid is None or not (owners == pid).any():
+        return []
+    rows, embs = load_faces(db, "f.person_id IS NULL AND f.hidden = 0 AND f.not_person IS NOT ?", (pid,))
+    if not rows:
+        return []
+    alike = likeness_to(embs, owners, refs, [pid])[:, 0]
+    best = [i for i in np.argsort(-alike, kind="stable")[:limit] if alike[i] >= MAYBE_SIM]
+    return [{**{k: rows[i][k] for k in _KEEP}, "emb": embs[i]} for i in best]
 
 
 def likeness_order(embs, quality) -> list[int]:

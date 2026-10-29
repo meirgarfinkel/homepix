@@ -91,11 +91,13 @@ def load_library(place):
         db.close()
 
 
-def load_who():
-    """The "who is this?" groups, and everyone's names."""
+def load_who(follow=None):
+    """The "who is this?" groups, everyone's names, and (for a name just given) the faces that
+    might be them too (None if not asked for)."""
     db = open_db()
     try:
-        return known_people.who_groups(db), [r[0] for r in db.execute("SELECT name FROM people")]
+        return (known_people.who_groups(db), [r[0] for r in db.execute("SELECT name FROM people")],
+                known_people.follow_up(db, follow) if follow else None)
     finally:
         db.close()
 
@@ -329,6 +331,8 @@ class MainWindow(QMainWindow):
         self.people.menu_requested.connect(self._person_menu)
         self.who.named.connect(lambda ids, name: self._answer_who(ids, lambda: self.naming.name(ids, name)))
         self.who.hidden.connect(lambda ids: self._answer_who(ids, lambda: self.naming.hide(ids)))
+        self.who.confirmed.connect(
+            lambda yes, no, name: self._answer_who(yes + no, lambda: self.naming.confirm(yes, no, name)))
         self.who.opened.connect(self._open_face_photo)
         self.person_faces.opened.connect(self._open_face_photo)
         self.dupes.trash_extras.connect(self.dedupe.trash_extras)
@@ -888,11 +892,12 @@ class MainWindow(QMainWindow):
             if err is not None:
                 self.who.grid.empty_text = f"Couldn't find the faces to ask about:\n{err}"
                 return
-            groups, names = res
-            self.who.set_groups(groups, names)
+            groups, names, follow = res
+            self.who.set_groups(groups, names, follow)
             self.who_count = self.who.remaining()
             self.people.set_who(self.who_count if self.unnamed else None)
-        self._faces_jobs.run(load_who, done)
+        # (a follow-up once the naming is done, so it doesn't offer faces that naming recognized)
+        self._faces_jobs.run(load_who, done, None if self.ops.busy else self.who.waiting_for)
 
     def _load_person_faces(self, pid):
         def done(res, err):

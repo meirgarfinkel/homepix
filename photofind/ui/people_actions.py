@@ -30,6 +30,13 @@ class PeopleActions:
         self._run(f"Name {_faces(len(face_ids))} {name}", f"Named {_faces(len(face_ids))} {name}",
                   lambda db: people.plan_name(db, face_ids, name))
 
+    def confirm(self, yes, no, name: str):
+        """Of the faces that might be name: yes are them, the rest (no) aren't."""
+        self._run(f"Name {_faces(len(yes))} {name}, not {_faces(len(no))}",
+                  f"Named {_faces(len(yes))} {name}; {_faces(len(no))} aren't {name}" if yes
+                  else f"{_faces(len(no))} aren't {name}",
+                  lambda db: people.plan_confirm(db, yes, no, name))
+
     def ask_and_name(self, face_ids, title="Who is this?", current=""):
         name = ask_name(self.w, title, "Their name: someone already named, or someone new.", self._names(), current)
         if name and name != current:

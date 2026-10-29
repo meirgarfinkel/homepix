@@ -3,7 +3,7 @@ faces (to take out the ones that aren't them)."""
 
 import os
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core import face_thumb
-from ...core.people import by_likeness
+from ...core.people import KNOWN, MAYBE, NEW, by_likeness
 from .. import workers
 from .people import CROP
 
@@ -306,9 +306,12 @@ class PersonFaces(QWidget):
 
 class WhoView(QWidget):
     """One group of unnamed look-alike faces at a time, none ticked to start with: those ticked are
-    named (or hidden), so a face is only named once it's been clicked."""
+    named (or hidden), so a face is only named once it's been clicked. Right after a group is named,
+    the faces that might be that person too come once (a follow-up: "Is this Ann?"), then the
+    groups again, the least like anyone named first."""
 
     named = Signal(list, str)  # face ids, name
+    confirmed = Signal(list, list, str)  # a follow-up's faces that are them, those that aren't, name
     hidden = Signal(list)  # face ids: no one to name
     opened = Signal(dict)  # a face: show its photo
 
@@ -316,6 +319,11 @@ class WhoView(QWidget):
         super().__init__(parent)
         self.groups = []
         self.skipped = set()  # the faces of groups skipped (until the app closes)
+        self.waiting_for = None  # a name just given: its follow-up is being looked for
+        self.follow = None  # the follow-up being shown: {"name", "faces"}
+        self._naming = None
+        self._give_up = QTimer(self, singleShot=True, interval=10_000)  # (no follow-up came: go on)
+        self._give_up.timeout.connect(lambda: self._got_follow_up(None) if self.waiting_for else None)
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
         self.hint = QLabel()
@@ -342,9 +350,15 @@ class WhoView(QWidget):
         self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most "
                                     "alike to least")
         self.sort_button.clicked.connect(self._sort)
+        self.rest_button = QPushButton()
+        self.rest_button.setToolTip("Name the ticked faces, and remember the others aren't them (they can "
+                                    "still be named someone else)")
+        self.rest_button.clicked.connect(self._rest_arent)
+        self.rest_button.hide()
         row = QHBoxLayout()
         row.addWidget(self.name, 1)
         row.addWidget(self.name_button)
+        row.addWidget(self.rest_button)
         row.addSpacing(12)
         row.addWidget(self.sort_button)
         row.addWidget(self.skip_button)
@@ -357,28 +371,47 @@ class WhoView(QWidget):
         lay.addWidget(self.grid, 1)
         self._show_group()
 
-    def set_groups(self, groups, names):
-        """groups: as from core.people.who_groups; names: everyone named (to offer). The group being
-        looked at stays (with what's ticked) if it's still the same."""
+    def set_groups(self, groups, names, follow=None):
+        """groups: as from core.people.who_groups; names: everyone named (to offer); follow: the
+        follow-up for the name just given (core.people.follow_up), if it was asked for. The group
+        being looked at stays (with what's ticked) if it's still the same."""
         shown = {f["id"] for f in self.grid.faces}
         self.groups = groups
         self.name.set_names(names)
+        if follow is not None and self.waiting_for:
+            self._got_follow_up(follow)
+            return
         waiting = self._waiting()
-        if not shown or not waiting or {f["id"] for f in waiting[0]} != shown:
+        if self.follow or self.waiting_for:
+            self._update_text()
+        elif not shown or not waiting or {f["id"] for f in waiting[0]} != shown:
             self._show_group()
         else:
             self._update_text()
 
+    def _got_follow_up(self, faces):
+        name, self.waiting_for = self.waiting_for, None
+        self._give_up.stop()
+        self.follow = {"name": name, "faces": faces} if faces else None
+        self._show_group()
+
     def drop(self, face_ids):
         """These faces have been dealt with: take them out of the groups now, without waiting for
-        the groups to be worked out again."""
+        the groups to be worked out again. A group just named is followed up (see follow_up)."""
         gone = set(face_ids)
         self.groups = [kept for g in self.groups if len(kept := [f for f in g if f["id"] not in gone]) >= 2]
+        if self._naming and not self.follow:
+            self.waiting_for = self._naming
+            self._give_up.start()
+        self.follow = None
         self.name.clear()
         self._show_group()
 
     def skip(self):
-        self.skipped.update(f["id"] for f in self.grid.faces)
+        if self.follow:
+            self.follow = None
+        else:
+            self.skipped.update(f["id"] for f in self.grid.faces)
         self.name.clear()
         self._show_group()
 
@@ -395,11 +428,23 @@ class WhoView(QWidget):
         if not waiting and self.skipped and self.groups:
             self.skipped.clear()  # round again
             waiting = self._waiting()
-        group = waiting[0] if waiting else []
-        self.grid.empty_text = "Everyone's been named, or there's no one to ask about yet."
+        if self.waiting_for:
+            group = []
+            self.grid.empty_text = f"Looking for faces that might be {self.waiting_for} too..."
+        elif self.follow:
+            group = self.follow["faces"]
+            self.name.setText(self.follow["name"])
+        else:
+            group = waiting[0] if waiting else []
+            self.grid.empty_text = "Everyone's been named, or there's no one to ask about yet."
+            if group and group[0].get("tier") == KNOWN and group[0].get("like") and not self.name.text():
+                self.name.setText(group[0]["like"])  # (a guess: only the faces ticked are named)
         self.grid.set_faces(group)
         for w in (self.name, self.name_button, self.skip_button, self.hide_button):
             w.setEnabled(bool(group))
+        self.rest_button.setVisible(bool(self.follow))
+        if self.follow:
+            self.rest_button.setText(f"The rest aren't {self.follow['name']}")
         self._update_text()
         self._selection_changed()
         if group:
@@ -407,12 +452,23 @@ class WhoView(QWidget):
 
     def _update_text(self):
         n, group = self.remaining(), self.grid.faces
-        self.title.setText("Who is this?" if group else "No one to ask about")
+        if self.follow:
+            who = self.follow["name"]
+            self.title.setText(f"Is this {who}?")
+            self.hint.setText(f"{len(group)} faces that might be {who} too, the most alike first. Tick the ones "
+                              f"that are {who} and press Enter; The rest aren't {who} also says the others "
+                              "aren't, so they're not asked about as them again. Skip goes on to the groups.")
+            return
+        self.title.setText("Who is this?" if group or self.waiting_for else "No one to ask about")
+        if not group:
+            self.hint.setText("")
+            return
         after = f"{n - 1:,} more group{'s' if n != 2 else ''} after this" if n > 1 else "the last group"
-        self.hint.setText(f"{len(group)} faces that look alike; {after}. Click the faces of the same person to "
-                          "tick them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the front); "
-                          "double-click to see its photo."
-                          if group else "")
+        tier, like = group[0].get("tier", NEW), group[0].get("like")
+        seems = {NEW: "Someone new? ", MAYBE: f"Might be {like}. ", KNOWN: f"Looks like {like}. "}.get(tier, "")
+        self.hint.setText(f"{seems}{len(group)} faces that look alike; {after}. Click the faces of the same person "
+                          "to tick them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the "
+                          "front); double-click to see its photo.")
 
     def _chosen(self):
         return self.grid.selected_faces()
@@ -423,6 +479,7 @@ class WhoView(QWidget):
         self.name_button.setText(f"Name {n} face{'s' if n != 1 else ''}" if n else "Name them")
         self.hide_button.setEnabled(bool(self.grid.faces))
         self.sort_button.setEnabled(n > 0 and n < len(self.grid.faces) and "emb" in self.grid.faces[0])
+        self.rest_button.setEnabled(n < len(self.grid.faces) and bool(self.name.text().strip()))
 
     def _sort(self):
         self.grid.reorder(by_likeness(self.grid.faces, self._chosen()))
@@ -430,4 +487,13 @@ class WhoView(QWidget):
     def _name(self):
         faces, name = self._chosen(), self.name.text().strip()
         if faces and name:
-            self.named.emit([f["id"] for f in faces], name)
+            self._naming = name  # (drop, if it's done, follows it up)
+            try:
+                self.named.emit([f["id"] for f in faces], name)
+            finally:
+                self._naming = None
+
+    def _rest_arent(self):
+        name = self.name.text().strip() or self.follow["name"]
+        yes = {f["id"] for f in self._chosen()}
+        self.confirmed.emit(sorted(yes), [f["id"] for f in self.grid.faces if f["id"] not in yes], name)
