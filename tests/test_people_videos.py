@@ -109,7 +109,9 @@ def test_videos_are_indexed_without_ai_and_get_a_thumbnail(pf, lib, monkeypatch)
     assert r["kind"] == "video" and r["clip"] is None and r["faces_done"] == 1
     assert r["duration"] == pytest.approx(6, abs=0.2)
     assert r["taken"] == "2024-05-01 12:00:00" and r["taken_source"] == "filename"
-    assert (pf.data_dir() / "thumbs" / "photos" / f"{r['qhash']}.jpg").exists()
+    from homepix.core.thumbs import thumb_file
+
+    assert thumb_file(r["qhash"]).exists()
     again = pf.index_folder(lib)  # nothing to redo
     assert again["todo"] == 0
     assert pf.SearchIndex().vectors()[0] == []  # no search for videos

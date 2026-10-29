@@ -198,18 +198,84 @@ def test_tiles_keep_the_thumbnails_fine_detail(pf, lib, app):
     stripes shrunk to a third should be 1 px stripes, and came out up to a quarter wrong."""
     from PIL import Image
 
-    from homepix.core.thumbs import thumbs_dir
+    from homepix.core.thumbs import thumb_file
     from homepix.ui.thumbs import ThumbLoader
 
     stripes = Image.new("L", (320, 240))
     stripes.putdata([255 if (x // 3) % 2 else 0 for _ in range(240) for x in range(320)])
-    stripes.convert("RGB").save(thumbs_dir("photos") / "stripes.jpg", quality=100, subsampling=0)
-    tile = ThumbLoader._decode("stripes", "", 80)  # the middle 240 px square -> 80
-    assert (tile.width(), tile.height()) == (80, 80)
+    stripes.convert("RGB").save(thumb_file("stripes"), quality=100, subsampling=0)
+    tile, soft = ThumbLoader._decode("stripes", "", 80)  # the middle 240 px square -> 80
+    assert (tile.width(), tile.height()) == (80, 80) and not soft
     src = [255 if (x // 3) % 2 else 0 for x in range(320)]
     want = [sum(src[40 + 3 * x:43 + 3 * x]) / 3 for x in range(80)]  # (the square starts at x=40)
     off = [abs(tile.pixelColor(x, 40).red() - want[x]) for x in range(4, 76)]
     assert sum(off) / len(off) < 8
+
+
+def test_old_thumbnails_show_until_sharpened_then_swap_in(pf, lib, app):
+    """Thumbnails grew from 320 to 640 px. Libraries indexed before keep showing their old ones
+    while the sharper ones are made in the background (newest first), and tiles swap over."""
+    from homepix.core.db import open_db
+    from homepix.core.thumbs import THUMB_SIZE, old_thumb_file, sharpen_thumbs, thumb_file
+    from homepix.ui.thumbs import ThumbLoader
+
+    for n in range(3):
+        photo(lib / f"2024_01_0{n + 1}_12_00_00.jpg")
+    pf.index_folder(lib)
+    db = open_db()
+    rows = db.execute("SELECT qhash, path FROM photos ORDER BY taken").fetchall()
+    for q, _ in rows:  # as a library indexed before: only old, small thumbnails
+        thumb_file(q).rename(old_thumb_file(q))
+        with Image.open(old_thumb_file(q)) as im:
+            im.thumbnail((320, 320))
+            im.save(old_thumb_file(q))
+    q, p = rows[0]
+
+    loader = ThumbLoader(workers=1)
+    loader.set_size(60)
+    got = []
+    loader.ready.connect(got.append)
+    loader.want([(q, p)])
+    wait_until(app, lambda: q in got)
+    old_tile = loader.get(q)
+    assert old_tile is not None and q in loader._soft
+    assert not thumb_file(q).exists()  # shown from the old one, not made on the spot
+
+    progress = []
+    assert sharpen_thumbs(db, str(lib) + os.sep, progress=lambda d, t: progress.append((d, t))) == 3
+    assert progress[0] == (0, 3) and progress[-1] == (3, 3)
+    for q2, _ in rows:
+        assert thumb_file(q2).exists() and not old_thumb_file(q2).exists()
+        with Image.open(thumb_file(q2)) as im:
+            assert max(im.size) == min(THUMB_SIZE, max(Image.open(rows[0][1]).size))
+    assert sharpen_thumbs(db, str(lib) + os.sep) == 0  # nothing left to do
+
+    got.clear()
+    loader.want([(q, p)])  # the next repaint asks again: the sharper one is loaded over the old
+    assert loader.get(q) is old_tile  # (still shown meanwhile)
+    wait_until(app, lambda: q in got)
+    assert loader.get(q) is not old_tile and q not in loader._soft
+    loader.stop()
+    db.close()
+
+
+def test_indexing_sharpens_old_thumbnails_and_says_so(pf, lib, app):
+    from homepix.core.db import open_db
+    from homepix.core.thumbs import old_thumb_file, thumb_file
+    from homepix.ui.indexing import describe
+
+    for n in range(2):
+        photo(lib / f"{n}.jpg")
+    pf.index_folder(lib)
+    db = open_db()
+    qs = [r[0] for r in db.execute("SELECT qhash FROM photos")]
+    db.close()
+    for q in qs:
+        thumb_file(q).rename(old_thumb_file(q))
+    seen = []
+    info = pf.index_folder(lib, on_progress=lambda i: seen.append(describe(dict(i, running=True))))
+    assert info["todo"] == 0 and all(thumb_file(q).exists() for q in qs)
+    assert "Sharpening thumbnails: 2 of 2" in seen
 
 
 def test_exact_copies_share_one_tile_and_the_budget_stays_true(pf, lib, app):
