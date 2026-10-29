@@ -453,18 +453,18 @@ def test_trash_from_the_grid_then_undo_and_redo_from_the_edit_menu(window, lib, 
     w = window
     w.timeline.set_current(1)
     w.timeline.set_current(2, "range")
-    names = {os.path.basename(it.path) for it in w.targets()}
-    w.trash_action.trigger()
+    names = {os.path.basename(it.path) for it in w.files.targets()}
+    w.files.trash.trigger()
     wait_until(app, lambda: len(w.timeline.items) == 2)
     assert not any((lib / "trip" / n).exists() for n in names)
     assert w.timeline.current >= 0  # the next photo is selected
     assert "Ctrl+Z" in w.statusBar().currentMessage()
-    assert w.undo_action.isEnabled() and w.undo_action.text() == "Undo Move 2 photos to Trash"
-    w.undo_action.trigger()
+    assert w.files.undo.isEnabled() and w.files.undo.text() == "Undo Move 2 photos to Trash"
+    w.files.undo.trigger()
     wait_until(app, lambda: len(w.timeline.items) == 4)
     assert all((lib / "trip" / n).exists() for n in names)
-    assert w.redo_action.text() == "Redo Move 2 photos to Trash"
-    w.redo_action.trigger()
+    assert w.files.redo.text() == "Redo Move 2 photos to Trash"
+    w.files.redo.trigger()
     wait_until(app, lambda: len(w.timeline.items) == 2)
 
 
@@ -472,7 +472,7 @@ def test_delete_in_the_viewer_shows_the_next_photo(window, app):
     w = window
     w.open_viewer(0)
     first, second = w.timeline.items[0].path, w.timeline.items[1].path
-    w.trash_action.trigger()
+    w.files.trash.trigger()
     wait_until(app, lambda: len(w.timeline.items) == 3)
     assert w.stack.currentWidget() is w.viewer
     assert w.viewer.items[w.viewer.index].path == second != first
@@ -483,10 +483,10 @@ def test_cut_here_and_paste_into_another_folder(window, lib, app):
     (lib / "other").mkdir()
     photo(lib / "other" / "x.jpg")
     w.timeline.set_current(0)
-    path = w.targets()[0].path
-    w.cut_action.trigger()
+    path = w.files.targets()[0].path
+    w.files.cut.trigger()
     w.place = str(lib / "other")
-    w._paste(str(lib / "other"))
+    w.files.paste_into(str(lib / "other"))
     dst = lib / "other" / os.path.basename(path)
     wait_until(app, lambda: dst.exists() and not w.ops.busy)
     assert not os.path.exists(path)
@@ -503,7 +503,7 @@ def test_renaming_many_with_a_pattern(window, lib, app, monkeypatch):
         return True
 
     monkeypatch.setattr(file_dialogs.BatchRenameDialog, "exec", fake_exec)
-    w.rename_action.trigger()
+    w.files.rename.trigger()
     wait_until(app, lambda: sorted(os.listdir(lib / "trip")) == [f"Trip {i}.jpg" for i in range(1, 5)])
     wait_until(app, lambda: sorted(os.path.basename(it.path) for it in w.timeline.items)
                == [f"Trip {i}.jpg" for i in range(1, 5)])

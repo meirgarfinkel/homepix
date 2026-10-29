@@ -288,7 +288,7 @@ def test_videos_in_the_grid_and_the_viewer(window, pf, lib, app, monkeypatch):
 
 
 def test_counting_photos_and_videos():
-    from homepix.ui.main_window import counted
+    from homepix.ui.fileops import counted
 
     assert counted(1, 0) == "1 photo"
     assert counted(1234, 2) == "1,234 photos and 2 videos"

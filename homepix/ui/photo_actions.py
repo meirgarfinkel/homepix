@@ -10,6 +10,7 @@ from ..core import fileops as files
 from ..core import metadata
 from ..core.exiftool import available
 from . import workers
+from .file_actions import count_of
 from .views.details_dialogs import AllDetailsDialog, DateDialog, DetailsDialog
 
 TURNS = {"right": ("Rotate right", "Rotate {} right", "Rotated {} right"),
@@ -53,7 +54,7 @@ class PhotoActions:
     # --- doing ------------------------------------------------------------------------------------------
 
     def _items(self):
-        items = self.w.targets()
+        items = self.w.files.targets()
         if items and not available():
             QMessageBox.information(self.w, "HomePix", "Changing details needs ExifTool, which isn't installed. "
                                     "On Debian or Ubuntu: sudo apt install libimage-exiftool-perl")
@@ -69,7 +70,7 @@ class PhotoActions:
         if not items:
             return
         _, summary, past = TURNS[how]
-        what = self.w._what(items)
+        what = count_of(items)
         self._run(items, metadata.Edit(turn=how), summary.format(what), past.format(what))
 
     def edit_date(self):
@@ -79,7 +80,7 @@ class PhotoActions:
         dlg = DateDialog(items, self.w)
         if not dlg.exec():
             return
-        edit, what, how = dlg.edit(), self.w._what(items), dlg.describe()
+        edit, what, how = dlg.edit(), count_of(items), dlg.describe()
         if edit.date is not None:
             summary, past = f"Set the date of {what} to {how}", f"Set the date of {what} to {how}"
         else:
@@ -103,7 +104,7 @@ class PhotoActions:
             edit = dlg.edit()
             if edit == metadata.Edit():
                 return
-            what = self.w._what(items)
+            what = count_of(items)
             self._run(items, edit, f"Change the details of {what}", f"Changed the details of {what}")
 
         workers.run(_read_details, ready, [os.path.abspath(it.path) for it in items])

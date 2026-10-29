@@ -372,7 +372,7 @@ def test_editing_details_of_several_from_the_dialog(window, lib, app, monkeypatc
 
     monkeypatch.setattr(details_dialogs.DetailsDialog, "exec", fill)
     w.photo.details.trigger()
-    wait_until(app, lambda: not w.ops.busy and w.undo_action.text() == "Undo Change the details of 3 photos")
+    wait_until(app, lambda: not w.ops.busy and w.files.undo.text() == "Undo Change the details of 3 photos")
     found = metadata.read([it.path for it in w.timeline.items])
     assert all(d.keywords == ["trip"] for d in found.values())
 

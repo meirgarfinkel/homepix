@@ -21,6 +21,12 @@ def plural(n: int, word: str) -> str:
     return f"{n:,} {word}{'s' if n != 1 else ''}"
 
 
+def counted(photos: int, videos: int) -> str:
+    """'1,234 photos', '1 video', '1,234 photos and 56 videos'."""
+    parts = [plural(n, word) for n, word in ((photos, "photo"), (videos, "video")) if n]
+    return " and ".join(parts) or "0 photos"
+
+
 def bad_name(name: str):
     """Why a file or folder can't have this name, or None if it can."""
     if not name.strip():
