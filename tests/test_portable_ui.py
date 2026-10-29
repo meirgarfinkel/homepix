@@ -7,7 +7,7 @@ import pytest
 from test_faces_ui import wait_until
 from test_portable import named, new_computer, setup_library
 
-from photofind.core import portable
+from homepix.core import portable
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtWidgets  # noqa: E402
@@ -19,7 +19,7 @@ def app():
 
 
 def window(app):
-    from photofind.ui.main_window import MainWindow
+    from homepix.ui.main_window import MainWindow
 
     w = MainWindow(index=False)
     w.resize(1000, 700)
@@ -30,7 +30,7 @@ def window(app):
 
 @pytest.mark.parametrize("use", [True, False])
 def test_adding_a_folder_with_a_library_offers_it(pf, lib, tmp_path, monkeypatch, app, use):
-    from photofind.ui import portable as portable_ui
+    from homepix.ui import portable as portable_ui
 
     setup_library(pf, lib)
     portable.write_copy(lib)
@@ -57,7 +57,7 @@ def test_adding_a_folder_with_a_library_offers_it(pf, lib, tmp_path, monkeypatch
 
 
 def test_the_copy_is_kept_up_to_date(pf, lib, app, monkeypatch):
-    from photofind.ui import portable as portable_ui
+    from homepix.ui import portable as portable_ui
 
     setup_library(pf, lib)
     w = window(app)

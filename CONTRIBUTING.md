@@ -1,4 +1,4 @@
-# Working on Photo Finder
+# Working on HomePix
 
 ## One-time setup
 
@@ -15,12 +15,12 @@ is stopped before it leaves your computer. Run the same checks any time with
 
 ```bash
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
-.venv/bin/python -m photofind.ui        # the desktop app (or: python photofind_app.py)
-.venv/bin/python -m photofind status    # the command line
+.venv/bin/python -m homepix.ui        # the desktop app (or: python homepix_app.py)
+.venv/bin/python -m homepix status    # the command line
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 ```
 
-`PHOTOFIND_HOME=/some/folder` points any of these at a separate library, so you can try things
+`HOMEPIX_HOME=/some/folder` points any of these at a separate library, so you can try things
 without touching your own.
 
 ## Branches
@@ -38,7 +38,7 @@ without touching your own.
 | Workflow | Runs on | Does |
 |---|---|---|
 | `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests; required for merging into `main` |
-| `Build Photo Finder` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros; the Windows installer only for tags and by hand; for a tag, publishes a GitHub Release with both |
+| `Build HomePix` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros; the Windows installer only for tags and by hand; for a tag, publishes a GitHub Release with both |
 
 ## Releasing
 

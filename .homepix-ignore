@@ -1,0 +1,3 @@
+HomePix never indexes a folder containing this file.
+This one keeps the app's own source and build output (icons, bundled libraries) out of the photo library
+when the project lives inside a Pictures folder.

@@ -12,7 +12,7 @@ import pytest
 from conftest import et_command
 from PIL import Image
 
-from photofind.core import exiftool as et_mod
+from homepix.core import exiftool as et_mod
 
 pytestmark = pytest.mark.skipif(not et_mod.available(), reason="needs ExifTool")
 
@@ -50,7 +50,7 @@ def make_photo(path, orientation=None, exif=None):
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    from photofind.core import fileops, metadata
+    from homepix.core import fileops, metadata
 
     pf.add_folder(lib)
     db = pf.open_db()
@@ -75,7 +75,7 @@ def row(db, path):
 # --- orientation arithmetic -----------------------------------------------------------------------
 
 def test_turning_four_times_comes_back_and_boxes_follow():
-    from photofind.core.metadata import move_box, turned
+    from homepix.core.metadata import move_box, turned
 
     for o in range(1, 9):
         a = o
@@ -113,8 +113,8 @@ def test_details_round_trip(home, lib, ext):
     assert d.gps == pytest.approx((31.778, -35.235), abs=1e-5)
     assert abs(os.stat(p).st_mtime - mtime) < 1  # its modified time is kept
 
-    from photofind.core import dates
-    from photofind.core.util import quick_hash
+    from homepix.core import dates
+    from homepix.core.util import quick_hash
 
     assert dates.of_file(p, "photo", 0)[:2] == ("2019-05-06 07:08:09", "exif")  # what indexing reads agrees
     r = row(db, p)
@@ -277,7 +277,7 @@ def test_indexing_reads_keywords_and_descriptions_written_elsewhere(home, lib):
 
 KILLER = textwrap.dedent("""
     import os, sys
-    from photofind.core import fileops, metadata, open_db
+    from homepix.core import fileops, metadata, open_db
     real = metadata.write
     count = 0
     def write(*a, **k):
@@ -306,7 +306,7 @@ def test_killed_while_writing_details(home, lib, tmp_path, after):
     r = subprocess.run([sys.executable, str(script), str(lib), str(after)], env=dict(os.environ, PYTHONPATH=os.getcwd()))
     assert r.returncode == 9
     fo.recover(db)
-    from photofind.core.util import quick_hash
+    from homepix.core.util import quick_hash
 
     changed = 0
     for i in range(3):
@@ -347,7 +347,7 @@ def window(home, lib, app):
     for i in range(3):
         make_photo(lib / f"IMG_{i}.jpg", exif={0x9003: f"2022:0{i + 1}:01 12:00:00"})
     index(pf, lib)
-    from photofind.ui.main_window import MainWindow
+    from homepix.ui.main_window import MainWindow
 
     w = MainWindow(index=False)
     w.resize(900, 600)
@@ -358,8 +358,8 @@ def window(home, lib, app):
 
 
 def test_editing_details_of_several_from_the_dialog(window, lib, app, monkeypatch):
-    from photofind.core import metadata
-    from photofind.ui.views import details_dialogs
+    from homepix.core import metadata
+    from homepix.ui.views import details_dialogs
 
     w = window
     w.timeline.select_all()
@@ -377,7 +377,7 @@ def test_editing_details_of_several_from_the_dialog(window, lib, app, monkeypatc
 
 
 def test_moving_the_date_of_several(window, app, monkeypatch):
-    from photofind.ui.views import details_dialogs
+    from homepix.ui.views import details_dialogs
 
     w = window
     w.timeline.select_all()
@@ -406,7 +406,7 @@ def test_rotating_in_the_viewer_shows_it_turned(window, app):
 
 
 def test_all_details_lists_the_tags(window, app, monkeypatch):
-    from photofind.ui.views import details_dialogs
+    from homepix.ui.views import details_dialogs
 
     seen = {}
     monkeypatch.setattr(details_dialogs.AllDetailsDialog, "exec", lambda dlg: seen.setdefault("dlg", dlg))
@@ -422,7 +422,7 @@ def test_all_details_lists_the_tags(window, app, monkeypatch):
 
 
 def test_place_parsing():
-    from photofind.ui.views.details_dialogs import parse_place
+    from homepix.ui.views.details_dialogs import parse_place
 
     assert parse_place("31.778, 35.235") == (31.778, 35.235)
     assert parse_place("-33.86 151.21") == (-33.86, 151.21)

@@ -7,8 +7,8 @@ import time
 import numpy as np
 import pytest
 
-from photofind.core import fileops, people
-from photofind.core.db import to_blob
+from homepix.core import fileops, people
+from homepix.core.db import to_blob
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ def test_recognizing_compares_with_named_faces_only_and_never_small_ones(db):
 
 
 def test_starting_faces_over_forgets_them_and_finds_them_again(db, pf):
-    from photofind.core import config
+    from homepix.core import config
 
     ann = add_faces(db, [1] * 4, seed=1)
     do(db, people.plan_name(db, ann[:2], "Ann"))
@@ -142,7 +142,7 @@ def test_small_faces_are_read_from_a_bigger_decode(lib):
     to match; a big face isn't."""
     from PIL import Image
 
-    from photofind.core.ai.faces import Faces
+    from homepix.core.ai.faces import Faces
 
     Image.new("RGB", (4096, 3072), "gray").save(lib / "big.jpg")
     seen = []
@@ -394,10 +394,10 @@ def test_forty_thousand_faces(db):
 def test_the_command_line_names_through_the_journal(db, pf, capsys):
     from types import SimpleNamespace
 
-    from photofind import cli
+    from homepix import cli
 
     a = add_faces(db, [1, 1, 1], seed=1)
-    people.cluster_unnamed(db)  # numbers the groups, as `photofind people` shows them
+    people.cluster_unnamed(db)  # numbers the groups, as `homepix people` shows them
     group = db.execute("SELECT cluster FROM faces WHERE id=?", (a[0],)).fetchone()[0]
     cli.cmd_name(SimpleNamespace(args=[str(group), "Ann", "Lee"]))
     assert set(names(db).values()) == {"Ann Lee"}

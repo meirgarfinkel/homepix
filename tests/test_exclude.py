@@ -14,7 +14,7 @@ def _library(pf, lib):
 
 
 def test_an_excluded_folder_is_left_out_but_can_be_opened(pf, lib):
-    from photofind.core.timeline import load_items
+    from homepix.core.timeline import load_items
 
     _library(pf, lib)
     screens = str(lib / "Screens")
@@ -28,7 +28,7 @@ def test_an_excluded_folder_is_left_out_but_can_be_opened(pf, lib):
     assert {os.path.basename(it.path) for it in opened} == {"c.jpg", "d.jpg"}
     assert len(load_items(db, folder=lib / "Screens" / "old", excluded=excluded)) == 1
 
-    from photofind.core.search import SearchIndex
+    from homepix.core.search import SearchIndex
 
     index = SearchIndex()
     index.text_model = lambda: type("T", (), {"query": staticmethod(lambda q: np.ones(512, np.float32))})()

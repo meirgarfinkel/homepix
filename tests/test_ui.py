@@ -14,7 +14,7 @@ from PySide6.QtCore import QObject, QPoint, QRect, Qt, Signal  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
-from photofind.core.timeline import Item, group_by_month  # noqa: E402
+from homepix.core.timeline import Item, group_by_month  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -82,7 +82,7 @@ class NoThumbs(QObject):
 
 @pytest.fixture
 def view(app):
-    from photofind.ui.views.timeline import TimelineView
+    from homepix.ui.views.timeline import TimelineView
 
     v = TimelineView(NoThumbs())
     v.resize(800, 600)
@@ -167,7 +167,7 @@ def test_selection_survives_reload_by_photo_not_position(view):
 
 
 def test_tile_size_is_clamped_and_relayouts(view):
-    from photofind.ui.views.timeline import MAX_TILE, MIN_TILE
+    from homepix.ui.views.timeline import MAX_TILE, MIN_TILE
 
     view.set_tile_size(10_000)
     assert view.tile == MAX_TILE
@@ -177,7 +177,7 @@ def test_tile_size_is_clamped_and_relayouts(view):
 
 
 def test_thumbnail_loader_decodes_square_tiles(pf, lib, app):
-    from photofind.ui.thumbs import ThumbLoader
+    from homepix.ui.thumbs import ThumbLoader
 
     p = photo(lib / "a.jpg")
     q = "abc123"
@@ -199,7 +199,7 @@ def test_exact_copies_share_one_tile_and_the_budget_stays_true(pf, lib, app):
     weren't there and the cache emptied itself over and over: the Duplicates page blinked."""
     import shutil
 
-    from photofind.ui.thumbs import ThumbLoader
+    from homepix.ui.thumbs import ThumbLoader
 
     loader = ThumbLoader(workers=2, budget=10 * 50 * 50 * 4)  # room for 10 tiles
     loader.set_size(50)
@@ -217,7 +217,7 @@ def test_exact_copies_share_one_tile_and_the_budget_stays_true(pf, lib, app):
 
 
 def test_viewer_shows_photo_and_steps(pf, lib, app):
-    from photofind.ui.views.viewer import Viewer
+    from homepix.ui.views.viewer import Viewer
 
     paths = [photo(lib / f"{i}.jpg") for i in range(3)]
     items = [Item(i, str(p), "2024-01-01 00:00:00", f"q{i}") for i, p in enumerate(paths)]
@@ -238,7 +238,7 @@ def test_viewer_shows_photo_and_steps(pf, lib, app):
 
 
 def test_photo_info_reads_exif_and_index(pf, lib):
-    from photofind.core.info import photo_info
+    from homepix.core.info import photo_info
 
     p = lib / "cam.jpg"
     img = Image.new("RGB", (40, 30), "red")
@@ -259,7 +259,7 @@ def test_photo_info_reads_exif_and_index(pf, lib):
 
 
 def test_the_info_panel_says_when_it_was_taken(pf, lib, app):
-    from photofind.ui.views.info_panel import InfoPanel
+    from homepix.ui.views.info_panel import InfoPanel
 
     img = Image.new("RGB", (40, 30), "red")
     exif = Image.Exif()

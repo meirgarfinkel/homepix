@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from conftest import photo, rows
 
-from photofind.core import db as dbmod
+from homepix.core import db as dbmod
 
 # The schema as it was before versioning; pre-M0 databases lack error_reader.
 OLD_SCHEMA = """
@@ -30,7 +30,7 @@ INSERT INTO faces (photo_id, emb, person_id) VALUES (1, x'00', 1);
 
 
 def make_old_db(pf, with_error_reader):
-    path = pf.data_dir() / "photofind.db"
+    path = pf.data_dir() / "homepix.db"
     with sqlite3.connect(path) as db:
         db.executescript(OLD_SCHEMA.format(extra=", error_reader TEXT" if with_error_reader else ""))
     return path
@@ -103,11 +103,11 @@ def test_failed_upgrade_leaves_database_untouched(pf, monkeypatch):
 
 
 def test_newer_database_is_refused_and_not_touched(pf):
-    path = pf.data_dir() / "photofind.db"
+    path = pf.data_dir() / "homepix.db"
     with sqlite3.connect(path) as db:
         db.execute("CREATE TABLE future (x)")
         db.execute(f"PRAGMA user_version = {dbmod.LATEST + 1}")
-    with pytest.raises(pf.NewerDatabaseError, match="newer Photo Finder"):
+    with pytest.raises(pf.NewerDatabaseError, match="newer HomePix"):
         pf.open_db()
     with sqlite3.connect(path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == dbmod.LATEST + 1
@@ -122,17 +122,17 @@ def test_index_records_where_the_date_came_from(pf, lib):
 
 
 def test_cli_runs_as_a_module(tmp_path):
-    env = {**os.environ, "PHOTOFIND_HOME": str(tmp_path / "home")}
-    out = subprocess.run([sys.executable, "-m", "photofind", "status"], capture_output=True, text=True, env=env,
+    env = {**os.environ, "HOMEPIX_HOME": str(tmp_path / "home")}
+    out = subprocess.run([sys.executable, "-m", "homepix", "status"], capture_output=True, text=True, env=env,
                          cwd=Path(__file__).resolve().parents[1], timeout=60)
     assert out.returncode == 0, out.stderr
     assert "Photos:" in out.stdout
 
 
-@pytest.mark.skipif(not os.environ.get("PHOTOFIND_REAL_DB"), reason="set PHOTOFIND_REAL_DB to a copy of a real database")
+@pytest.mark.skipif(not os.environ.get("HOMEPIX_REAL_DB"), reason="set HOMEPIX_REAL_DB to a copy of a real database")
 def test_real_database_upgrades_without_loss(pf):
-    path = pf.data_dir() / "photofind.db"
-    shutil.copy(os.environ["PHOTOFIND_REAL_DB"], path)
+    path = pf.data_dir() / "homepix.db"
+    shutil.copy(os.environ["HOMEPIX_REAL_DB"], path)
     counts = "SELECT (SELECT COUNT(*) FROM photos), (SELECT COUNT(*) FROM faces), " \
              "(SELECT COUNT(*) FROM faces WHERE person_id IS NOT NULL), (SELECT COUNT(*) FROM people)"
     with sqlite3.connect(path) as db:

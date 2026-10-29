@@ -4,8 +4,8 @@ import pytest
 from PySide6 import QtWidgets
 from PySide6.QtGui import QPalette
 
-from photofind.core import load_settings
-from photofind.ui import theme
+from homepix.core import load_settings
+from homepix.ui import theme
 
 
 @pytest.fixture

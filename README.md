@@ -1,19 +1,21 @@
-# photofind
+# HomePix
 
 A private photo manager with AI search and face recognition that runs entirely on your own computer. Point it at a folder, let it work through your photos (overnight if the folder is big), then search with plain words like "dog on the beach" or "birthday cake", and by the people you've named.
 
 Nothing is uploaded anywhere. The only network access is a one-time download of the AI models (about 130 MB) the first time you index.
 
-## Desktop app (Photo Finder)
+HomePix used to be called **Photo Finder**. The first time HomePix opens (with Photo Finder closed), it moves Photo Finder's data folder, with your index, names and settings, to HomePix's, so nothing is lost or indexed again. Photo folders that Photo Finder left notes in are still read.
+
+## Desktop app (HomePix)
 
 One download per system, with nothing else to install (on the project's GitHub Releases page, once a version is published):
 
-- **Linux:** `PhotoFinder-x86_64.AppImage`, for Debian 12+, Ubuntu 22.04+, Fedora, Arch and others. Make it executable once (right-click, Properties, Permissions), then double-click it. The first time, it adds **Photo Finder** to your applications menu.
-- **Windows 10 and 11:** `PhotoFinderSetup.exe`. It installs for you alone (no administrator password) and adds Photo Finder to the Start menu. Windows warns about an unknown publisher the first time, because the installer isn't signed: click **More info**, then **Run anyway**.
+- **Linux:** `HomePix-x86_64.AppImage`, for Debian 12+, Ubuntu 22.04+, Fedora, Arch and others. Make it executable once (right-click, Properties, Permissions), then double-click it. The first time, it adds **HomePix** to your applications menu.
+- **Windows 10 and 11:** `HomePixSetup.exe`. It installs for you alone (no administrator password) and adds HomePix to the Start menu. Windows warns about an unknown publisher the first time, because the installer isn't signed: click **More info**, then **Run anyway**.
 
 To build these yourself, see **[BUILDING.md](BUILDING.md)**. On Linux you can also install straight from this folder: `bash install_linux.sh`.
 
-Photo Finder is a native desktop app (Qt). While it's open, it looks for new photos every 30 minutes; opening it a second time brings the open window forward. `--self-test` checks that the window, thumbnails and AI parts all work.
+HomePix is a native desktop app (Qt). While it's open, it looks for new photos every 30 minutes; opening it a second time brings the open window forward. `--self-test` checks that the window, thumbnails and AI parts all work.
 
 What's in it:
 
@@ -21,7 +23,7 @@ What's in it:
 - **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show. Right-click a folder and choose *Exclude from library* to keep its photos out of All photos, people and search (nothing is deleted; opening the folder still shows them, and the same menu includes it again).
 - **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time, with the closest look-alikes side by side. None are ticked to start with: click the ones of the same person (Ctrl+A ticks them all; **Most like ticked** brings the faces most like the ones ticked to the front, most alike to least), type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that clearly match the faces you named are named too (a face named that way is never used to name more, and faces too small to tell aren't named by themselves). Skip a group for now, or say it's no one you know, and it isn't asked about again. Right after you name a group, **Is this ...?** shows once the faces that might be them too, from every group, most alike first: tick the ones that are and press Enter, or choose *The rest aren't ...* to also say the others aren't (they're not asked about as them again, and the app learns from it). Then the groups go on, those least like anyone you've named first (someone new), and last those that look like someone you've named (with their name already typed in, as a guess).
 - **People:** everyone you've named, as a page of faces. Click one to see their photos; right-click to rename them (a name someone else has makes them one person), say they're the same person as someone else, or forget them.
-- **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Click the wrong ones to tick them, as on Who is this? (Ctrl+A ticks them all; **Most like ticked** brings the faces most like them to the front), and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself. It also teaches Photo Finder who they *aren't*: their other automatic matches that look like the faces you took away are unnamed at once, and faces like them in new photos aren't taken to be them. A couple of these is enough to tell apart look-alikes such as siblings; Undo takes it all back.
+- **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Click the wrong ones to tick them, as on Who is this? (Ctrl+A ticks them all; **Most like ticked** brings the faces most like them to the front), and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself. It also teaches HomePix who they *aren't*: their other automatic matches that look like the faces you took away are unnamed at once, and faces like them in new photos aren't taken to be them. A couple of these is enough to tell apart look-alikes such as siblings; Undo takes it all back.
 - **Starting faces over:** View → **Start faces over...** forgets every face and name (a copy of the database goes to the backups folder first) and looks through the photos for faces again in the background, with the newest way of reading them. Search, dates and everything else stay.
 - **Faces in the viewer** (N): a box on each face with its name. Click one to name it, say it's someone else, or that it isn't a face.
 - **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
@@ -32,14 +34,14 @@ What's in it:
 - **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete; the Recycle Bin on Windows), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
 - **Organizing** (the File menu, or right-click a folder): *Tidy the library* or *Organize a folder* names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. A year folder's own subfolders are left alone (`2022/Trip/`).
 - **Duplicates** (in the sidebar, or the View menu): copies of the same photo or video, side by side, the one to keep marked (the most pixels, then the biggest file; click another to keep it instead). Exact copies are the same bytes; near ones look the same (resized or saved again), checked by both a picture fingerprint and the search model. Shots of a burst are never called duplicates. Move the extras to the Trash, for the groups you select or all of them, after a preview; say a group isn't duplicates and it's never offered again; or **Skip for now** to leave it for later (skipped groups wait at the end, under *Skipped for now*, even after closing the app).
-- **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, Photo Finder finishes the job next time it opens, with no photo lost or doubled.
-- **Taking your library along:** each library folder holds a copy of everything Photo Finder knows about its photos, in a hidden `.photofind` folder: the people you named and their faces, search, duplicate choices and folders left out. It's updated a few seconds after each change and when the app closes. Copy the folder to another computer (or a new one, Linux or Windows), add it in Photo Finder there, and choose **Use it**: everything comes back without looking through every photo again. Photos are found by their content, so it doesn't matter where the folder ends up, or if files were renamed since. Not carried along: the undo history, and thumbnails (made again as needed). Two computers working on the same folder at the same time don't merge: the copy saved last wins.
+- **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, HomePix finishes the job next time it opens, with no photo lost or doubled.
+- **Taking your library along:** each library folder holds a copy of everything HomePix knows about its photos, in a hidden `.homepix` folder: the people you named and their faces, search, duplicate choices and folders left out. It's updated a few seconds after each change and when the app closes. Copy the folder to another computer (or a new one, Linux or Windows), add it in HomePix there, and choose **Use it**: everything comes back without looking through every photo again. Photos are found by their content, so it doesn't matter where the folder ends up, or if files were renamed since. Not carried along: the undo history, and thumbnails (made again as needed). Two computers working on the same folder at the same time don't merge: the copy saved last wins.
 - **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
 - **Menus:** File, Edit, Photo and View are under the **⋯** button at the top right. Their shortcuts work anywhere in the window.
 
 Every change to who's who is undoable like a file operation, from the app or the command line.
 
-The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
+The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`).
 
 ## Command-line tool
 
@@ -47,39 +49,39 @@ The app and the command-line tool share the same index, so anything you indexed 
 
 ```bash
 sudo apt install python3-venv
-python3 -m venv ~/photofind-env
-~/photofind-env/bin/pip install -r requirements.txt
+python3 -m venv ~/homepix-env
+~/homepix-env/bin/pip install -r requirements.txt
 ```
 
 To make the commands below shorter, add an alias to `~/.bashrc`:
 
 ```bash
-alias photofind="PYTHONPATH=$HOME/photofind $HOME/photofind-env/bin/python -m photofind"
+alias homepix="PYTHONPATH=$HOME/homepix $HOME/homepix-env/bin/python -m homepix"
 ```
 
 ### Use
 
 ```bash
-photofind index ~/Pictures                 # scan the folder (stop with Ctrl+C, resume any time)
-photofind search dog on the beach          # opens a results page in your browser
-photofind search birthday --since 2023     # with a date filter (--since / --until)
+homepix index ~/Pictures                 # scan the folder (stop with Ctrl+C, resume any time)
+homepix search dog on the beach          # opens a results page in your browser
+homepix search birthday --since 2023     # with a date filter (--since / --until)
 
-photofind people                           # groups unknown faces and shows them in your browser
-photofind name 1 Mom                       # group 1 is Mom
-photofind name 4 9 Dad                     # groups 4 and 9 are both Dad
-photofind search --person Mom              # every photo of Mom
-photofind search beach --person Mom --person Dad
+homepix people                           # groups unknown faces and shows them in your browser
+homepix name 1 Mom                       # group 1 is Mom
+homepix name 4 9 Dad                     # groups 4 and 9 are both Dad
+homepix search --person Mom              # every photo of Mom
+homepix search beach --person Mom --person Dad
 
-photofind organize                         # what tidying the library would rename or move
-photofind organize --apply ~/Pictures/new  # do it, for one folder (Undo in the app takes it back)
+homepix organize                         # what tidying the library would rename or move
+homepix organize --apply ~/Pictures/new  # do it, for one folder (Undo in the app takes it back)
 
-photofind duplicates                       # copies of the same photo found (nothing is moved)
-photofind status                           # what's indexed, any unreadable files
+homepix duplicates                       # copies of the same photo found (nothing is moved)
+homepix status                           # what's indexed, any unreadable files
 ```
 
 Search shows only photos that score clearly above the rest of your library for that search. Photos that stand out a little are listed as "possibly related" (at most 8). If nothing stands out at all, it just says there are no matches. Add `--all` to rank every photo instead.
 
-Fixing mistakes: `photofind unname <face id>` (the number under each face on the people page), `photofind rename Mom "Mom (Sarah)"`, `photofind forget Mom`.
+Fixing mistakes: `homepix unname <face id>` (the number under each face on the people page), `homepix rename Mom "Mom (Sarah)"`, `homepix forget Mom`.
 
 Run `index` again whenever you add photos. It only processes new or changed files, notices moved or renamed photos (names stay attached), and drops deleted ones.
 
@@ -88,7 +90,7 @@ Run `index` again whenever you add photos. It only processes new or changed file
 `index` already runs at low priority and uses half your CPU cores. To run it every night at 2 am, add this with `crontab -e`:
 
 ```
-0 2 * * * cd $HOME/photofind && ionice -c3 $HOME/photofind-env/bin/python -m photofind index $HOME/Pictures --max-minutes 300 >> $HOME/.local/share/photofind/index.log 2>&1
+0 2 * * * cd $HOME/homepix && ionice -c3 $HOME/homepix-env/bin/python -m homepix index $HOME/Pictures --max-minutes 300 >> $HOME/.local/share/homepix/index.log 2>&1
 ```
 
 `--max-minutes` stops it after that long; the next night continues where it left off.
@@ -98,23 +100,23 @@ Run `index` again whenever you add photos. It only processes new or changed file
 Same code. Install Python from python.org, then:
 
 ```
-py -m venv %USERPROFILE%\photofind-env
-%USERPROFILE%\photofind-env\Scripts\pip install -r requirements.txt
-%USERPROFILE%\photofind-env\Scripts\python -m photofind index C:\Users\you\Pictures
+py -m venv %USERPROFILE%\homepix-env
+%USERPROFILE%\homepix-env\Scripts\pip install -r requirements.txt
+%USERPROFILE%\homepix-env\Scripts\python -m homepix index C:\Users\you\Pictures
 ```
 
-Use Task Scheduler for nightly runs. Data is stored in `%LOCALAPPDATA%\photofind`.
+Use Task Scheduler for nightly runs. Data is stored in `%LOCALAPPDATA%\homepix`.
 
 ## Where things are stored
 
-`~/.local/share/photofind/` on Linux, `%LOCALAPPDATA%\photofind` on Windows (change it with the `PHOTOFIND_HOME` environment variable):
+`~/.local/share/homepix/` on Linux, `%LOCALAPPDATA%\homepix` on Windows (change it with the `HOMEPIX_HOME` environment variable):
 
-- `photofind.db`: one SQLite file holding everything it learned (about 1–2 KB per photo)
+- `homepix.db`: one SQLite file holding everything it learned (about 1–2 KB per photo)
 - `models/`: the downloaded AI models
 - `thumbs/`: small previews of every photo
 - `results.html`, `people.html`: the latest pages
 
-Each library folder also gets `.photofind/library.db`, the copy of what's known about its photos (see *Taking your library along*), and a note saying what it is. A copy found from another library is never overwritten; it's kept beside the new one as `library-<date>.db`.
+Each library folder also gets `.homepix/library.db`, the copy of what's known about its photos (see *Taking your library along*), and a note saying what it is. A copy found from another library is never overwritten; it's kept beside the new one as `library-<date>.db`.
 
 Your photos change only when you ask (rename, move, Trash, details, organize, duplicates), and every change can be undone. Uninstalling the app keeps that folder, so reinstalling picks up where you left off; delete it to remove everything.
 
@@ -134,11 +136,11 @@ Your photos change only when you ask (rename, move, Trash, details, organize, du
 
 Read the Apple license yourself before shipping a commercial product. The newer MobileCLIP2 models are more accurate but use a different, research-oriented Apple license.
 
-The app's font is [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans), bundled under the SIL Open Font License (`photofind/ui/fonts/OFL.txt`).
+The app's font is [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans), bundled under the SIL Open Font License (`homepix/ui/fonts/OFL.txt`).
 
 ## Tuning
 
-Constants in `photofind/core/config.py`:
+Constants in `homepix/core/config.py`:
 
 - `MATCH_STRICTNESS`: raise it if unrelated photos show up as search matches; lower it if real matches end up under "possibly related". `NEAR_STRICTNESS` and `MAX_NEAR` control the "possibly related" section.
 - `CLUSTER_SIM`: raise it if different people end up in one group; lower it if one person is split across many groups.
@@ -153,5 +155,5 @@ Constants in `photofind/core/config.py`:
 - RAW camera files other than DNG aren't supported yet; DNG photos are shown from the preview inside them.
 - HEIC photos can be rotated but not flipped, and WebP files can't have details written into them with the ExifTool that comes with older Linux versions (the bundled one can).
 - From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (the downloads bundle their own).
-- On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so Photo Finder won't delete them.
+- On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so HomePix won't delete them.
 - Very small faces in big group photos are often missed or not recognized (small faces are read from the full-size photo, which helps when it has the pixels).

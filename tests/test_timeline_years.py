@@ -1,6 +1,6 @@
 """The year scrubber's labels: every year shown, none overlapping, all on screen."""
 
-from photofind.ui.views.timeline import year_labels
+from homepix.ui.views.timeline import year_labels
 
 
 def test_every_year_gets_a_label_even_when_close_together():

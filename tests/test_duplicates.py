@@ -11,7 +11,7 @@ import pytest
 from conftest import own_trash
 from PIL import Image, ImageDraw
 
-from photofind.core.util import quick_hash
+from homepix.core.util import quick_hash
 
 
 def scene(seed, shift=0, size=(640, 480)):
@@ -45,7 +45,7 @@ def save(img, path, taken=None, quality=92):
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
     own_trash(monkeypatch, tmp_path)
-    from photofind.core import duplicates, fileops
+    from homepix.core import duplicates, fileops
 
     pf.add_folder(lib)
     db = pf.open_db()
@@ -122,7 +122,7 @@ def test_the_keeper_has_the_most_pixels_then_the_biggest_file(home, lib, planted
 
 
 def test_the_perceptual_hash_sees_through_resizing_and_saving_again():
-    from photofind.core.duplicates import distance, phash
+    from homepix.core.duplicates import distance, phash
 
     a = scene(9, size=(1200, 900))
     assert distance(phash(a), phash(a.resize((300, 225)))) <= 2
@@ -164,7 +164,7 @@ def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
 def test_the_command_line_reports(home, lib, planted, capsys):
     from types import SimpleNamespace
 
-    from photofind import cli
+    from homepix import cli
 
     cli.cmd_duplicates(SimpleNamespace(show=10))
     out = capsys.readouterr().out
@@ -177,9 +177,9 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
     from test_faces_ui import app as _app
     from test_faces_ui import wait_until
 
-    from photofind.ui.main_window import MainWindow
-    from photofind.ui.views import changes_dialog
-    from photofind.ui.views.sidebar import DUPES
+    from homepix.ui.main_window import MainWindow
+    from homepix.ui.views import changes_dialog
+    from homepix.ui.views.sidebar import DUPES
 
     app = _app.__wrapped__()
     shown = []
@@ -232,7 +232,7 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
 def test_skipped_groups_are_remembered(home, lib, planted):
     from test_faces_ui import app as _app
 
-    from photofind.ui.views.duplicates import DuplicatesView
+    from homepix.ui.views.duplicates import DuplicatesView
 
     _app.__wrapped__()
     groups = groups_of(home, lib)
@@ -254,8 +254,8 @@ def test_comparing_a_groups_copies_large(home, lib, planted):
     from test_faces_ui import app as _app
     from test_faces_ui import wait_until
 
-    from photofind.ui.main_window import MainWindow
-    from photofind.ui.views.sidebar import DUPES
+    from homepix.ui.main_window import MainWindow
+    from homepix.ui.views.sidebar import DUPES
 
     app = _app.__wrapped__()
     w = MainWindow(index=False)

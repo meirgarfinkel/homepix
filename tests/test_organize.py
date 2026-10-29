@@ -33,7 +33,7 @@ def shot(path, taken=None, created=None, mtime=dt.datetime(2025, 11, 30, 9, 52))
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
     own_trash(monkeypatch, tmp_path)
-    from photofind.core import fileops, organize
+    from homepix.core import fileops, organize
 
     pf.add_folder(lib)
     db = pf.open_db()
@@ -240,7 +240,7 @@ def test_only_a_folder_in_the_library(home, lib, tmp_path):
 def test_the_command_line_previews_then_applies(home, lib, capsys):
     from types import SimpleNamespace
 
-    from photofind import cli
+    from homepix import cli
 
     shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")
     home[0].index_folder(lib, want_faces=False)
@@ -259,8 +259,8 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     from test_faces_ui import app as _app
     from test_faces_ui import wait_until
 
-    from photofind.ui.main_window import MainWindow
-    from photofind.ui.views import changes_dialog
+    from homepix.ui.main_window import MainWindow
+    from homepix.ui.views import changes_dialog
 
     app = _app.__wrapped__()
     shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")
@@ -280,11 +280,12 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     wait_until(app, lambda: w.loaded)
     try:
         w.organizer.tidy()
-        wait_until(app, lambda: files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"]
-                   and not w.ops.busy)
+        # (the files are only read once it's done: Windows won't open one that's being moved)
+        wait_until(app, lambda: not w.ops.busy
+                   and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"])
         assert shown == [[os.path.normpath("new/IMG_1.jpg"), os.path.normpath("2021/2021_08_01_19_09_04.jpg"),
                           "Into 2021/"]]
         w.ops.undo()
-        wait_until(app, lambda: files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"] and not w.ops.busy)
+        wait_until(app, lambda: not w.ops.busy and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"])
     finally:
         w.close()

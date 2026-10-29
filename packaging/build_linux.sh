@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds PhotoFinder-x86_64.AppImage: one file people can download and double-click.
+# Builds HomePix-x86_64.AppImage: one file people can download and double-click.
 # Run from anywhere:   bash packaging/build_linux.sh
 # The AppImage runs on the Linux it was built on and newer ones, so release builds are made on
 # AlmaLinux 9 (glibc 2.34): run   bash packaging/build_in_container.sh   for that.
@@ -8,7 +8,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$HERE")"
-BUILD="${PHOTOFIND_BUILD:-$ROOT/build}"
+BUILD="${HOMEPIX_BUILD:-$ROOT/build}"
 ENV="$BUILD/env"
 PYTHON="${PYTHON:-python3}"
 ARCH="$(uname -m)"
@@ -46,21 +46,21 @@ fi
 "$ENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt" pyinstaller
 echo "$STAMP" > "$ENV/.requirements"
 
-echo "2/4  Bundling Photo Finder with PyInstaller..."
+echo "2/4  Bundling HomePix with PyInstaller..."
 rm -rf "$BUILD/dist" "$BUILD/work"
 "$ENV/bin/pyinstaller" --noconfirm --clean --log-level ERROR \
-  --distpath "$BUILD/dist" --workpath "$BUILD/work" "$HERE/photofind.spec"
+  --distpath "$BUILD/dist" --workpath "$BUILD/work" "$HERE/homepix.spec"
 
 echo "     Adding ExifTool with its own Perl..."
 bash "$HERE/bundle_exiftool.sh" "$BUILD/exiftool" "$ENV/bin/python"
-cp -r "$BUILD/exiftool" "$BUILD/dist/PhotoFinder/_internal/exiftool"
+cp -r "$BUILD/exiftool" "$BUILD/dist/HomePix/_internal/exiftool"
 
 if [ -n "${GLIBC_MAX:-}" ]; then  # set by the release build: nothing may need a newer glibc than this
-  need="$(find "$BUILD/dist/PhotoFinder" -type f -name "*.so*" -print0 | xargs -0 objdump -T 2>/dev/null \
+  need="$(find "$BUILD/dist/HomePix" -type f -name "*.so*" -print0 | xargs -0 objdump -T 2>/dev/null \
           | grep -o "GLIBC_[0-9][0-9.]*" | sed "s/GLIBC_//" | sort -uV | tail -1)"
   if [ "$(printf '%s\n%s\n' "$need" "$GLIBC_MAX" | sort -V | tail -1)" != "$GLIBC_MAX" ]; then
     echo "A bundled library needs glibc $need, newer than $GLIBC_MAX. These ones:"
-    find "$BUILD/dist/PhotoFinder" -type f -name "*.so*" -exec sh -c \
+    find "$BUILD/dist/HomePix" -type f -name "*.so*" -exec sh -c \
       'objdump -T "$1" 2>/dev/null | grep -q "GLIBC_$2" && echo "  $1"' _ {} "$need" \;
     exit 1
   fi
@@ -68,26 +68,26 @@ if [ -n "${GLIBC_MAX:-}" ]; then  # set by the release build: nothing may need a
 fi
 
 echo "3/4  Arranging the AppImage folder..."
-APPDIR="$BUILD/PhotoFinder.AppDir"
+APPDIR="$BUILD/HomePix.AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/lib"
-cp -r "$BUILD/dist/PhotoFinder" "$APPDIR/usr/lib/"
+cp -r "$BUILD/dist/HomePix" "$APPDIR/usr/lib/"
 find "$APPDIR" -xtype l -delete  # links to Qt libraries the spec left out
-cp "$ROOT/photofind-icon.png" "$APPDIR/photofind.png"
-cat > "$APPDIR/photofind.desktop" <<'EOF'
+cp "$ROOT/homepix-icon.png" "$APPDIR/homepix.png"
+cat > "$APPDIR/homepix.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
-Name=Photo Finder
+Name=HomePix
 Comment=Find your photos by describing them
-Exec=PhotoFinder
-Icon=photofind
+Exec=HomePix
+Icon=homepix
 Terminal=false
 Categories=Graphics;Photography;
 EOF
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/lib/PhotoFinder/PhotoFinder" "$@"
+exec "$HERE/usr/lib/HomePix/HomePix" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
@@ -104,7 +104,7 @@ RUNTIME="$BUILD/runtime-20251108-$ARCH"
 fetch "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256" "$TOOL"
 fetch "$RUNTIME_URL" "$RUNTIME_SHA256" "$RUNTIME"
 chmod +x "$TOOL"
-OUT="${PHOTOFIND_OUT:-$ROOT}/PhotoFinder-$ARCH.AppImage"
+OUT="${HOMEPIX_OUT:-$ROOT}/HomePix-$ARCH.AppImage"
 # --appimage-extract-and-run lets the tool work even where FUSE isn't installed. It writes beside
 # the old file and then swaps it in, which works even while the old one is running.
 if ! ARCH="$ARCH" "$TOOL" --appimage-extract-and-run --no-appstream --runtime-file "$RUNTIME" "$APPDIR" \
