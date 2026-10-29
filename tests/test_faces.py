@@ -201,6 +201,59 @@ def test_that_isnt_them_and_not_a_face(db):
     assert set(names(db).values()) == {"Ann"}
 
 
+def test_that_isnt_them_teaches_who_they_arent(db):
+    """A look-alike (a sibling, say) is close enough to be recognized as Ann. Saying a couple of
+    them aren't her unnames the rest of them too, and stops new ones being recognized as her, while
+    Ann's own faces still are."""
+    rng = np.random.default_rng(7)
+    e = np.eye(128, dtype=np.float32)
+
+    def faces(direction, n):
+        out = []
+        for _ in range(n):
+            pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/n/{faces.n}.jpg", f"n{faces.n}")).lastrowid
+            faces.n += 1
+            v = unit(direction + rng.normal(0, .053, 128))
+            out.append(db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
+                                  (pid, to_blob(v))).lastrowid)
+        db.commit()
+        return out
+    faces.n = 0
+    ann_look, sister_look = e[0] + .6 * e[1], e[0] + .6 * e[2]  # each alike as 0.8, and to each other 0.58
+    ann, sister = faces(ann_look, 8), faces(sister_look, 8)
+    do(db, people.plan_name(db, ann[:3], "Ann"))
+    got = names(db)
+    assert all(got[f] == "Ann" for f in ann) and sum(got[f] == "Ann" for f in sister) >= 4  # mixed up
+    wrong = [f for f in sister if got[f] == "Ann"]
+    pid = people.person_id(db, "Ann")
+
+    do(db, people.plan_not(db, wrong[:2]))
+    got = names(db)
+    assert all(got[f] is None for f in sister)  # the rest of her went too
+    assert all(got[f] == "Ann" for f in ann)
+    assert {r[0] for r in db.execute("SELECT id FROM faces WHERE not_person = ?", (pid,))} == set(wrong[:2])
+    new_ann, new_sister = faces(ann_look, 3), faces(sister_look, 3)  # new photos come in
+    people.auto_assign(db)
+    got = names(db)
+    assert all(got[f] == "Ann" for f in new_ann) and all(got[f] is None for f in new_sister)
+
+    fileops.undo(db)  # the faces new photos brought aren't part of it: the marks and unnaming are
+    assert db.execute("SELECT COUNT(*) FROM faces WHERE not_person IS NOT NULL").fetchone()[0] == 0
+    assert [names(db)[f] for f in wrong] == ["Ann"] * len(wrong)
+
+
+def test_naming_a_face_someone_else_and_forgetting_keep_the_marks_straight(db):
+    a = add_faces(db, [1, 1, 1, 2], seed=1)
+    do(db, people.plan_name(db, a, "Ann"))
+    ann = people.person_id(db, "Ann")
+    do(db, people.plan_name(db, [a[3]], "Bob"))  # it's Bob: so not Ann
+    assert db.execute("SELECT not_person FROM faces WHERE id=?", (a[3],)).fetchone()[0] == ann
+    do(db, people.plan_forget(db, ann))
+    assert db.execute("SELECT not_person FROM faces WHERE id=?", (a[3],)).fetchone()[0] is None
+    fileops.undo(db)  # Ann is back, and so is what was said about her
+    assert db.execute("SELECT not_person FROM faces WHERE id=?", (a[3],)).fetchone()[0] == ann
+
+
 def test_moving_wrong_faces_to_someone_else(db):
     a = add_faces(db, [1, 1, 1, 2], seed=1)
     do(db, people.plan_name(db, a, "Ann"))  # one of them is really Bob

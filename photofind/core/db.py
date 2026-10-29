@@ -172,8 +172,14 @@ def _m10_face_size(db):
     db.execute("ALTER TABLE faces ADD COLUMN px REAL")
 
 
+def _m11_not_person(db):
+    """not_person: who someone said this face isn't ("that isn't them", or naming it someone else),
+    to learn from: a face like it is less likely to be them (see people.auto_assign)."""
+    db.execute("ALTER TABLE faces ADD COLUMN not_person INTEGER REFERENCES people(id) ON DELETE SET NULL")
+
+
 MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates,
-              _m8_faces, _m9_duplicates, _m10_face_size]
+              _m8_faces, _m9_duplicates, _m10_face_size, _m11_not_person]
 LATEST = len(MIGRATIONS)
 
 
