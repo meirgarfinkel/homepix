@@ -10,8 +10,8 @@ Naming someone recognizes them in more photos too: those faces are part of the s
 
 import numpy as np
 
-from .config import ASSIGN_MARGIN, ASSIGN_SIM, CLUSTER_SIM, SUBGROUP_SIM
-from .db import from_blob
+from .config import ASSIGN_MARGIN, ASSIGN_MIN_PX, ASSIGN_SIM, CLUSTER_SIM, SUBGROUP_SIM
+from .db import backup, from_blob
 from .util import normalize
 
 
@@ -35,14 +35,34 @@ def person_centroids(db):
     return people, cents
 
 
+RECOGNIZE_K = 3  # a face is compared with the 3 most like it of someone's named faces
+
+
+def references(db):
+    """The faces someone named (not those recognized by themselves): what recognizing compares
+    with, so a wrong match is never a reason for more. Returns their people ids and embeddings."""
+    rows, embs = load_faces(db, "f.person_id IS NOT NULL AND f.locked = 1 AND f.hidden = 0")
+    return np.array([r["person_id"] for r in rows], dtype=np.int64), embs
+
+
 def auto_assign(db, write: bool = True):
-    """Tag unnamed faces that clearly match someone already named. Returns how many; with
-    write=False, the [(person id, face id)] it would tag instead, changing nothing."""
-    people, cents = person_centroids(db)
-    rows, embs = load_faces(db, "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0") if people else ([], None)
+    """Tag unnamed faces that clearly match someone already named: on average as alike as
+    ASSIGN_SIM to the RECOGNIZE_K most alike of the faces they were named on, ASSIGN_MARGIN more than
+    to anyone else, and big enough to tell (ASSIGN_MIN_PX). Returns how many; with write=False, the
+    [(person id, face id)] it would tag instead, changing nothing."""
+    owners, refs = references(db)
+    people = sorted(set(owners.tolist()))
+    rows, embs = load_faces(db, "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0 "
+                            "AND (f.px IS NULL OR f.px >= ?)", (ASSIGN_MIN_PX,)) if people else ([], None)
     if not rows:
         return 0 if write else []
-    sims = embs @ cents.T
+    cols = [np.flatnonzero(owners == p) for p in people]
+    sims = np.empty((len(rows), len(people)), np.float32)
+    for start in range(0, len(rows), 2048):  # (a block at a time: faces × named faces can be big)
+        block = embs[start:start + 2048] @ refs.T
+        for j, c in enumerate(cols):
+            k = min(RECOGNIZE_K, len(c))
+            sims[start:start + 2048, j] = -np.partition(-block[:, c], k - 1, axis=1)[:, :k].mean(axis=1)
     order = np.argsort(-sims, axis=1)
     best = sims[np.arange(len(rows)), order[:, 0]]
     second = sims[np.arange(len(rows)), order[:, 1]] if len(people) > 1 else np.full(len(rows), -1.0)
@@ -62,6 +82,23 @@ def auto_assign(db, write: bool = True):
     db.executemany("UPDATE faces SET person_id=?, cluster=NULL WHERE id=?", updates)
     db.commit()
     return len(updates)
+
+
+def reset_faces(db):
+    """Forget every face and everyone named, so the next indexing finds the faces again from scratch
+    (search and everything else stay). The naming in the undo history goes too: the faces it names
+    are gone. Not undoable, so the database is backed up first. Returns (faces forgotten, backup)."""
+    saved = backup(db, db.execute("PRAGMA user_version").fetchone()[0], "before-faces-reset")
+    n = db.execute("SELECT COUNT(*) FROM faces").fetchone()[0]
+    db.execute("""WITH RECURSIVE gone(id) AS (SELECT id FROM ops WHERE kind = 'people'
+                  UNION SELECT o.id FROM ops o JOIN gone ON o.undoes = gone.id)
+                  UPDATE ops SET state = 'forgotten' WHERE id IN (SELECT id FROM gone)""")
+    db.execute("DELETE FROM faces")
+    db.execute("DELETE FROM people")
+    db.execute("UPDATE photos SET faces_done = 0")
+    db.commit()
+    _portraits.clear()
+    return n, saved
 
 
 def cluster_unnamed(db, save: bool = True):

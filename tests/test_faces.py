@@ -1,6 +1,7 @@
 """M6: naming people, fixing wrong matches, "not a face", renaming, merging and forgetting, all
 undoable; the "who is this" groups; and all of it quick at the size of a real library."""
 
+import sqlite3
 import time
 
 import numpy as np
@@ -96,6 +97,83 @@ def test_look_alikes_in_a_group_sit_together(db):
     ticked = [f for f in group if who[f["photo_id"] - 1] == 2][:1]
     order = people.by_likeness(group, ticked)
     assert order[0] is ticked[0] and [who[f["photo_id"] - 1] for f in order[1:5]] == [2] * 4
+
+
+def test_recognizing_compares_with_named_faces_only_and_never_small_ones(db):
+    """A face recognized by itself is never a reason to recognize another (one wrong match used to
+    pull in more, each a bit further off); and a face too small to tell isn't recognized at all."""
+    def face(v, px=None):
+        pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/r/{face.n}.jpg", f"r{face.n}")).lastrowid
+        face.n += 1
+        return db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, .2, .2, .99, ?, ?)",
+                          (pid, to_blob(unit(v)), px)).lastrowid
+    face.n = 0
+    e = np.eye(128, dtype=np.float32)
+    named = [face(e[1] + .05 * e[k]) for k in (3, 4, 5)]
+    near = face(e[1] + .9 * e[2], px=120)    # like the named ones: recognized
+    further = face(e[2] + .5 * e[1], px=120)  # like `near`, not like the named ones
+    small = face(e[1], px=40)                 # just like them, but a blur
+    db.commit()
+    do(db, people.plan_name(db, named, "Ann"))
+    got = names(db)
+    assert got[near] == "Ann" and got[further] is None and got[small] is None
+
+
+def test_starting_faces_over_forgets_them_and_finds_them_again(db, pf):
+    from photofind.core import config
+
+    ann = add_faces(db, [1] * 4, seed=1)
+    do(db, people.plan_name(db, ann[:2], "Ann"))
+    do(db, people.plan_hide(db, ann[3:]))
+    n, saved = people.reset_faces(db)
+    assert n == 4 and saved.exists() and saved.parent == config.data_dir() / "backups"
+    assert db.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM people").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM photos WHERE faces_done = 1").fetchone()[0] == 0
+    assert fileops.can_undo(db) is None  # the naming is gone from the undo history too
+    old = sqlite3.connect(saved)  # and the backup has it all
+    assert old.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 4
+    old.close()
+
+
+def test_small_faces_are_read_from_a_bigger_decode(lib):
+    """A face 40 pixels across in the 1024-pixel photo the detector looks at is read again from the
+    photo decoded big enough for it to be 112 (the recognizer's size), its box and landmarks scaled
+    to match; a big face isn't."""
+    from PIL import Image
+
+    from photofind.core.ai.faces import Faces
+
+    Image.new("RGB", (4096, 3072), "gray").save(lib / "big.jpg")
+    seen = []
+
+    class Det:
+        def setInputSize(self, size):
+            pass
+
+        def detect(self, img):
+            small = [100, 100, 40, 40] + [110, 110, 130, 110, 120, 120, 112, 130, 128, 130] + [0.95]
+            big = [500, 300, 200, 200] + [550, 350, 650, 350, 600, 400, 560, 450, 640, 450] + [0.99]
+            return 1, np.array([small, big], np.float32)
+
+    class Rec:
+        def alignCrop(self, src, row):
+            seen.append((src.shape[1], [float(v) for v in row[:4]]))
+            return np.zeros((112, 112, 3), np.uint8)
+
+        def feature(self, img):
+            return np.ones((1, 128), np.float32)
+
+    f = object.__new__(Faces)
+    import cv2
+    f.cv2, f.det, f.rec = cv2, Det(), Rec()
+    img = Image.new("RGB", (1024, 768))
+    found = f.find(img, lib / "big.jpg")
+    k = seen[0][0] / 1024
+    assert seen[0][0] > 2800 and seen[0][1] == pytest.approx([100 * k, 100 * k, 40 * k, 40 * k])  # the big one
+    assert seen[1][0] == 1024 and seen[1][1] == [500, 300, 200, 200]
+    assert [round(r[6]) for r in found] == [round(40 * k), 200] and 40 * k >= 112  # the pixels each was read from
+    assert found[0][:4] == (100 / 1024, 100 / 768, 40 / 1024, 40 / 768)  # boxes as fractions, as before
 
 
 def test_naming_someone_known_adds_to_them(db):

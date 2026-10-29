@@ -26,7 +26,7 @@ class FakeClip:
 
 
 class FakeFaces:
-    def find(self, img):
+    def find(self, img, path=None):
         return []
 
 

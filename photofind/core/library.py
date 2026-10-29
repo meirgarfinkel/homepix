@@ -288,7 +288,7 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
     p = Path(path)
     need_clip = prev is None or not prev["has_clip"] or bool(prev["error"])
     vec = clip.embed(img) if need_clip else None
-    found = faces.find(img) if faces else []
+    found = faces.find(img, p) if faces else []
     taken, source, moment = dates.of_file(p, "photo", st.st_mtime)
     qh = quick_hash(p, st.st_size)
     if need_clip:
@@ -307,8 +307,8 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
     if faces:
         db.execute("DELETE FROM faces WHERE photo_id=?", (pid,))
         db.executemany(
-            "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?,?,?,?,?,?,?)",
-            [(pid, x, y, w, h, s, to_blob(v)) for x, y, w, h, s, v in found],
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?,?,?,?,?,?,?,?)",
+            [(pid, x, y, w, h, s, to_blob(v), px) for x, y, w, h, s, v, px in found],
         )
     try:  # the photo is already decoded, so its thumbnail is nearly free now
         photo_thumb(qh, path, img)

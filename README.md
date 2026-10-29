@@ -19,9 +19,10 @@ What's in it:
 
 - **Timeline:** every photo and video by date, newest first, in month sections, with a year scrubber down the side for jumping through the years. Ctrl + mouse wheel (or the Size slider) makes the thumbnails bigger or smaller.
 - **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show. Right-click a folder and choose *Exclude from library* to keep its photos out of All photos, people and search (nothing is deleted; opening the folder still shows them, and the same menu includes it again).
-- **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time, with the closest look-alikes side by side. None are ticked to start with: click the ones of the same person (Ctrl+A ticks them all; **Most like ticked** brings the faces most like the ones ticked to the front, most alike to least), type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that match are named too. Skip a group for now, or say it's no one you know, and it isn't asked about again.
+- **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time, with the closest look-alikes side by side. None are ticked to start with: click the ones of the same person (Ctrl+A ticks them all; **Most like ticked** brings the faces most like the ones ticked to the front, most alike to least), type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that clearly match the faces you named are named too (a face named that way is never used to name more, and faces too small to tell aren't named by themselves). Skip a group for now, or say it's no one you know, and it isn't asked about again.
 - **People:** everyone you've named, as a page of faces. Click one to see their photos; right-click to rename them (a name someone else has makes them one person), say they're the same person as someone else, or forget them.
 - **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Click the wrong ones to tick them, as on Who is this? (Ctrl+A ticks them all; **Most like ticked** brings the faces most like them to the front), and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself.
+- **Starting faces over:** View → **Start faces over...** forgets every face and name (a copy of the database goes to the backups folder first) and looks through the photos for faces again in the background, with the newest way of reading them. Search, dates and everything else stay.
 - **Faces in the viewer** (N): a box on each face with its name. Click one to name it, say it's someone else, or that it isn't a face.
 - **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
 - **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
@@ -141,7 +142,8 @@ Constants in `photofind/core/config.py`:
 
 - `MATCH_STRICTNESS`: raise it if unrelated photos show up as search matches; lower it if real matches end up under "possibly related". `NEAR_STRICTNESS` and `MAX_NEAR` control the "possibly related" section.
 - `CLUSTER_SIM`: raise it if different people end up in one group; lower it if one person is split across many groups.
-- `ASSIGN_SIM`: how sure it must be before auto-tagging a named person.
+- `ASSIGN_SIM`, `ASSIGN_MARGIN`: how sure it must be before auto-tagging a named person (compared with the faces you named).
+- `ASSIGN_MIN_PX`: faces smaller than this are never auto-tagged.
 - `MIN_FACE_PX`: ignore faces smaller than this (tiny background faces are hard to recognize).
 
 ## Known limits
@@ -152,4 +154,4 @@ Constants in `photofind/core/config.py`:
 - HEIC photos can be rotated but not flipped, and WebP files can't have details written into them with the ExifTool that comes with older Linux versions (the bundled one can).
 - From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (the downloads bundle their own).
 - On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so Photo Finder won't delete them.
-- Very small faces in big group photos are often missed or not recognized.
+- Very small faces in big group photos are often missed or not recognized (small faces are read from the full-size photo, which helps when it has the pixels).
