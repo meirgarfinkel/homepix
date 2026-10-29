@@ -350,6 +350,7 @@ class MainWindow(QMainWindow):
         self.banner.forget_missing.connect(self._forget_missing)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
         self.watcher.library_changed.connect(self.reload)
+        self.watcher.state.connect(self._sharpening)
         self.timeline.menu_requested.connect(self._tile_menu)
         self.timeline.selection_changed.connect(self._update_actions)
         self.sidebar.menu_requested.connect(self._folder_menu)
@@ -386,6 +387,11 @@ class MainWindow(QMainWindow):
         dock.setTitleBarWidget(QWidget())  # no title bar: the toolbar's buttons show and hide it
         self.addDockWidget(area, dock)
         return dock
+
+    def _sharpening(self, s: dict):
+        """While thumbnails are sharpened, repaint now and then: tiles on screen swap to sharper ones."""
+        if s.get("phase") == "sharpening":
+            self.timeline.viewport().update()
 
     def _status_shown(self, *_):
         """The status bar only while there's something to say."""

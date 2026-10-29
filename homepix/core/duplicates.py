@@ -49,7 +49,7 @@ def distance(a: int, b: int) -> int:
 def fill_looks(db, prefix: str, should_stop=lambda: False) -> int:
     """Work out the perceptual hash (from the thumbnail, so it's quick) and the size in pixels of the
     photos under prefix that don't have them yet. Returns how many."""
-    from .thumbs import photo_thumb, thumbs_dir
+    from .thumbs import old_thumb_file, photo_thumb, thumb_file
 
     rows = db.execute("SELECT id, path, qhash FROM photos WHERE phash IS NULL AND kind='photo' AND error IS NULL "
                       "AND qhash IS NOT NULL AND substr(path, 1, ?) = ?", (len(prefix), prefix)).fetchall()
@@ -58,10 +58,13 @@ def fill_looks(db, prefix: str, should_stop=lambda: False) -> int:
         if should_stop():
             break
         try:
-            thumb = thumbs_dir("photos") / f"{r['qhash']}.jpg"
+            thumb = thumb_file(r["qhash"])
+            if not thumb.exists():
+                thumb = old_thumb_file(r["qhash"])
             if not thumb.exists():
                 thumb = photo_thumb(r["qhash"], r["path"])
             with Image.open(thumb) as t:
+                t.thumbnail((320, 320))  # the size hashes were taken at before thumbnails grew
                 h = phash(t)
             with Image.open(r["path"]) as img:  # only its header is read
                 w, ht = img.size

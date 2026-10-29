@@ -13,7 +13,7 @@ from .config import MISSING_MIN, MISSING_SHARE, THUMB_SIZE, data_dir
 from .db import open_db, to_blob
 from .media import IMAGE_EXTS, READER, load_photo
 from .people import auto_assign
-from .thumbs import photo_thumb, prune_thumbs, save_thumb, thumbs_dir
+from .thumbs import photo_thumb, prune_thumbs, sharpen_thumbs
 from .util import quick_hash
 from .video import VIDEO_EXTS, is_video, video_frame, video_meta
 
@@ -65,7 +65,8 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     """Index (or update) one folder. Safe to stop and resume any time.
 
     on_progress(info) is called with a dict:
-      phase: "scanning" | "loading" | "indexing" | "done"
+      phase: "scanning" | "loading" | "indexing" | "sharpening" (thumbnails: sharpen_done of
+        sharpen_todo) | "done"
       found, todo, done, faces, errors, moved, removed, rate (photos/s), eta (seconds),
       unreachable (kept: in folders that couldn't be read), missing (kept: see forget_missing)
     should_stop() is polled between photos; return True to stop early.
@@ -216,6 +217,16 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
         from .duplicates import fill_looks
 
         fill_looks(db, prefix, stop)
+    if not info.get("stopped"):
+        began = time.time()
+
+        def sharpened(done, todo):
+            rate = done / max(time.time() - began, 1e-6)
+            info.update(phase="sharpening", sharpen_done=done, sharpen_todo=todo,
+                        sharpen_eta=(todo - done) / rate if done else None)
+            report(info)
+
+        sharpen_thumbs(db, prefix, lambda: stop() or bool(deadline and time.time() > deadline), sharpened)
     if todo or removed or info["moved"] or redated:
         link_motion(db)
         db.commit()
@@ -335,7 +346,7 @@ def _index_video(db, path, st):
     try:  # a video that won't decode still shows, with a plain tile
         frame = video_frame(p, THUMB_SIZE * 2)
         if frame is not None:
-            save_thumb(frame, thumbs_dir("photos") / f"{qh}.jpg", THUMB_SIZE, 82)
+            photo_thumb(qh, path, frame)
     except Exception as e:
         print(f"index: {path}: no frame: {e!r}", file=sys.stderr)
 

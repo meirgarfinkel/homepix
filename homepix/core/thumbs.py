@@ -45,9 +45,20 @@ def face_thumb(row, size=128) -> Path:
     return out
 
 
+def thumb_file(qhash: str) -> Path:
+    """Where a photo's thumbnail is (or goes). Its size is in the name, so a bigger size later
+    doesn't pass off the smaller ones as up to date."""
+    return thumbs_dir("photos") / f"{qhash}-{THUMB_SIZE}.jpg"
+
+
+def old_thumb_file(qhash: str) -> Path:
+    """A thumbnail from before they were sharpened (320 px): shown until its sharper one is made."""
+    return thumbs_dir("photos") / f"{qhash}.jpg"
+
+
 def photo_thumb(qhash: str, path: str, img: Image.Image = None) -> Path:
     """img: the photo, if it's already decoded (saves opening it again). For a video, a frame of it."""
-    out = thumbs_dir("photos") / f"{qhash}.jpg"
+    out = thumb_file(qhash)
     if not out.exists():
         if img is None and is_video(path):
             img = video_frame(path, THUMB_SIZE * 2)
@@ -55,8 +66,47 @@ def photo_thumb(qhash: str, path: str, img: Image.Image = None) -> Path:
                 raise ValueError("this video can't be decoded")
         elif img is None:
             img = load_photo(Path(path), THUMB_SIZE * 2)
-        save_thumb(img, out, THUMB_SIZE, 82)
+        save_thumb(img, out, THUMB_SIZE, 85)
+        old_thumb_file(qhash).unlink(missing_ok=True)
     return out
+
+
+def sharpen_thumbs(db, prefix: str, should_stop=lambda: False, progress=None, workers: int = 3) -> int:
+    """Make the sharper thumbnail of every photo and video under prefix that only has an old one
+    (or none), newest first, the way the timeline shows them. progress(done, todo) is called as it
+    goes. A photo that can't be read now is tried again next time. Returns how many were made."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    rows = db.execute("SELECT qhash, path FROM photos WHERE qhash IS NOT NULL AND error IS NULL "
+                      "AND kind IN ('photo', 'video') AND substr(path, 1, ?) = ? ORDER BY taken DESC",
+                      (len(prefix), prefix)).fetchall()
+    seen, todo = set(), []
+    for q, path in rows:
+        if q not in seen and not thumb_file(q).exists():
+            seen.add(q)
+            todo.append((q, path))
+    if not todo:
+        return 0
+
+    def make(item):
+        try:
+            photo_thumb(*item)
+            return True
+        except Exception:
+            return False
+
+    made = done = 0
+    report = progress or (lambda done, todo: None)
+    report(0, len(todo))
+    with ThreadPoolExecutor(workers, thread_name_prefix="sharpen") as pool:
+        for start in range(0, len(todo), 24):  # a batch at a time, so stopping is quick
+            if should_stop():
+                break
+            batch = todo[start:start + 24]
+            made += sum(pool.map(make, batch))
+            done += len(batch)
+            report(done, len(todo))
+    return made
 
 
 def prune_thumbs(db):

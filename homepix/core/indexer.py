@@ -123,7 +123,9 @@ class Indexer:
     def _progress(self, info):
         with self.lock:
             self.state.update(phase=info["phase"], done=info["done"], todo=info["todo"],
-                              eta=info["eta"], folder=info["root"], running=True)
+                              eta=info["eta"], folder=info["root"], running=True,
+                              sharpen_done=info.get("sharpen_done", 0), sharpen_todo=info.get("sharpen_todo", 0),
+                              sharpen_eta=info.get("sharpen_eta"))
 
     def _run(self):
         be_nice()

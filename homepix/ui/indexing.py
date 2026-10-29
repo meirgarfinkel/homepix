@@ -119,6 +119,11 @@ def describe(s: dict) -> str:
         if s["eta"] and s["done"] >= 20:  # the speed settles after the first few
             text += f", {time_left(s['eta'])}"
         return text
+    if s["phase"] == "sharpening" and s.get("sharpen_todo"):
+        text = f"Sharpening thumbnails: {s['sharpen_done']:,} of {s['sharpen_todo']:,}"
+        if s.get("sharpen_eta") and s["sharpen_done"] >= 100:  # the speed settles after the first few
+            text += f", {time_left(s['sharpen_eta'])}"
+        return text
     return "Looking for new photos..."
 
 
@@ -153,5 +158,8 @@ class IndexStatus(QWidget):
             if s["phase"] == "indexing" and s.get("todo"):
                 self.bar.setRange(0, s["todo"])
                 self.bar.setValue(s["done"])
+            elif s["phase"] == "sharpening" and s.get("sharpen_todo"):
+                self.bar.setRange(0, s["sharpen_todo"])
+                self.bar.setValue(s["sharpen_done"])
             else:
                 self.bar.setRange(0, 0)  # busy, amount unknown

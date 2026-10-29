@@ -143,9 +143,9 @@ def run_self_test(app) -> int:
             src = Path(tmp) / "test.jpg"
             Image.new("RGB", (640, 480), "teal").save(src)
             photo_thumb("selftest", str(src))
-            tile = ThumbLoader._decode("selftest", str(src), 64)
+            tile, _ = ThumbLoader._decode("selftest", str(src), 64)
             if tile is None or tile.width() != 64:
-                raise RuntimeError("Qt couldn't decode a JPEG thumbnail (image plugins missing?)")
+                raise RuntimeError("couldn't make a tile from a JPEG thumbnail")
             ok("thumbnails decode.")
             from ..core import exiftool, metadata
 

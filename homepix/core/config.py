@@ -5,7 +5,7 @@ from pathlib import Path
 
 WORK_SIZE = 1024          # photos are decoded at most this big (faster, less RAM)
 CLIP_SIZE = 256           # what the search model looks at
-THUMB_SIZE = 320          # photo thumbnails in the results grid
+THUMB_SIZE = 640          # photo thumbnails in the grid (were 320 before 2026-10-29: sharpened in the background)
 MIN_FACE_PX = 36          # ignore tiny background faces (in WORK_SIZE pixels)
 FACE_SCORE = 0.85         # face detector confidence needed
 CLUSTER_SIM = 0.40        # how alike two faces must be to group them

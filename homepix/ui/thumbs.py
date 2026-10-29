@@ -2,6 +2,7 @@
 cache with a size budget.
 
 They come from the core's thumbnail files (made while indexing); a missing one is made on the spot.
+An old, smaller one is shown until its sharper one has been made, then swapped in.
 Each is cropped square and shrunk to the tile size, so a tile in memory costs only its own pixels.
 """
 
@@ -13,7 +14,7 @@ from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QImage
 
 from ..core import photo_thumb
-from ..core.thumbs import thumbs_dir
+from ..core.thumbs import old_thumb_file, thumb_file
 
 MEMORY_BUDGET = 160 * 1024 * 1024  # bytes of decoded tiles kept in memory
 
@@ -27,6 +28,7 @@ class ThumbLoader(QObject):
         self._bytes = 0
         self._budget = budget
         self._failed = set()
+        self._soft = set()  # qhashes whose tile came from an old thumbnail, until the sharper one's in
         self._size = 0  # tile edge in device pixels
         self._queue = []  # [(qhash, path)], most wanted first
         self._busy = set()
@@ -45,6 +47,7 @@ class ThumbLoader(QObject):
             if px != self._size:
                 self._size = px
                 self._cache.clear()
+                self._soft.clear()
                 self._bytes = 0
                 self._queue.clear()
 
@@ -64,7 +67,8 @@ class ThumbLoader(QObject):
         one tile: it's loaded once."""
         with self._lock:
             seen = set()
-            self._queue = [(q, p) for q, p in items if q not in self._cache and q not in self._busy
+            sharper = {q for q, _ in items if q in self._soft and thumb_file(q).exists()}  # (kept till then)
+            self._queue = [(q, p) for q, p in items if (q not in self._cache or q in sharper) and q not in self._busy
                            and q not in self._failed and not (q in seen or seen.add(q))]
             self._queue.reverse()  # pop() from the end takes the most wanted
             if self._queue:
@@ -85,13 +89,13 @@ class ThumbLoader(QObject):
                 if self._stop:
                     return
                 qhash, path = self._queue.pop()
-                if qhash in self._cache or qhash in self._busy:
+                if (qhash in self._cache and qhash not in self._soft) or qhash in self._busy:
                     continue  # (loaded meanwhile)
                 size = self._size
                 self._busy.add(qhash)
-            img = None
+            img, soft = None, False
             try:
-                img = self._decode(qhash, path, size)
+                img, soft = self._decode(qhash, path, size)
             except Exception:
                 pass
             with self._lock:
@@ -103,6 +107,7 @@ class ThumbLoader(QObject):
                 if img is None:
                     self._failed.add(qhash)
                 else:
+                    (self._soft.add if soft else self._soft.discard)(qhash)
                     old = self._cache.pop(qhash, None)
                     if old is not None:
                         self._bytes -= old.sizeInBytes()
@@ -119,18 +124,22 @@ class ThumbLoader(QObject):
     @staticmethod
     def _decode(qhash: str, path: str, size: int):
         """The thumbnail file, cropped square from its middle and shrunk with Lanczos: Qt's
-        shrink-while-decoding is quicker but loses much of the detail (a 170 px tile kept about 70%)."""
-        file = thumbs_dir("photos") / f"{qhash}.jpg"
+        shrink-while-decoding is quicker but loses much of the detail (a 170 px tile kept about 70%).
+        Returns (the tile, whether it came from an old thumbnail)."""
+        file, soft = thumb_file(qhash), False
         if not file.exists():
-            file = photo_thumb(qhash, path)  # raises if the photo can't be read (e.g. its drive is out)
+            file, soft = old_thumb_file(qhash), True
+        if not file.exists():
+            file, soft = photo_thumb(qhash, path), False  # raises if the photo can't be read (e.g. its drive is out)
         with Image.open(file) as im:
             im = im.convert("RGB")
         w, h = im.size
         if w <= 0 or h <= 0:
-            return None
+            return None, False
         s = min(w, h)
         left, top = (w - s) / 2, (h - s) / 2
         im = im.resize((size, size), Image.LANCZOS, box=(left, top, left + s, top + s))
         data = im.tobytes()
-        return QImage(data, size, size, 3 * size, QImage.Format.Format_RGB888).convertToFormat(
+        tile = QImage(data, size, size, 3 * size, QImage.Format.Format_RGB888).convertToFormat(
             QImage.Format.Format_RGB32)  # (a copy: data needn't outlive it)
+        return tile, soft
