@@ -368,8 +368,16 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
     restores. progress(done, total) is called as it goes; should_stop() is checked between files (a
     move already under way always finishes). Returns a Result; nothing raises for a single file that
     can't be done: it's skipped, and the reason is in Result.skipped as (path, reason)."""
-    report = progress or (lambda done, total: None)
-    stop = should_stop or (lambda: False)
+    op = _Op(db, _journal(db, kind, summary, steps, undoes), progress, should_stop)
+    early = op.trash_in_the_way()
+    moved_to = op.move()
+    trashing = op.reserve_trash(early)
+    op.do_the_rest(trashing, moved_to)
+    return op.close(trashing)
+
+
+def _journal(db, kind, summary, steps, undoes) -> int:
+    """The whole plan, on disk before any file is touched. Returns the operation's id."""
     cur = db.execute("INSERT INTO ops (kind, summary, started, state, undoes) VALUES (?,?,?,?,?)",
                      (kind, summary, _now(), "running", undoes))
     op_id = cur.lastrowid
@@ -379,160 +387,197 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
             before = {"snapshot": snapshot(db, s["src"])}
         db.execute("INSERT INTO op_steps (op_id, seq, action, src, dst, before) VALUES (?,?,?,?,?,?)",
                    (op_id, seq, s["action"], s["src"], s["dst"], json.dumps(before) if before else None))
-    db.commit()  # the whole plan is on disk before any file is touched
+    db.commit()
+    return op_id
 
-    rows = db.execute("SELECT * FROM op_steps WHERE op_id=? ORDER BY seq", (op_id,)).fetchall()
-    result = Result(op_id)
-    total, done = len(rows), 0
 
-    last_commit = time.monotonic()
+class _Op:
+    """An operation being done: its steps, in phases, and how far it has got."""
 
-    def skipped(step, why):
-        _skip(db, step, why)
-        result.skipped.append((step["src"], why))
+    def __init__(self, db, op_id, progress, should_stop):
+        self.db, self.op_id = db, op_id
+        self.report = progress or (lambda done, total: None)
+        self.should_stop = should_stop or (lambda: False)
+        self.rows = db.execute("SELECT * FROM op_steps WHERE op_id=? ORDER BY seq", (op_id,)).fetchall()
+        self.result = Result(op_id)
+        self.done = 0
+        self.last_commit = time.monotonic()
 
-    def finished(step, dst):
-        nonlocal done, last_commit
-        _finish(db, step, dst)
-        result.finished += 1
-        done += 1
-        report(done, total)
-        if time.monotonic() - last_commit > 0.5:  # so the window can show the progress
-            db.commit()
-            last_commit = time.monotonic()
+    def stopping(self) -> bool:
+        if self.result.stopped or self.should_stop():
+            self.result.stopped = True
+        return self.result.stopped
 
-    # Trash that makes room for a move (a copy kept instead takes its original's place): first
-    room = {os.path.normcase(r["dst"]) for r in rows if r["action"] == "move" and r["dst"]}
-    early = set()
-    for r in rows:
-        if r["action"] != "trash" or os.path.normcase(r["src"]) not in room:
-            continue
-        early.add(r["id"])
+    def skipped(self, step, why):
+        _skip(self.db, step, why)
+        self.result.skipped.append((step["src"], why))
+
+    def finished(self, step, dst):
+        _finish(self.db, step, dst)
+        self.result.finished += 1
+        self.done += 1
+        self.report(self.done, len(self.rows))
+        if time.monotonic() - self.last_commit > 0.5:  # so the window can show the progress
+            self.db.commit()
+            self.last_commit = time.monotonic()
+
+    def _hidden(self, r, path, what):
+        return _hidden(path, self.op_id, r["seq"], what)
+
+    def _reserve(self, r) -> str | None:
+        """A name in the Trash for this step's file, recorded as under way. None: skipped."""
         if not os.path.lexists(r["src"]):
-            skipped(r, "it isn't there any more")
-            continue
+            self.skipped(r, "it isn't there any more")
+            return None
         try:
             dst = trashcan.reserve(r["src"])
         except OSError as e:
-            skipped(r, e.strerror or str(e))
-            continue
-        _set(db, r, dst=dst, done=UNDER_WAY)
-        db.commit()
-        try:
-            rename_noreplace(r["src"], dst)
-        except OSError as e:
-            trashcan.unreserve(dst)
-            skipped(r, e.strerror or str(e))
-            continue
-        finished(r, dst)
+            self.skipped(r, e.strerror or str(e))
+            return None
+        _set(self.db, r, dst=dst, done=UNDER_WAY)
+        return dst
 
-    # moves, phase 1: each file to its hidden name beside itself
-    moves = [r for r in rows if r["action"] == "move"]
-    staged = []
-    for r in moves:
-        if stop():
-            result.stopped = True
-            break
-        temp = _hidden(r["src"], op_id, r["seq"], "moving")
-        try:
-            rename_noreplace(r["src"], temp)
-        except FileNotFoundError:
-            skipped(r, "it isn't there any more")
-            continue
-        except OSError as e:
-            skipped(r, e.strerror or str(e))
-            continue
-        # the row follows (paths are unique in the index, so it can't go straight to a name being vacated)
-        db.execute("UPDATE photos SET path=? WHERE path=?", (temp, r["src"]))
-        _set(db, r, done=UNDER_WAY)
-        staged.append(r)
-    db.commit()
-    # moves, phase 2: each staged file to its destination (always finished once started)
-    moved_to = {}
-    for r in staged:
-        temp = _hidden(r["src"], op_id, r["seq"], "moving")
-        try:
-            dst = _free(db, r, r["dst"])
-            move_file(temp, dst, _hidden(dst, op_id, r["seq"], "partial"))
-        except OSError as e:
+    def trash_in_the_way(self) -> set:
+        """Trash that makes room for a move (a copy kept instead takes its original's place): first.
+        Returns those steps' ids."""
+        room = {os.path.normcase(r["dst"]) for r in self.rows if r["action"] == "move" and r["dst"]}
+        early = set()
+        for r in self.rows:
+            if r["action"] != "trash" or os.path.normcase(r["src"]) not in room:
+                continue
+            early.add(r["id"])
+            dst = self._reserve(r)
+            if dst is None:
+                continue
+            self.db.commit()
             try:
-                rename_noreplace(temp, r["src"])  # put it back where it was
-            except OSError:
-                continue  # left under way: recover() will finish it
-            db.execute("UPDATE photos SET path=? WHERE path=?", (r["src"], temp))
-            skipped(r, e.strerror or str(e))
-            continue
-        finished(r, dst)
-        moved_to[r["src"]] = dst
+                rename_noreplace(r["src"], dst)
+            except OSError as e:
+                trashcan.unreserve(dst)
+                self.skipped(r, e.strerror or str(e))
+                continue
+            self.finished(r, dst)
+        return early
 
-    # Trash: every name in it is chosen (and reserved) first
-    trashing = []
-    for r in rows:
-        if r["action"] != "trash" or result.stopped or r["id"] in early:
-            continue
-        if not os.path.lexists(r["src"]):
-            skipped(r, "it isn't there any more")
-            continue
-        try:
-            dst = trashcan.reserve(r["src"])
-        except OSError as e:
-            skipped(r, e.strerror or str(e))
-            continue
-        _set(db, r, dst=dst, done=UNDER_WAY)
-        trashing.append(dict(r) | {"dst": dst})
-    db.commit()
-
-    # copies, Trash, restores
-    trashed = {r["id"]: r for r in trashing}
-    for r in rows:
-        if r["action"] == "move" or (r["action"] == "trash" and r["id"] not in trashed):
-            continue
-        if result.stopped or stop():
-            result.stopped = True
-            break
-        try:
-            if r["action"] == "copy":
+    def move(self) -> dict:
+        """The moves, in two phases. Returns {source: where it went}."""
+        db = self.db
+        # phase 1: each file to its hidden name beside itself
+        staged = []
+        for r in self.rows:
+            if r["action"] != "move":
+                continue
+            if self.stopping():
+                break
+            temp = self._hidden(r, r["src"], "moving")
+            try:
+                rename_noreplace(r["src"], temp)
+            except FileNotFoundError:
+                self.skipped(r, "it isn't there any more")
+                continue
+            except OSError as e:
+                self.skipped(r, e.strerror or str(e))
+                continue
+            # the row follows (paths are unique in the index, so it can't go straight to a name being vacated)
+            db.execute("UPDATE photos SET path=? WHERE path=?", (temp, r["src"]))
+            _set(db, r, done=UNDER_WAY)
+            staged.append(r)
+        db.commit()
+        # phase 2: each staged file to its destination (always finished once started)
+        moved_to = {}
+        for r in staged:
+            temp = self._hidden(r, r["src"], "moving")
+            try:
                 dst = _free(db, r, r["dst"])
-                copy_file(r["src"], dst, _hidden(dst, op_id, r["seq"], "partial"))
-            elif r["action"] == "trash":
-                dst = trashed.pop(r["id"])["dst"]
+                move_file(temp, dst, self._hidden(r, dst, "partial"))
+            except OSError as e:
                 try:
-                    rename_noreplace(r["src"], dst)
-                except BaseException:
-                    trashcan.unreserve(dst)
-                    raise
-            elif r["action"] == "restore":
-                dst = _free(db, r, r["dst"])
-                trashcan.restore(r["src"], dst)
-            elif r["action"] == "meta":
-                if r["src"] in moved_to and not os.path.lexists(r["src"]):  # renamed just now: follow it
-                    r = dict(r) | {"src": moved_to[r["src"]], "dst": moved_to[r["src"]]}
-                    _set(db, r, src=r["src"], dst=r["dst"])
-                    db.commit()  # (recovery and undo need to know where it went)
-                if not os.path.lexists(r["src"]):
-                    raise FileNotFoundError
-                metadata.write(r["src"], json.loads(r["before"])["new"])
-                dst = r["src"]
-            elif r["action"] in INDEX_ONLY:  # only the index changes: committed with being marked done
-                INDEX_ONLY[r["action"]].apply(db, json.loads(r["before"])["new"])
-                dst = None
-        except FileNotFoundError:
-            skipped(r, "it isn't there any more")
-            continue
-        except OSError as e:
-            skipped(r, e.strerror or str(e))
-            continue
-        finished(r, dst)
+                    rename_noreplace(temp, r["src"])  # put it back where it was
+                except OSError:
+                    continue  # left under way: recover() will finish it
+                db.execute("UPDATE photos SET path=? WHERE path=?", (r["src"], temp))
+                self.skipped(r, e.strerror or str(e))
+                continue
+            self.finished(r, dst)
+            moved_to[r["src"]] = dst
+        return moved_to
 
-    for r in trashed.values():  # stopped before they went
-        trashcan.unreserve(r["dst"])
-        _skip(db, r, "stopped before it was done")
-    for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done=?", (op_id, PLANNED)).fetchall():
-        _skip(db, r, "stopped before it was done")
-    state = "interrupted" if result.stopped else "done"
-    db.execute("UPDATE ops SET state=?, finished=? WHERE id=?", (state, _now(), op_id))
-    db.commit()
-    return result
+    def reserve_trash(self, early) -> dict:
+        """Trash: every name in it is chosen (and reserved) first. Returns {step id: step, with its dst}."""
+        trashing = {}
+        for r in self.rows:
+            if r["action"] != "trash" or self.result.stopped or r["id"] in early:
+                continue
+            dst = self._reserve(r)
+            if dst is not None:
+                trashing[r["id"]] = dict(r) | {"dst": dst}
+        self.db.commit()
+        return trashing
+
+    def do_the_rest(self, trashing: dict, moved_to: dict):
+        """Copies, Trash, restores, details and the index-only steps. Trash done is taken out of trashing."""
+        for r in self.rows:
+            if r["action"] == "move" or (r["action"] == "trash" and r["id"] not in trashing):
+                continue
+            if self.stopping():
+                break
+            try:
+                if r["action"] == "meta" and r["src"] in moved_to and not os.path.lexists(r["src"]):
+                    r = self._follow(r, moved_to[r["src"]])  # renamed just now
+                dst = self._do(r, trashing)
+            except FileNotFoundError:
+                self.skipped(r, "it isn't there any more")
+                continue
+            except OSError as e:
+                self.skipped(r, e.strerror or str(e))
+                continue
+            self.finished(r, dst)
+
+    def _follow(self, r, path):
+        """A details step whose file was just renamed: it goes to the new name."""
+        r = dict(r) | {"src": path, "dst": path}
+        _set(self.db, r, src=path, dst=path)
+        self.db.commit()  # (recovery and undo need to know where it went)
+        return r
+
+    def _do(self, r, trashing):
+        """Do one step. Returns where its file went."""
+        db, action = self.db, r["action"]
+        if action == "copy":
+            dst = _free(db, r, r["dst"])
+            copy_file(r["src"], dst, self._hidden(r, dst, "partial"))
+        elif action == "trash":
+            dst = trashing.pop(r["id"])["dst"]
+            try:
+                rename_noreplace(r["src"], dst)
+            except BaseException:
+                trashcan.unreserve(dst)
+                raise
+        elif action == "restore":
+            dst = _free(db, r, r["dst"])
+            trashcan.restore(r["src"], dst)
+        elif action == "meta":
+            if not os.path.lexists(r["src"]):
+                raise FileNotFoundError
+            metadata.write(r["src"], json.loads(r["before"])["new"])
+            dst = r["src"]
+        elif action in INDEX_ONLY:  # only the index changes: committed with being marked done
+            INDEX_ONLY[action].apply(db, json.loads(r["before"])["new"])
+            dst = None
+        return dst
+
+    def close(self, trashing: dict) -> Result:
+        """What wasn't done is marked so (a reserved Trash name is let go), and the operation ends."""
+        db = self.db
+        for r in trashing.values():  # stopped before they went
+            trashcan.unreserve(r["dst"])
+            _skip(db, r, "stopped before it was done")
+        for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done=?", (self.op_id, PLANNED)).fetchall():
+            _skip(db, r, "stopped before it was done")
+        state = "interrupted" if self.result.stopped else "done"
+        db.execute("UPDATE ops SET state=?, finished=? WHERE id=?", (state, _now(), self.op_id))
+        db.commit()
+        return self.result
 
 
 def _free(db, step, dst: str) -> str:

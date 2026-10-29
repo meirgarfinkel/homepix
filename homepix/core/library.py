@@ -85,7 +85,6 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     db = open_db()
     on_disk, unreadable, seen, empty, ignored = scan_folder(root)
     info["found"] = len(on_disk)
-
     prefix = folder_prefix(root)
     known = {
         r["path"]: r
@@ -95,19 +94,7 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
             (len(prefix), prefix),
         )
     }
-
-    def complete(r):  # indexed with everything it needs
-        return not r["error"] and (r["kind"] != "photo" or (r["has_clip"] and (r["faces_done"] or not want_faces)))
-
-    todo = []
-    for path, st in on_disk.items():
-        r = known.get(path)
-        unchanged = r is not None and r["size"] == st.st_size and abs(r["mtime"] - st.st_mtime) < 1
-        if unchanged and r["error"] and r["error_reader"] == READER:
-            continue  # couldn't be read, and nothing has changed since
-        if unchanged and complete(r):
-            continue
-        todo.append((path, st, r if unchanged else None))
+    todo = _to_index(on_disk, known, want_faces)
 
     # Photos no longer where we last saw them. Sort out which really are gone:
     excluded, vanished = [], []
@@ -120,96 +107,135 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
             info["unreachable"] += 1    # its folder couldn't be read right now: keep it
         else:
             vanished.append(r)
-
-    # Vanished photos may have been moved or renamed: same content at a path we haven't seen before.
-    # Several can share a fingerprint (exact copies), so match them one by one.
-    gone = {}
-    for r in vanished:
-        if r["qhash"]:
-            gone.setdefault(r["qhash"], []).append(r)
-    found_again = set()
-    if gone:
-        still_todo = []
-        for path, st, r in todo:
-            if path not in known:
-                same = gone.get(quick_hash(Path(path), st.st_size))
-                if same:
-                    old = same.pop()
-                    found_again.add(old["id"])
-                    db.execute("UPDATE photos SET path=?, mtime=? WHERE id=?", (path, st.st_mtime, old["id"]))
-                    info["moved"] += 1
-                    if complete(old):
-                        continue
-            still_todo.append((path, st, r))
-        todo = still_todo
-    vanished = [r for r in vanished if r["id"] not in found_again]
-
-    # A lot vanishing at once looks more like an unplugged drive or a glitch than a deletion, so those
-    # are kept (and reported as missing) until the user says to forget them: a whole folder of
-    # MISSING_MIN or more that emptied or disappeared, more than MISSING_SHARE of everything, or every
-    # photo in the folder. Smaller deletions, even of a whole small folder, are simply removed.
+    todo, vanished = _find_moved(db, todo, known, vanished, want_faces, info)
     if vanished and not forget_missing:
-        def gone_folder(path):  # the outermost folder (below root) that has emptied or disappeared
-            top, d = None, os.path.dirname(path)
-            while len(d) > len(prefix) - 1 and (d not in seen or d in empty):
-                top, d = d, os.path.dirname(d)
-            return top
-
-        by_folder = {}
-        for r in vanished:
-            by_folder.setdefault(gone_folder(r["path"]), []).append(r)
-        keep = [r for top, rs in by_folder.items() if top and len(rs) >= MISSING_MIN for r in rs]
-        if (len(vanished) >= MISSING_MIN and len(vanished) > MISSING_SHARE * len(known)) or not on_disk:
-            keep = vanished
-        info["missing"] = len(keep)
-        kept = {r["id"] for r in keep}
-        vanished = [r for r in vanished if r["id"] not in kept]
+        vanished = _not_missing(vanished, len(known), on_disk, seen, empty, prefix, info)
     removed = [r["id"] for r in excluded + vanished]
     db.executemany("DELETE FROM photos WHERE id=?", [(i,) for i in removed])
     db.commit()
     info.update(removed=len(removed), todo=len(todo))
 
     if todo:
-        models = {}
+        _index_all(db, todo, want_faces, info, report, lambda: stop() or bool(deadline and time.time() > deadline))
+    _follow_up(db, prefix, want_faces, info, report, stop, deadline, changed=bool(todo or removed))
+    db.close()
+    info["phase"] = "done"
+    report(info)
+    return info
 
-        def ai():  # loaded on the first photo (a folder of videos needs none)
-            if not models:
-                info["phase"] = "loading"
-                report(info)
-                models["clip"], models["faces"] = ClipImage(), Faces() if want_faces else None
-                info["phase"] = "indexing"
-                report(info)
-            return models["clip"], models["faces"]
 
-        info["phase"] = "indexing"
-        report(info)
-        start = time.time()
-        try:
-            for path, st, prev in todo:
-                if stop() or (deadline and time.time() > deadline):
-                    info["stopped"] = True
-                    break
-                if is_video(path):
-                    try:
-                        _index_video(db, path, st)
-                    except sqlite3.Error:
-                        raise
-                    except Exception as e:  # retried next time
-                        info["errors"] += 1
-                        print(f"index: {path}: {e!r}", file=sys.stderr)
-                else:
-                    info["faces"] += _index_one_photo(db, *ai(), path, st, prev, info)
-                info["done"] += 1
-                if info["done"] % 25 == 0:
-                    db.commit()
-                    if want_faces and info["done"] % 200 == 0:
-                        info["tagged"] += auto_assign(db)  # recognize named people as we go
-                rate = info["done"] / max(time.time() - start, 1e-6)
-                info.update(rate=rate, eta=(len(todo) - info["done"]) / max(rate, 1e-6))
-                report(info)
-        finally:
-            db.commit()
+def _complete(r, want_faces: bool) -> bool:
+    """Indexed with everything it needs."""
+    return not r["error"] and (r["kind"] != "photo" or (r["has_clip"] and (r["faces_done"] or not want_faces)))
 
+
+def _to_index(on_disk: dict, known: dict, want_faces: bool) -> list:
+    """(path, stat, its row if unchanged) for each file that's new, changed, or not fully indexed."""
+    todo = []
+    for path, st in on_disk.items():
+        r = known.get(path)
+        unchanged = r is not None and r["size"] == st.st_size and abs(r["mtime"] - st.st_mtime) < 1
+        if unchanged and r["error"] and r["error_reader"] == READER:
+            continue  # couldn't be read, and nothing has changed since
+        if unchanged and _complete(r, want_faces):
+            continue
+        todo.append((path, st, r if unchanged else None))
+    return todo
+
+
+def _find_moved(db, todo, known, vanished, want_faces, info):
+    """Vanished photos may have been moved or renamed: same content at a path we haven't seen before.
+    Several can share a fingerprint (exact copies), so they're matched one by one. Their rows follow
+    them. Returns what's still to index, and what's still vanished."""
+    gone = {}
+    for r in vanished:
+        if r["qhash"]:
+            gone.setdefault(r["qhash"], []).append(r)
+    if not gone:
+        return todo, vanished
+    found_again, still_todo = set(), []
+    for path, st, r in todo:
+        if path not in known:
+            same = gone.get(quick_hash(Path(path), st.st_size))
+            if same:
+                old = same.pop()
+                found_again.add(old["id"])
+                db.execute("UPDATE photos SET path=?, mtime=? WHERE id=?", (path, st.st_mtime, old["id"]))
+                info["moved"] += 1
+                if _complete(old, want_faces):
+                    continue
+        still_todo.append((path, st, r))
+    return still_todo, [r for r in vanished if r["id"] not in found_again]
+
+
+def _not_missing(vanished, known: int, on_disk, seen, empty, prefix, info) -> list:
+    """The vanished photos that were deleted. A lot vanishing at once looks more like an unplugged drive
+    or a glitch than a deletion, so those are kept (and counted as missing) until the user says to
+    forget them: a whole folder of MISSING_MIN or more that emptied or disappeared, more than
+    MISSING_SHARE of everything, or every photo in the folder. Smaller deletions, even of a whole small
+    folder, are simply removed."""
+    def gone_folder(path):  # the outermost folder (below root) that has emptied or disappeared
+        top, d = None, os.path.dirname(path)
+        while len(d) > len(prefix) - 1 and (d not in seen or d in empty):
+            top, d = d, os.path.dirname(d)
+        return top
+
+    by_folder = {}
+    for r in vanished:
+        by_folder.setdefault(gone_folder(r["path"]), []).append(r)
+    keep = [r for top, rs in by_folder.items() if top and len(rs) >= MISSING_MIN for r in rs]
+    if (len(vanished) >= MISSING_MIN and len(vanished) > MISSING_SHARE * known) or not on_disk:
+        keep = vanished
+    info["missing"] = len(keep)
+    kept = {r["id"] for r in keep}
+    return [r for r in vanished if r["id"] not in kept]
+
+
+def _index_all(db, todo, want_faces, info, report, stop):
+    models = {}
+
+    def ai():  # loaded on the first photo (a folder of videos needs none)
+        if not models:
+            info["phase"] = "loading"
+            report(info)
+            models["clip"], models["faces"] = ClipImage(), Faces() if want_faces else None
+            info["phase"] = "indexing"
+            report(info)
+        return models["clip"], models["faces"]
+
+    info["phase"] = "indexing"
+    report(info)
+    start = time.time()
+    try:
+        for path, st, prev in todo:
+            if stop():
+                info["stopped"] = True
+                break
+            if is_video(path):
+                try:
+                    _index_video(db, path, st)
+                except sqlite3.Error:
+                    raise
+                except Exception as e:  # retried next time
+                    info["errors"] += 1
+                    print(f"index: {path}: {e!r}", file=sys.stderr)
+            else:
+                info["faces"] += _index_one_photo(db, *ai(), path, st, prev, info)
+            info["done"] += 1
+            if info["done"] % 25 == 0:
+                db.commit()
+                if want_faces and info["done"] % 200 == 0:
+                    info["tagged"] += auto_assign(db)  # recognize named people as we go
+            rate = info["done"] / max(time.time() - start, 1e-6)
+            info.update(rate=rate, eta=(len(todo) - info["done"]) / max(rate, 1e-6))
+            report(info)
+    finally:
+        db.commit()
+
+
+def _follow_up(db, prefix, want_faces, info, report, stop, deadline, changed: bool):
+    """After indexing: recognize named people, read the details written in the files, work out how
+    they look (for duplicates), sharpen thumbnails, and pair Live Photos with their clips."""
     if want_faces:
         info["tagged"] += auto_assign(db)
     redated = 0 if info.get("stopped") else read_details(db, prefix, stop)
@@ -227,15 +253,11 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
             report(info)
 
         sharpen_thumbs(db, prefix, lambda: stop() or bool(deadline and time.time() > deadline), sharpened)
-    if todo or removed or info["moved"] or redated:
+    if changed or info["moved"] or redated:
         link_motion(db)
         db.commit()
-    if todo or removed:
+    if changed:
         prune_thumbs(db)
-    db.close()
-    info["phase"] = "done"
-    report(info)
-    return info
 
 
 def read_details(db, prefix: str, should_stop=lambda: False) -> int:

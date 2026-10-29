@@ -363,39 +363,34 @@ class Viewer(QWidget):
         self.unsetCursor()
 
     def keyPressEvent(self, e):
-        key = e.key()
-        if key in (Qt.Key.Key_Right, Qt.Key.Key_Space, Qt.Key.Key_PageDown):
-            self.go(self.index + 1)
-        elif key in (Qt.Key.Key_Left, Qt.Key.Key_Backspace, Qt.Key.Key_PageUp):
-            self.go(self.index - 1)
-        elif key == Qt.Key.Key_Home:
-            self.go(0)
-        elif key == Qt.Key.Key_End:
-            self.go(len(self.items) - 1)
-        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
-            self.set_zoom(self._current_zoom() * 1.25)
-        elif key == Qt.Key.Key_Minus:
-            self.set_zoom(self._current_zoom() / 1.25)
-        elif key in (Qt.Key.Key_0, Qt.Key.Key_Z):
-            self.set_zoom(None)
-        elif key == Qt.Key.Key_1:
-            self.set_zoom(1.0)
-        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_P) and self._is_video():
-            self.play()
-        elif key == Qt.Key.Key_Escape:
-            if self.window().isFullScreen():
-                self.window().showNormal()
-            else:
-                self.closed.emit()
-        elif key in (Qt.Key.Key_Up, Qt.Key.Key_Down) and self.compare is not None:
-            self.compare[2](self.index, 1 if key == Qt.Key.Key_Down else -1)
-        elif key == Qt.Key.Key_K and self.compare is not None:
-            self.compare[1](self.index)
-            self.update()
-        elif key == Qt.Key.Key_N:
-            self.toggle_faces()
-        elif key in (Qt.Key.Key_F, Qt.Key.Key_F11):
-            w = self.window()
-            w.showNormal() if w.isFullScreen() else w.showFullScreen()
+        do = self._keys().get(e.key())
+        if do is not None:
+            do()
         else:
             super().keyPressEvent(e)
+
+    def _keys(self) -> dict:
+        """What each key does now (a key missing here goes on to the window)."""
+        K, keys = Qt.Key, {}
+        for names, do in (
+            ((K.Key_Right, K.Key_Space, K.Key_PageDown), lambda: self.go(self.index + 1)),
+            ((K.Key_Left, K.Key_Backspace, K.Key_PageUp), lambda: self.go(self.index - 1)),
+            ((K.Key_Home,), lambda: self.go(0)),
+            ((K.Key_End,), lambda: self.go(len(self.items) - 1)),
+            ((K.Key_Plus, K.Key_Equal), lambda: self.set_zoom(self._current_zoom() * 1.25)),
+            ((K.Key_Minus,), lambda: self.set_zoom(self._current_zoom() / 1.25)),
+            ((K.Key_0, K.Key_Z), lambda: self.set_zoom(None)),
+            ((K.Key_1,), lambda: self.set_zoom(1.0)),
+            ((K.Key_Escape,), lambda: self.window().showNormal() if self.window().isFullScreen() else self.closed.emit()),
+            ((K.Key_N,), self.toggle_faces),
+            ((K.Key_F, K.Key_F11), lambda: self.window().showNormal() if self.window().isFullScreen()
+             else self.window().showFullScreen()),
+        ):
+            keys.update(dict.fromkeys(names, do))
+        if self._is_video():
+            keys.update(dict.fromkeys((K.Key_Return, K.Key_Enter, K.Key_P), self.play))
+        if self.compare is not None:  # a duplicate's copies: up and down go to the next group, K keeps this one
+            keys[K.Key_Up] = lambda: self.compare[2](self.index, -1)
+            keys[K.Key_Down] = lambda: self.compare[2](self.index, 1)
+            keys[K.Key_K] = lambda: (self.compare[1](self.index), self.update())
+        return keys

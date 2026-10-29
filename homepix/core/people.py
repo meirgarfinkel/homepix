@@ -244,22 +244,41 @@ def _change(db, faces: dict, people: dict | None = None, recognize: bool = False
     faces = {str(k): list(v) for k, v in faces.items()}
     taught = set(teach)  # (people faces are now marked not to be)
     if learn and faces:
-        for k, (was, *_rest) in _faces_now(db, faces).items():
-            v = faces[k]
-            if len(v) == 3 and was is not None and was != v[0]:
-                v.append(was)
-                taught.add(was)
-    if recognize or taught:  # see what that would do once this is done, without doing either
-        db.execute("SAVEPOINT plan")
-        try:
-            apply(db, {"faces": faces, "people": people})
-            for pid in taught:
-                faces.update({str(fid): [None, 0, 0] for fid in _doubtful(db, pid)})
-            if recognize:
-                faces.update({str(fid): [pid, 0, 0] for pid, fid in auto_assign(db, write=False)})
-        finally:
-            db.execute("ROLLBACK TO plan")
-            db.execute("RELEASE plan")
+        taught |= _remember_not(db, faces)
+    if recognize or taught:
+        _follow_on(db, faces, people, taught, recognize)
+    return _step(db, faces, people)
+
+
+def _remember_not(db, faces: dict) -> set:
+    """Faces taken from someone are remembered as not them (added to faces). Returns who they were."""
+    taught = set()
+    for k, (was, *_rest) in _faces_now(db, faces).items():
+        v = faces[k]
+        if len(v) == 3 and was is not None and was != v[0]:
+            v.append(was)
+            taught.add(was)
+    return taught
+
+
+def _follow_on(db, faces: dict, people: dict, taught, recognize: bool):
+    """Add to faces what follows from the change: faces recognized as the taught people that may not be
+    them are unnamed; recognize: faces the naming makes recognizable are named. Works it out by
+    making the change and taking it back."""
+    db.execute("SAVEPOINT plan")
+    try:
+        apply(db, {"faces": faces, "people": people})
+        for pid in taught:
+            faces.update({str(fid): [None, 0, 0] for fid in _doubtful(db, pid)})
+        if recognize:
+            faces.update({str(fid): [pid, 0, 0] for pid, fid in auto_assign(db, write=False)})
+    finally:
+        db.execute("ROLLBACK TO plan")
+        db.execute("RELEASE plan")
+
+
+def _step(db, faces: dict, people: dict) -> dict | None:
+    """The step for what actually changes, with what it was before (to undo it). None if nothing does."""
     old_faces = _faces_now(db, faces) if faces else {}
     for k, v in faces.items():
         if len(v) == 3 and k in old_faces:

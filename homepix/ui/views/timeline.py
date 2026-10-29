@@ -456,22 +456,30 @@ class TimelineView(QAbstractScrollArea):
         }
         if key in moves:
             self.set_current(moves[key](), mode if self.current >= 0 else "only")
-        elif key == Qt.Key.Key_Space and mods & Qt.KeyboardModifier.ControlModifier and self.current >= 0:
-            self.set_current(self.current, "toggle")
-        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.current >= 0:
-            self.activated.emit(self.current)
-        elif key == Qt.Key.Key_A and mods & Qt.KeyboardModifier.ControlModifier:
-            self.select_all()
-        elif key == Qt.Key.Key_Escape and self.selected:
-            self.selected = set()
-            self.viewport().update()
-            self.selection_changed.emit()
-        elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal) and mods & Qt.KeyboardModifier.ControlModifier:
-            self.set_tile_size(round(self.tile * 1.25))
-        elif key == Qt.Key.Key_Minus and mods & Qt.KeyboardModifier.ControlModifier:
-            self.set_tile_size(round(self.tile / 1.25))
+        elif key in (others := self._keys(bool(mods & Qt.KeyboardModifier.ControlModifier))):
+            others[key]()
         else:
             super().keyPressEvent(e)
+
+    def _keys(self, ctrl: bool) -> dict:
+        """What each key other than the arrows does now (a key missing here goes on to the window)."""
+        K, keys = Qt.Key, {}
+        if self.current >= 0:
+            keys.update(dict.fromkeys((K.Key_Return, K.Key_Enter), lambda: self.activated.emit(self.current)))
+            if ctrl:
+                keys[K.Key_Space] = lambda: self.set_current(self.current, "toggle")
+        if self.selected:
+            keys[K.Key_Escape] = self._select_none
+        if ctrl:
+            keys[K.Key_A] = self.select_all
+            keys.update(dict.fromkeys((K.Key_Plus, K.Key_Equal), lambda: self.set_tile_size(round(self.tile * 1.25))))
+            keys[K.Key_Minus] = lambda: self.set_tile_size(round(self.tile / 1.25))
+        return keys
+
+    def _select_none(self):
+        self.selected = set()
+        self.viewport().update()
+        self.selection_changed.emit()
 
     def focusInEvent(self, e):
         super().focusInEvent(e)

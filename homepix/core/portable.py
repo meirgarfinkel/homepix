@@ -257,35 +257,7 @@ def read_copy(root) -> dict:
         on_disk = scan_folder(root)[0]
         db = open_db()
         try:
-            claimed = {r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path, 1, ?) = ?",
-                                                (len(prefix), prefix))}
-            found = {}  # the copy's photo id: (its path now, its modified time now)
-            waiting = {}  # quick hash: the copy's photos not where they were
-            for r in rows:
-                p = prefix + r["path"].replace("/", os.sep)
-                st = on_disk.get(p)
-                if p not in claimed and st is not None and st.st_size == r["size"] \
-                        and r["mtime"] is not None and abs(st.st_mtime - r["mtime"]) < 1:
-                    found[r["id"]] = (p, st.st_mtime)
-                    claimed.add(p)
-                elif r["qhash"]:
-                    waiting.setdefault(r["qhash"], []).append(r)
-            sizes = {r["size"] for rs in waiting.values() for r in rs}
-            for p, st in on_disk.items():  # moved, renamed or copied with a new modified time
-                if not waiting:
-                    break
-                if p in claimed or st.st_size not in sizes:
-                    continue
-                try:
-                    qh = quick_hash(Path(p), st.st_size)
-                except OSError:
-                    continue
-                same = waiting.get(qh)
-                if same:
-                    found[same.pop(0)["id"]] = (p, st.st_mtime)
-                    claimed.add(p)
-                    if not same:
-                        del waiting[qh]
+            found = _find(db, rows, on_disk, prefix)
             named = _bring_in(db, cp, found)
             db.commit()
         except BaseException:
@@ -303,9 +275,55 @@ def read_copy(root) -> dict:
     return {"photos": len(found), "missing": len(rows) - len(found), "people": named}
 
 
+def _find(db, rows, on_disk: dict, prefix: str) -> dict:
+    """Where the copy's photos are now: {its photo id: (path, modified time)}. Each is found where it was
+    (if that file hasn't changed) or else by its content, anywhere in the folder; none where the
+    database already has a photo."""
+    claimed = {r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path, 1, ?) = ?",
+                                        (len(prefix), prefix))}
+    found = {}
+    waiting = {}  # quick hash: the copy's photos not where they were
+    for r in rows:
+        p = prefix + r["path"].replace("/", os.sep)
+        st = on_disk.get(p)
+        if p not in claimed and st is not None and st.st_size == r["size"] \
+                and r["mtime"] is not None and abs(st.st_mtime - r["mtime"]) < 1:
+            found[r["id"]] = (p, st.st_mtime)
+            claimed.add(p)
+        elif r["qhash"]:
+            waiting.setdefault(r["qhash"], []).append(r)
+    sizes = {r["size"] for rs in waiting.values() for r in rs}
+    for p, st in on_disk.items():  # moved, renamed or copied with a new modified time
+        if not waiting:
+            break
+        if p in claimed or st.st_size not in sizes:
+            continue
+        try:
+            qh = quick_hash(Path(p), st.st_size)
+        except OSError:
+            continue
+        same = waiting.get(qh)
+        if same:
+            found[same.pop(0)["id"]] = (p, st.st_mtime)
+            claimed.add(p)
+            if not same:
+                del waiting[qh]
+    return found
+
+
 def _bring_in(db, cp, found: dict) -> int:
     """Copy the found photos' rows (and what hangs off them) from the copy into the database. Returns
     how many people they're of."""
+    new = _bring_photos(db, cp, found)
+    named = _bring_faces(db, cp, new, _people(db, cp))
+    for a, b in cp.execute("SELECT a, b FROM apart"):
+        if a in new and b in new:
+            db.execute("INSERT OR IGNORE INTO apart (a, b) VALUES (?, ?)", sorted((new[a], new[b])))
+    return named
+
+
+def _bring_photos(db, cp, found: dict) -> dict:
+    """The found photos' rows, at their paths now. Returns {the copy's id: the id here}."""
     cols = [c for c in columns(cp, "photos") if c != "id" and c in columns(db, "photos")]
     new = {}
     for r in cp.execute(f"SELECT id, {', '.join(cols)} FROM photos"):
@@ -315,10 +333,20 @@ def _bring_in(db, cp, found: dict) -> int:
         values = [path if c == "path" else mtime if c == "mtime" else r[c] for c in cols]
         cur = db.execute(f"INSERT INTO photos ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", values)
         new[r["id"]] = cur.lastrowid
+    return new
+
+
+def _people(db, cp) -> dict:
+    """{the copy's person id: the id here}, matched by name (someone not here yet is added)."""
     people = {}
     for pid, name in cp.execute("SELECT id, name FROM people"):
         row = db.execute("SELECT id FROM people WHERE name = ?", (name,)).fetchone()
         people[pid] = row[0] if row else db.execute("INSERT INTO people (name) VALUES (?)", (name,)).lastrowid
+    return people
+
+
+def _bring_faces(db, cp, new: dict, people: dict) -> int:
+    """The faces of the photos brought in, pointing at the ids here. Returns how many people they're of."""
     fcols = [c for c in columns(cp, "faces") if c != "id" and c in columns(db, "faces")]
     named = set()
     for f in cp.execute(f"SELECT {', '.join(fcols)} FROM faces"):
@@ -333,11 +361,8 @@ def _bring_in(db, cp, found: dict) -> int:
                 v = people.get(v)
                 named.add(v)
             elif c == "not_person" and v is not None:
-                v = people.get(v)  # (people here have ids of their own)
+                v = people.get(v)
             values.append(v)
         db.execute(f"INSERT INTO faces ({', '.join(fcols)}) VALUES ({', '.join('?' * len(fcols))})", values)
-    for a, b in cp.execute("SELECT a, b FROM apart"):
-        if a in new and b in new:
-            db.execute("INSERT OR IGNORE INTO apart (a, b) VALUES (?, ?)", sorted((new[a], new[b])))
     named.discard(None)
     return len(named)
