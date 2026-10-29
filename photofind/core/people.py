@@ -45,10 +45,65 @@ def references(db):
     return np.array([r["person_id"] for r in rows], dtype=np.int64), embs
 
 
+NOT_THEM_OTHERS = 200  # the other people's named faces most like someone, as more examples of not them
+_models = {}  # person id -> (what it learned from, model): learning again only when that changes
+
+
+def _learn(pos, *negs, l2=1e-3, steps=15):
+    """A line between face prints that are someone (pos) and ones that aren't (negs, sets that each
+    weigh the same, and all of them as much as pos): logistic regression, (w, b), where e @ w + b > 0
+    is the pos side. Newton's method: a few steps, no tuning."""
+    negs = [n for n in negs if len(n)]
+    neg = np.vstack(negs)
+    x = np.hstack([np.vstack([pos, neg]), np.ones((len(pos) + len(neg), 1), np.float32)]).astype(np.float64)
+    y = np.r_[np.ones(len(pos)), np.zeros(len(neg))]
+    weight = np.r_[np.full(len(pos), .5 / len(pos)), *(np.full(len(n), .5 / len(negs) / len(n)) for n in negs)]
+    ridge = l2 * np.eye(x.shape[1])
+    ridge[-1, -1] = 0  # (not the bias)
+    w = np.zeros(x.shape[1])
+    for _ in range(steps):
+        p = 1 / (1 + np.exp(-np.clip(x @ w, -30, 30)))
+        grad = x.T @ (weight * (p - y)) + ridge @ w
+        hess = (x * (weight * p * (1 - p))[:, None]).T @ x + ridge
+        w -= np.linalg.solve(hess, grad)
+    return w[:-1].astype(np.float32), np.float32(w[-1])
+
+
+def _not_them_model(db, pid, owners, refs):
+    """What someone's "that isn't them" marks taught: a line between the faces they were named on and
+    the faces they aren't (those marks, and the other people's named faces most like them). None
+    until there's a mark (until then the matching rules alone decide)."""
+    nots = db.execute("SELECT id, emb FROM faces WHERE not_person = ? ORDER BY id", (pid,)).fetchall()
+    pos = refs[owners == pid]
+    if not nots or len(pos) < 2:
+        return None
+    others = refs[owners != pid]
+    if len(others):
+        likeness = others @ normalize(pos.mean(axis=0))
+        others = others[np.argsort(-likeness)[:NOT_THEM_OTHERS]]
+    key = (len(pos), pos.sum(axis=0).tobytes(), tuple(r[0] for r in nots), len(others))
+    if pid not in _models or _models[pid][0] != key:
+        marks = normalize(np.stack([from_blob(r[1]) for r in nots]))
+        _models[pid] = (key, _learn(pos, marks, others))
+    return _models[pid][1]
+
+
+def _doubtful(db, pid):
+    """The faces recognized as someone (not named by hand) that their "that isn't them" marks say
+    aren't them."""
+    owners, refs = references(db)
+    model = _not_them_model(db, pid, owners, refs)
+    if model is None:
+        return []
+    rows, embs = load_faces(db, "f.person_id = ? AND f.locked = 0", (pid,))
+    return [r["id"] for r, s in zip(rows, embs @ model[0] + model[1], strict=True) if s < 0]
+
+
 def auto_assign(db, write: bool = True):
     """Tag unnamed faces that clearly match someone already named: on average as alike as
     ASSIGN_SIM to the RECOGNIZE_K most alike of the faces they were named on, ASSIGN_MARGIN more than
-    to anyone else, and big enough to tell (ASSIGN_MIN_PX). Returns how many; with write=False, the
+    to anyone else, big enough to tell (ASSIGN_MIN_PX), and not on the wrong side of what their
+    "that isn't them" marks taught (_not_them_model). Returns how many; with write=False, the
     [(person id, face id)] it would tag instead, changing nothing."""
     owners, refs = references(db)
     people = sorted(set(owners.tolist()))
@@ -66,6 +121,12 @@ def auto_assign(db, write: bool = True):
     order = np.argsort(-sims, axis=1)
     best = sims[np.arange(len(rows)), order[:, 0]]
     second = sims[np.arange(len(rows)), order[:, 1]] if len(people) > 1 else np.full(len(rows), -1.0)
+    ok = (best >= ASSIGN_SIM) & (best - second >= ASSIGN_MARGIN)
+    for j in set(order[ok, 0].tolist()):  # what "that isn't them" taught can still say no
+        model = _not_them_model(db, people[j], owners, refs)
+        if model is not None:
+            mine = np.flatnonzero(ok & (order[:, 0] == j))
+            ok[mine[embs[mine] @ model[0] + model[1] < 0]] = False
     taken = {
         (r["photo_id"], r["person_id"])
         for r in db.execute("SELECT photo_id, person_id FROM faces WHERE person_id IS NOT NULL")
@@ -74,7 +135,7 @@ def auto_assign(db, write: bool = True):
     for i in sorted(range(len(rows)), key=lambda i: -best[i]):  # most confident first
         pid = people[order[i, 0]]
         key = (rows[i]["photo_id"], pid)
-        if best[i] >= ASSIGN_SIM and best[i] - second[i] >= ASSIGN_MARGIN and key not in taken:
+        if ok[i] and key not in taken:
             taken.add(key)  # one person can't appear twice in the same photo
             updates.append((pid, rows[i]["id"]))
     if not write:
@@ -98,6 +159,7 @@ def reset_faces(db):
     db.execute("UPDATE photos SET faces_done = 0")
     db.commit()
     _portraits.clear()
+    _models.clear()
     return n, saved
 
 
@@ -176,25 +238,40 @@ def named_people(db) -> list[dict]:
 
 def _faces_now(db, face_ids) -> dict:
     marks = ",".join("?" * len(face_ids))
-    return {str(r[0]): [r[1], r[2] or 0, r[3]] for r in db.execute(
-        f"SELECT id, person_id, locked, hidden FROM faces WHERE id IN ({marks})", list(face_ids))}
+    return {str(r[0]): [r[1], r[2] or 0, r[3], r[4]] for r in db.execute(
+        f"SELECT id, person_id, locked, hidden, not_person FROM faces WHERE id IN ({marks})", list(face_ids))}
 
 
-def _change(db, faces: dict, people: dict | None = None, recognize: bool = False) -> dict | None:
-    """The step that sets these faces ({face id: [person id, locked, hidden]}) and people ({person id:
-    name or None}); recognize: and tags the faces that naming makes recognizable. None if it changes
-    nothing."""
+def _change(db, faces: dict, people: dict | None = None, recognize: bool = False,
+            learn: bool = False) -> dict | None:
+    """The step that sets these faces ({face id: [person id, locked, hidden, not person]}, the last
+    left out to keep it) and people ({person id: name or None}); recognize: and tags the faces that
+    naming makes recognizable; learn: a face taken from someone is remembered as not them, and the
+    faces recognized as them that it then says aren't are unnamed. None if it changes nothing."""
     people = {str(k): v for k, v in (people or {}).items()}
-    faces = {str(k): v for k, v in faces.items()}
-    if recognize:  # see what auto-tagging would do once this is done, without doing either
+    faces = {str(k): list(v) for k, v in faces.items()}
+    taught = set()
+    if learn and faces:
+        for k, (was, *_rest) in _faces_now(db, faces).items():
+            v = faces[k]
+            if len(v) == 3 and was is not None and was != v[0]:
+                v.append(was)
+                taught.add(was)
+    if recognize or taught:  # see what that would do once this is done, without doing either
         db.execute("SAVEPOINT plan")
         try:
             apply(db, {"faces": faces, "people": people})
-            faces.update({str(fid): [pid, 0, 0] for pid, fid in auto_assign(db, write=False)})
+            for pid in taught:
+                faces.update({str(fid): [None, 0, 0] for fid in _doubtful(db, pid)})
+            if recognize:
+                faces.update({str(fid): [pid, 0, 0] for pid, fid in auto_assign(db, write=False)})
         finally:
             db.execute("ROLLBACK TO plan")
             db.execute("RELEASE plan")
     old_faces = _faces_now(db, faces) if faces else {}
+    for k, v in faces.items():
+        if len(v) == 3 and k in old_faces:
+            v.append(old_faces[k][3])
     faces = {k: v for k, v in faces.items() if k in old_faces and old_faces[k] != v}
     old_people = {k: (r[0] if (r := db.execute("SELECT name FROM people WHERE id=?", (int(k),)).fetchone()) else None)
                   for k in people}
@@ -212,8 +289,11 @@ def apply(db, state: dict):
         if name is not None:
             db.execute("INSERT INTO people (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name",
                        (int(pid), name))
+    faces = state.get("faces", {}).items()
     db.executemany("UPDATE faces SET person_id=?, locked=?, hidden=?, cluster=NULL WHERE id=?",
-                   [(pid, locked, hidden, int(fid)) for fid, (pid, locked, hidden) in state.get("faces", {}).items()])
+                   [(v[0], v[1], v[2], int(fid)) for fid, v in faces])
+    db.executemany("UPDATE faces SET not_person=? WHERE id=?",  # (steps from before it was kept have none)
+                   [(v[3], int(fid)) for fid, v in faces if len(v) > 3])
     for pid, name in state.get("people", {}).items():
         if name is None:
             db.execute("DELETE FROM people WHERE id=?", (int(pid),))
@@ -236,12 +316,13 @@ def _new_person(db, name: str) -> tuple[int, dict]:
 def plan_name(db, face_ids, name: str):
     """These faces are name (someone known, or someone new). Faces it then recognizes are named too."""
     pid, people = _new_person(db, name)
-    return _change(db, {f: [pid, 1, 0] for f in face_ids}, people, recognize=True)
+    return _change(db, {f: [pid, 1, 0] for f in face_ids}, people, recognize=True, learn=True)
 
 
 def plan_not(db, face_ids):
-    """"That isn't them": unnamed, and never recognized again (it can still be named)."""
-    return _change(db, {f: [None, 1, 0] for f in face_ids})
+    """"That isn't them": unnamed, never recognized again (it can still be named), and remembered as
+    not them, so faces like it are less likely to be recognized as them."""
+    return _change(db, {f: [None, 1, 0] for f in face_ids}, learn=True)
 
 
 def plan_hide(db, face_ids):
@@ -263,12 +344,17 @@ def plan_merge(db, pids, into: int):
     marks = ",".join("?" * len(pids))
     faces = {r[0]: [into, r[1] or 0, 0] for r in db.execute(
         f"SELECT id, locked FROM faces WHERE person_id IN ({marks})", pids)} if pids else {}
+    for r in db.execute(f"SELECT id, person_id, locked, hidden FROM faces WHERE not_person IN ({marks})", pids):
+        person, locked, hidden = faces.get(r[0], [r[1], r[2] or 0, r[3]])[:3]
+        faces[r[0]] = [person, locked, hidden, None if person == into else into]  # not them: not into either
     return _change(db, faces, {p: None for p in pids}, recognize=True)
 
 
 def plan_forget(db, pid: int):
     """No such person: their faces are unnamed again (and may be recognized as someone else)."""
     faces = {r[0]: [None, 0, 0] for r in db.execute("SELECT id FROM faces WHERE person_id=?", (pid,))}
+    for r in db.execute("SELECT id, person_id, locked, hidden FROM faces WHERE not_person=?", (pid,)):
+        faces[r[0]] = [*faces.get(r[0], [r[1], r[2] or 0, r[3]])[:3], None]  # (so Undo brings the marks back)
     return _change(db, faces, {pid: None})
 
 
