@@ -13,10 +13,15 @@ from PIL import Image
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QImage
 
-from ..core import photo_thumb
-from ..core.thumbs import old_thumb_file, thumb_file
+from ..core.thumbs import old_thumb_file, photo_thumb, thumb_file
 
 MEMORY_BUDGET = 160 * 1024 * 1024  # bytes of decoded tiles kept in memory
+
+
+def to_qimage(img) -> QImage:
+    """A Pillow image as a QImage (a copy: img needn't outlive it)."""
+    img = img.convert("RGB")
+    return QImage(img.tobytes(), img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888).copy()
 
 
 class ThumbLoader(QObject):
@@ -139,7 +144,4 @@ class ThumbLoader(QObject):
         s = min(w, h)
         left, top = (w - s) / 2, (h - s) / 2
         im = im.resize((size, size), Image.LANCZOS, box=(left, top, left + s, top + s))
-        data = im.tobytes()
-        tile = QImage(data, size, size, 3 * size, QImage.Format.Format_RGB888).convertToFormat(
-            QImage.Format.Format_RGB32)  # (a copy: data needn't outlive it)
-        return tile, soft
+        return to_qimage(im).convertToFormat(QImage.Format.Format_RGB32), soft

@@ -19,7 +19,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication
 
 from .. import __version__
-from ..core import data_dir
+from ..core.config import data_dir
 from ..core.media import HEIF  # noqa: F401  (registers the HEIC reader before anything decodes)
 
 ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix-icon.png"
@@ -127,7 +127,8 @@ def run_self_test(app) -> int:
         import tokenizers  # noqa: F401
         from PIL import Image
 
-        from ..core import ClipImage, ClipText, Faces, model_path, photo_thumb
+        from ..core.ai import ClipImage, ClipText, Faces, model_path
+        from ..core.thumbs import photo_thumb
         from .thumbs import ThumbLoader
 
         ok("AI libraries load.")

@@ -1,7 +1,4 @@
-"""The user's settings (which folders make up the library), kept in settings.json in the data folder.
-
-Both apps and the CLI read the same file, so a folder added in one shows up in the others.
-"""
+"""The user's settings (which folders make up the library), kept in settings.json in the data folder."""
 
 import json
 import os
@@ -11,6 +8,7 @@ from pathlib import Path
 
 from .config import data_dir
 from .db import open_db
+from .util import folder_prefix
 
 
 def settings_path() -> Path:
@@ -41,15 +39,9 @@ def excluded_folders() -> list[str]:
     return list(load_settings().get("excluded", []))
 
 
-def left_out(path, excluded) -> bool:
-    """Is path one of the folders excluded, or inside one?"""
-    path = os.path.abspath(path)
-    return any(path == d or path.startswith(os.path.join(d, "")) for d in map(os.path.abspath, excluded))
-
-
 def left_out_sql(excluded) -> tuple[str, tuple]:
     """A WHERE clause (and its parameters) for files not in a folder excluded."""
-    prefixes = [os.path.join(os.path.abspath(f), "") for f in excluded]
+    prefixes = [folder_prefix(os.path.abspath(f)) for f in excluded]
     if not prefixes:
         return "1=1", ()
     sql = " AND ".join("substr(path, 1, ?) != ?" for _ in prefixes)
@@ -106,7 +98,7 @@ def remove_folder(path: str) -> int:
     s = load_settings()
     s["folders"] = [f for f in s.get("folders", []) if f != path]
     save_settings(s)
-    prefix = path.rstrip(os.sep) + os.sep
+    prefix = folder_prefix(path)
     db = open_db()
     try:
         n = db.execute("DELETE FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix)).rowcount

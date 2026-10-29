@@ -4,7 +4,8 @@ import os
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .settings import left_out, left_out_sql
+from .settings import left_out_sql
+from .util import folder_prefix, within
 
 # What the library shows: readable photos and videos, not a Live Photo's moving part (it's the photo's).
 SHOWN = "error IS NULL AND qhash IS NOT NULL AND kind != 'motion'"
@@ -39,13 +40,13 @@ def load_items(db, where: str = "1=1", params=(), folder=None, person=None, excl
     """Every showable item, newest first; folder: only those in it or below it; person (an id): only
     photos they're in. Photos that couldn't be read have no thumbnail to show. excluded: folders left
     out (unless the folder shown is one of those or inside one)."""
-    if excluded and not (folder is not None and left_out(folder, excluded)):
+    if excluded and not (folder is not None and within(folder, excluded)):
         outside, more = left_out_sql(excluded)
         where, params = f"({where}) AND {outside}", (*params, *more)
     if person is not None:
         where, params = f"({where}) AND id IN (SELECT photo_id FROM faces WHERE person_id = ?)", (*params, person)
     if folder is not None:
-        prefix = str(folder).rstrip(os.sep) + os.sep
+        prefix = folder_prefix(folder)
         where, params = f"({where}) AND substr(path, 1, ?) = ?", (*params, len(prefix), prefix)
     rows = db.execute(
         "SELECT id, path, taken, qhash, kind, duration FROM photos "

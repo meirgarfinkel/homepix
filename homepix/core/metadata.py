@@ -16,8 +16,9 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from .dates import parse
 from .exiftool import exiftool
-from .video import VIDEO_EXTS
+from .video import is_video
 
 DESCRIPTION = ("XMP-dc:Description", "IPTC:Caption-Abstract", "IFD0:ImageDescription")
 KEYWORDS = ("XMP-dc:Subject", "IPTC:Keywords")
@@ -108,21 +109,6 @@ def _listed(v) -> list:
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
-def parse_date(text):
-    """ExifTool's "2024:07:01 09:30:05" (maybe with .123 or +02:00 after it) -> naive datetime."""
-    m = re.match(r"(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d):(\d\d)", str(text or ""))
-    if not m or m.group(1) == "0000":
-        return None
-    try:
-        return dt.datetime(*map(int, m.groups()))
-    except ValueError:
-        return None
-
-
-def is_video(path) -> bool:
-    return os.path.splitext(str(path))[1].lower() in VIDEO_EXTS
-
-
 def details(path, tags: dict) -> Details:
     d = Details(kind=tags.get("File:FileType", ""), tags={k: v for k, v in tags.items() if k in ALL})
     for t in DESCRIPTION:
@@ -135,9 +121,9 @@ def details(path, tags: dict) -> Details:
             d.keywords = _listed(tags[t])
             break
     if is_video(path):
-        d.taken = parse_date(tags.get("QuickTime:CreateDate"))
+        d.taken = parse(tags.get("QuickTime:CreateDate"), any_year=True)
     else:
-        d.taken = next((x for x in (parse_date(tags.get(t)) for t in PHOTO_DATES) if x), None)
+        d.taken = next((x for x in (parse(tags.get(t), any_year=True) for t in PHOTO_DATES) if x), None)
     try:
         lat, lon = float(tags["GPS:GPSLatitude"]), float(tags["GPS:GPSLongitude"])
         lat = -lat if str(tags.get("GPS:GPSLatitudeRef", "N")).upper().startswith("S") else lat
@@ -194,7 +180,7 @@ def _fmt(d: dt.datetime) -> str:
 def _moved_date(value, edit: Edit):
     """A date tag's new value: the date set (or the old one shifted), keeping any offset it had."""
     text = str(value or "")
-    old = parse_date(text)
+    old = parse(text, any_year=True)
     if edit.date is not None:
         new = edit.date
     elif old is not None:
@@ -243,7 +229,7 @@ def changes(path, d: Details, edit: Edit, shown: dt.datetime | None = None) -> d
             for t in VIDEO_DATES:
                 if t in has or t == "QuickTime:CreateDate":
                     value = has.get(t) or (_fmt(shown) if t == "QuickTime:CreateDate" and shown else None)
-                    if t == "QuickTime:CreateDate" and edit.date is None and not parse_date(value):
+                    if t == "QuickTime:CreateDate" and edit.date is None and not parse(value, any_year=True):
                         continue
                     new = _moved_date(value, edit)
                     if new:

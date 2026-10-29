@@ -1,10 +1,11 @@
-"""The database (one SQLite file) and its versioned migrations.
+"""The database (one SQLite file): its schema, and bringing an older one up to date.
 
-The schema version is SQLite's user_version. Opening an older database first backs it up to
-backups/, then upgrades it one version at a time inside a single locked transaction, so a failed
-upgrade leaves it untouched. A database from a newer HomePix is refused, never modified.
+The schema version is SQLite's user_version. A new database gets TABLES and INDEXES. An older one is
+first backed up to backups/, then upgraded inside a single locked transaction, so a failed upgrade
+leaves it untouched. A database from a newer HomePix, or from before 1.0, is refused, never modified.
 
-To change the schema, add a migration at the end of MIGRATIONS. Never edit one that has shipped.
+To change the schema: change TABLES (or INDEXES), bump VERSION, and add to UPGRADES the step that
+brings a database of the version before up to it. Never edit a step that has shipped.
 """
 
 import datetime as dt
@@ -14,201 +15,164 @@ import numpy as np
 
 from .config import data_dir, db_file
 
+VERSION = 12
 
-class NewerDatabaseError(RuntimeError):
-    """The database was upgraded by a newer HomePix than this one."""
+TABLES = {
+    "photos": """CREATE TABLE photos (
+        id INTEGER PRIMARY KEY,
+        path TEXT UNIQUE NOT NULL,
+        size INTEGER, mtime REAL,
+        qhash TEXT,  -- fingerprint of its size and first and last 64 KB (util.quick_hash)
+        kind TEXT NOT NULL DEFAULT 'photo',  -- photo, video, or motion: a Live Photo's moving part
+        taken TEXT,  -- its date (dates.py)
+        taken_source TEXT,  -- where that came from: exif, video, filename, placeholder, file-modified
+        moment TEXT,  -- the local time it happened, where its date is another (to match a Live Photo's clip)
+        duration REAL,  -- seconds, for videos
+        clip BLOB,  -- its search vector
+        faces_done INTEGER DEFAULT 0,
+        error TEXT, error_reader TEXT,  -- why it couldn't be read, and by which reader (media.READER)
+        keywords TEXT, description TEXT,  -- written in the file (keywords: a JSON list)
+        details_done INTEGER NOT NULL DEFAULT 0,  -- those read from the file since it last changed
+        sha256 TEXT,  -- of the whole file: filled in only for those that might be exact copies
+        phash INTEGER, width INTEGER, height INTEGER  -- its look and size in pixels, for duplicates
+    )""",
+    "people": """CREATE TABLE people (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL COLLATE NOCASE
+    )""",
+    "faces": """CREATE TABLE faces (
+        id INTEGER PRIMARY KEY,
+        photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        x REAL, y REAL, w REAL, h REAL, score REAL,  -- the box, as parts of the shown photo
+        emb BLOB NOT NULL,
+        px REAL,  -- its size in the pixels it was read from (NULL for faces found before 1.0)
+        person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+        locked INTEGER DEFAULT 0,  -- named by hand (or said not to be someone): never recognized again
+        hidden INTEGER NOT NULL DEFAULT 0,  -- not a face, or a stranger: never grouped, asked about or named
+        not_person INTEGER REFERENCES people(id) ON DELETE SET NULL  -- who someone said it isn't
+    )""",
+    # The file-operations journal (fileops.py): every change, so it can be undone or finished after a crash
+    "ops": """CREATE TABLE ops (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        summary TEXT,
+        started TEXT NOT NULL,
+        finished TEXT,
+        state TEXT NOT NULL DEFAULT 'running',
+        undoes INTEGER REFERENCES ops(id)  -- an undo (or redo): the operation it takes back
+    )""",
+    "op_steps": """CREATE TABLE op_steps (
+        id INTEGER PRIMARY KEY,
+        op_id INTEGER NOT NULL REFERENCES ops(id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        src TEXT,
+        dst TEXT,
+        before TEXT,
+        after TEXT,
+        done INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (op_id, seq)
+    )""",
+    # Pairs of photos someone said aren't duplicates (a < b): never offered again
+    "apart": """CREATE TABLE apart (
+        a INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        b INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        PRIMARY KEY (a, b)
+    )""",
+}
 
-
-def _columns(db, table):
-    return {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
-
-
-def _m1_base(db):
-    """The schema from before versioning (M0 and earlier); databases from then already have most of it."""
-    for stmt in (
-        """CREATE TABLE IF NOT EXISTS photos (
-            id INTEGER PRIMARY KEY,
-            path TEXT UNIQUE NOT NULL,
-            size INTEGER, mtime REAL, qhash TEXT,
-            taken TEXT,
-            clip BLOB,
-            faces_done INTEGER DEFAULT 0,
-            error TEXT,
-            error_reader TEXT
-        )""",
-        "CREATE INDEX IF NOT EXISTS photos_qhash ON photos(qhash)",
-        """CREATE TABLE IF NOT EXISTS people (
-            id INTEGER PRIMARY KEY,
-            name TEXT UNIQUE NOT NULL COLLATE NOCASE
-        )""",
-        """CREATE TABLE IF NOT EXISTS faces (
-            id INTEGER PRIMARY KEY,
-            photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
-            x REAL, y REAL, w REAL, h REAL, score REAL,
-            emb BLOB NOT NULL,
-            cluster INTEGER,
-            person_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
-            locked INTEGER DEFAULT 0
-        )""",
-        "CREATE INDEX IF NOT EXISTS faces_photo ON faces(photo_id)",
-        "CREATE INDEX IF NOT EXISTS faces_person ON faces(person_id)",
-    ):
-        db.execute(stmt)
-    if "error_reader" not in _columns(db, "photos"):  # added in M0, before versioning existed
-        db.execute("ALTER TABLE photos ADD COLUMN error_reader TEXT")
-
-
-def _m2_photo_manager(db):
-    """What the photo manager needs (see PLAN.md)."""
-    for stmt in (
-        # 'photo' or 'video'
-        "ALTER TABLE photos ADD COLUMN kind TEXT NOT NULL DEFAULT 'photo'",
-        # where `taken` came from, e.g. 'exif' or 'file-modified'; NULL = indexed before this was recorded
-        "ALTER TABLE photos ADD COLUMN taken_source TEXT",
-        # fingerprint of the whole file, for exact duplicates (qhash only samples the start and end)
-        "ALTER TABLE photos ADD COLUMN sha256 TEXT",
-        "CREATE INDEX photos_sha256 ON photos(sha256)",
-        # files that belong with a photo: a Live Photo's video, .aae / .xmp / .json sidecars
-        """CREATE TABLE sidecars (
-            id INTEGER PRIMARY KEY,
-            photo_id INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
-            path TEXT UNIQUE NOT NULL,
-            kind TEXT NOT NULL
-        )""",
-        "CREATE INDEX sidecars_photo ON sidecars(photo_id)",
-        # the file-operations journal: every change to files, so it can be undone or finished after a crash
-        """CREATE TABLE ops (
-            id INTEGER PRIMARY KEY,
-            kind TEXT NOT NULL,
-            summary TEXT,
-            started TEXT NOT NULL,
-            finished TEXT,
-            state TEXT NOT NULL DEFAULT 'running'
-        )""",
-        """CREATE TABLE op_steps (
-            id INTEGER PRIMARY KEY,
-            op_id INTEGER NOT NULL REFERENCES ops(id) ON DELETE CASCADE,
-            seq INTEGER NOT NULL,
-            action TEXT NOT NULL,
-            photo_id INTEGER,
-            src TEXT,
-            dst TEXT,
-            before TEXT,
-            after TEXT,
-            done INTEGER NOT NULL DEFAULT 0,
-            UNIQUE (op_id, seq)
-        )""",
-    ):
-        db.execute(stmt)
+INDEXES = [
+    "CREATE INDEX IF NOT EXISTS photos_qhash ON photos(qhash)",
+    "CREATE INDEX IF NOT EXISTS photos_kind ON photos(kind)",
+    "CREATE INDEX IF NOT EXISTS photos_sha256 ON photos(sha256)",
+    "CREATE INDEX IF NOT EXISTS faces_photo ON faces(photo_id)",
+    "CREATE INDEX IF NOT EXISTS faces_person ON faces(person_id)",
+]
 
 
-def _m3_videos(db):
-    """Videos: their length. kind can now also be 'motion': a Live Photo's (or motion photo's) moving
-    part, which belongs to the photo taken at the same moment and isn't shown on its own."""
-    db.execute("ALTER TABLE photos ADD COLUMN duration REAL")  # seconds, for videos
-    db.execute("CREATE INDEX photos_kind ON photos(kind)")
+class DatabaseVersionError(RuntimeError):
+    """The database is from a newer HomePix, or from one too old to bring up to date."""
 
 
-def _m4_undo(db):
-    """Undo and redo: an undo (or redo) operation records which operation it takes back."""
-    db.execute("ALTER TABLE ops ADD COLUMN undoes INTEGER REFERENCES ops(id)")
+def columns(db, table) -> list[str]:
+    return [r[1] for r in db.execute(f"PRAGMA table_info({table})")]
 
 
-def _m5_details(db):
-    """Details written in the files themselves, kept in the index to show and filter by: the star
-    rating (0-5), keywords (a JSON list) and description. details_done: read from the file since it
-    last changed."""
-    for stmt in (
-        "ALTER TABLE photos ADD COLUMN rating INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE photos ADD COLUMN keywords TEXT",
-        "ALTER TABLE photos ADD COLUMN description TEXT",
-        "ALTER TABLE photos ADD COLUMN details_done INTEGER NOT NULL DEFAULT 0",
-        "CREATE INDEX photos_rating ON photos(rating) WHERE rating > 0",
-    ):
-        db.execute(stmt)
+def _rebuild(db, table: str):
+    """Make table as TABLES has it, keeping the columns it still has. (SQLite 3.34, the release
+    build's, can't drop a column.) Foreign keys must be off."""
+    keep = ", ".join(c for c in columns(db, table) if c in set(_columns_of(TABLES[table])))
+    db.execute(TABLES[table].replace(f"CREATE TABLE {table} ", f"CREATE TABLE new_{table} ", 1))
+    db.execute(f"INSERT INTO new_{table} ({keep}) SELECT {keep} FROM {table}")
+    db.execute(f"DROP TABLE {table}")
+    db.execute(f"ALTER TABLE new_{table} RENAME TO {table}")
 
 
-def _m6_no_rating(db):
-    """Star ratings were dropped. The column stays (always 0): removing one needs SQLite 3.35, newer
-    than the release build's."""
-    db.execute("DROP INDEX IF EXISTS photos_rating")
-    db.execute("UPDATE photos SET rating = 0 WHERE rating != 0")
+def _columns_of(create: str) -> list[str]:
+    """The column names in a CREATE TABLE statement."""
+    scratch = sqlite3.connect(":memory:")
+    try:
+        scratch.execute(create)
+        name = create.split()[2]
+        return columns(scratch, name)
+    finally:
+        scratch.close()
 
 
-def _m7_dates(db):
-    """Dates are worked out by the library's rename rule now (core/dates.py): every file's details are
-    read again, dates with them. moment: the local time it happened, where its date is another (a
-    video's UTC clock, or a phone's UTC name), to match a Live Photo's clip with its photo."""
-    db.execute("ALTER TABLE photos ADD COLUMN moment TEXT")
-    db.execute("UPDATE photos SET details_done = 0")
+def _to_12(db):
+    """1.0's leftovers go, none of them used: the star rating (dropped from the app), numbers for face
+    groups (the old command line's), a journal step's photo, and the sidecars table."""
+    db.execute("DROP TABLE IF EXISTS sidecars")
+    for table in ("photos", "faces", "op_steps"):
+        _rebuild(db, table)
 
 
-def _m8_faces(db):
-    """hidden: a face not to name (not a face at all, or a stranger): never grouped, asked about or
-    recognized. locked keeps its meaning: someone said who this isn't, so it's never recognized."""
-    db.execute("ALTER TABLE faces ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
-
-
-def _m9_duplicates(db):
-    """Duplicates: a photo's look (phash, a 64-bit perceptual hash of its thumbnail) and size in
-    pixels, filled in after indexing; sha256 (from M2) is filled in only for files that might be exact
-    copies. apart: pairs of photos someone said aren't duplicates (a < b), never offered again."""
-    for stmt in (
-        "ALTER TABLE photos ADD COLUMN phash INTEGER",
-        "ALTER TABLE photos ADD COLUMN width INTEGER",
-        "ALTER TABLE photos ADD COLUMN height INTEGER",
-        """CREATE TABLE apart (
-            a INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
-            b INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
-            PRIMARY KEY (a, b)
-        )""",
-    ):
-        db.execute(stmt)
-
-
-def _m10_face_size(db):
-    """px: a face's size in the pixels it was read from (a small face is read from a bigger decode of
-    its photo), to leave the blurry ones out of recognizing; NULL for faces found before."""
-    db.execute("ALTER TABLE faces ADD COLUMN px REAL")
-
-
-def _m11_not_person(db):
-    """not_person: who someone said this face isn't ("that isn't them", or naming it someone else),
-    to learn from: a face like it is less likely to be them (see people.auto_assign)."""
-    db.execute("ALTER TABLE faces ADD COLUMN not_person INTEGER REFERENCES people(id) ON DELETE SET NULL")
-
-
-MIGRATIONS = [_m1_base, _m2_photo_manager, _m3_videos, _m4_undo, _m5_details, _m6_no_rating, _m7_dates,
-              _m8_faces, _m9_duplicates, _m10_face_size, _m11_not_person]
-LATEST = len(MIGRATIONS)
+UPGRADES = {11: _to_12}  # version: the step that brings it up to the next one
 
 
 def migrate(db: sqlite3.Connection, path):
     version = db.execute("PRAGMA user_version").fetchone()[0]
-    if version > LATEST:
-        raise NewerDatabaseError(
-            f"{path} was upgraded by a newer HomePix (database version {version}; this one knows up to "
-            f"{LATEST}). Use the newer version, or restore a copy from {path.parent / 'backups'}."
-        )
-    if version == LATEST:
+    if version == VERSION:
         return
+    if version > VERSION:
+        raise DatabaseVersionError(
+            f"{path} was upgraded by a newer HomePix (database version {version}; this one knows up to "
+            f"{VERSION}). Use the newer version, or restore a copy from {path.parent / 'backups'}.")
     if db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]:
         backup(db, version)
     upgrade(db)
 
 
 def upgrade(db: sqlite3.Connection):
-    """Bring a database up to LATEST, all in one transaction (no backup: see migrate)."""
-    db.execute("BEGIN IMMEDIATE")  # one upgrader at a time: the app and the CLI may open it together
+    """Bring a database up to VERSION, all in one transaction (no backup: see migrate)."""
+    keys = db.execute("PRAGMA foreign_keys").fetchone()[0]
+    db.execute("PRAGMA foreign_keys = OFF")  # (tables are rebuilt; only possible outside a transaction)
+    db.execute("BEGIN IMMEDIATE")  # one upgrader at a time: two windows may open it together
     try:
         version = db.execute("PRAGMA user_version").fetchone()[0]  # someone may have upgraded meanwhile
-        for step in MIGRATIONS[version:]:
-            step(db)
-        db.execute(f"PRAGMA user_version = {LATEST}")
+        empty = not db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
+        if version == 0 and empty:
+            for create in TABLES.values():
+                db.execute(create)
+        elif version < VERSION:
+            if version not in UPGRADES:
+                raise DatabaseVersionError(
+                    f"This library was made by a HomePix from before 1.0 (database version {version}), "
+                    "which this one can't bring up to date.")
+            while version < VERSION:
+                UPGRADES[version](db)
+                version += 1
+        for create in INDEXES:
+            db.execute(create)
+        if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise DatabaseVersionError("The upgrade would leave rows pointing at others that aren't there.")
+        db.execute(f"PRAGMA user_version = {VERSION}")
         db.commit()
     except BaseException:
         db.rollback()
         raise
+    finally:
+        db.execute(f"PRAGMA foreign_keys = {keys}")
 
 
 def backup(db: sqlite3.Connection, version: int, why: str = ""):

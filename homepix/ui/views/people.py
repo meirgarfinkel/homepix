@@ -6,7 +6,7 @@ from PySide6.QtCore import QPoint, QPointF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QFont, QIcon, QImage, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QListView, QListWidget, QListWidgetItem
 
-from ...core import face_thumb
+from ...core.thumbs import face_thumb
 from .. import theme, workers
 
 FACE = 132

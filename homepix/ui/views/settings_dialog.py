@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ...core import library_folders, load_settings, pictures_folder, save_settings
+from ...core.settings import library_folders, load_settings, pictures_folder, save_settings
 from .. import theme
 
 

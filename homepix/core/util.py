@@ -16,13 +16,15 @@ def say(msg=""):
     print(msg, flush=True)
 
 
-def human_time(seconds: float) -> str:
-    seconds = int(seconds)
-    if seconds < 60:
-        return f"{seconds}s"
-    if seconds < 3600:
-        return f"{seconds // 60}m {seconds % 60:02d}s"
-    return f"{seconds // 3600}h {(seconds % 3600) // 60:02d}m"
+def folder_prefix(folder) -> str:
+    """folder with a separator after it: what the paths inside it start with."""
+    return str(folder).rstrip(os.sep) + os.sep
+
+
+def within(path, folders) -> bool:
+    """Is path one of folders, or inside one?"""
+    path = os.path.abspath(path)
+    return any(path == f or path.startswith(folder_prefix(f)) for f in map(os.path.abspath, folders))
 
 
 def normalize(v: np.ndarray) -> np.ndarray:

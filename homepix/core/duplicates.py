@@ -40,10 +40,6 @@ def phash(img: Image.Image) -> int:
     return int(np.packbits(bits).view(">u8")[0].astype(np.int64))
 
 
-def distance(a: int, b: int) -> int:
-    return bin((a ^ b) & (2**64 - 1)).count("1")
-
-
 # --- filled in after indexing ------------------------------------------------------------------------
 
 def fill_looks(db, prefix: str, should_stop=lambda: False) -> int:

@@ -14,7 +14,7 @@ from .db import open_db, to_blob
 from .media import IMAGE_EXTS, READER, load_photo
 from .people import auto_assign
 from .thumbs import photo_thumb, prune_thumbs, sharpen_thumbs
-from .util import quick_hash
+from .util import folder_prefix, quick_hash
 from .video import VIDEO_EXTS, is_video, video_frame, video_meta
 
 IGNORE_MARKER = ".homepix-ignore"  # a folder holding this file is never indexed (e.g. the app's own copies)
@@ -86,7 +86,7 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     on_disk, unreadable, seen, empty, ignored = scan_folder(root)
     info["found"] = len(on_disk)
 
-    prefix = str(root).rstrip(os.sep) + os.sep
+    prefix = folder_prefix(root)
     known = {
         r["path"]: r
         for r in db.execute(

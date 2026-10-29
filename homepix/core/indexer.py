@@ -83,7 +83,7 @@ class Indexer:
     """Runs index_folder over the library folders on a background thread.
 
     snapshot() returns the state as a dict:
-      running, phase ("idle" | "scanning" | "loading" | "indexing" | "elsewhere"), folder, done, todo,
+      running, phase ("idle" | "scanning" | "loading" | "indexing" | "sharpening" | "elsewhere"), folder, done, todo,
       eta (seconds or None), error (a message to show, or None), missing (photos kept that can't be
       found), changes (goes up by one after each pass that added, moved or removed photos: compare it to
       know when to reload), last_run (time or None).

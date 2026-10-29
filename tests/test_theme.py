@@ -4,7 +4,7 @@ import pytest
 from PySide6 import QtWidgets
 from PySide6.QtGui import QPalette
 
-from homepix.core import load_settings
+from homepix.core.settings import load_settings
 from homepix.ui import theme
 
 
@@ -17,11 +17,11 @@ def app(pf):
 
 def test_dark_by_default_and_switches(app):
     theme.apply(app)
-    assert theme.mode() == "dark" and theme.is_dark()
+    assert theme.mode() == "dark" and theme._dark
     assert app.palette().color(QPalette.ColorRole.Window).name() == "#0e1014"
     theme.set_mode("light")
     assert load_settings()["theme"] == "light"
-    assert not theme.is_dark()
+    assert not theme._dark
     assert app.palette().color(QPalette.ColorRole.Window).name() == "#ffffff"
     assert theme.color("accent").name() == "#0a7dad"
     theme.set_mode("dark")
@@ -29,7 +29,7 @@ def test_dark_by_default_and_switches(app):
 
 def test_follows_the_system(app):
     theme.apply(app, "system")  # offscreen reports no preference: dark unless it says light
-    assert theme.is_dark() == (app.styleHints().colorScheme().name != "Light")
+    assert theme._dark == (app.styleHints().colorScheme().name != "Light")
     theme.apply(app, "dark")
 
 

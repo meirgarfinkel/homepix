@@ -30,6 +30,7 @@ from pathlib import Path
 
 from . import dates, duplicates, metadata, people
 from . import trash as trashcan
+from .db import columns
 from .safefs import copy_file, free_name, move_file, rename_noreplace
 from .thumbs import thumbs_dir
 from .util import quick_hash
@@ -52,10 +53,6 @@ def _hidden(path: str, op_id: int, seq: int, what: str) -> str:
 
 # --- the index side ---------------------------------------------------------------------------------
 
-def _columns(db, table) -> list[str]:
-    return [r[1] for r in db.execute(f"PRAGMA table_info({table})") if r[1] != "id"]
-
-
 def snapshot(db, path: str):
     """Everything the index knows about a photo (its row and its faces, names included), to put back
     after restoring it. None if it isn't indexed."""
@@ -66,10 +63,11 @@ def snapshot(db, path: str):
     def plain(r, cols):
         return {c: (r[c].hex() if isinstance(r[c], bytes) else r[c]) for c in cols}
 
-    face_cols = [c for c in _columns(db, "faces") if c != "photo_id"]
+    face_cols = [c for c in columns(db, "faces") if c not in ("id", "photo_id")]
     faces = db.execute("SELECT * FROM faces WHERE photo_id=?", (row["id"],)).fetchall()
-    return {"photo": plain(row, _columns(db, "photos")), "faces": [plain(f, face_cols) for f in faces],
-            "blobs": [c for c in _columns(db, "photos") + face_cols if c in ("clip", "emb")]}
+    photo_cols = [c for c in columns(db, "photos") if c != "id"]
+    return {"photo": plain(row, photo_cols), "faces": [plain(f, face_cols) for f in faces],
+            "blobs": [c for c in photo_cols + face_cols if c in ("clip", "emb")]}
 
 
 def _insert_snapshot(db, snap, path: str) -> int:

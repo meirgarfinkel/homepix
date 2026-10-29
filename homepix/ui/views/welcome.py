@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFileDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from ...core import pictures_folder
+from ...core.settings import pictures_folder
 
 
 class Welcome(QWidget):

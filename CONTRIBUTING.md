@@ -16,11 +16,10 @@ is stopped before it leaves your computer. Run the same checks any time with
 ```bash
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
 .venv/bin/python -m homepix.ui        # the desktop app (or: python homepix_app.py)
-.venv/bin/python -m homepix status    # the command line
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 ```
 
-`HOMEPIX_HOME=/some/folder` points any of these at a separate library, so you can try things
+`HOMEPIX_HOME=/some/folder` points the app (and the tests) at a separate library, so you can try things
 without touching your own.
 
 ## Branches
@@ -28,10 +27,9 @@ without touching your own.
 - **`main`** always works. Nobody pushes to it directly; changes arrive through pull requests that
   passed CI.
 - **Work happens on short-lived branches** cut from `main`, named for what they do:
-  - `m0-safety-fixes`, `m1-core-split`, ... for milestones in `PLAN.md`
   - `feature/<name>`, `fix/<name>`, `chore/<name>`, `docs/<name>` for everything else
-- Open a pull request into `main`. When CI is green, **squash-merge** it (one commit per change on `main`);
-  the branch is deleted automatically.
+- Open a pull request into `main`. When CI is green, it's **squash-merged** by itself (one commit per change on
+  `main`; `.github/workflows/automerge.yml`). Open it as a draft, or add the `no-automerge` label, to hold it back.
 
 ## CI/CD
 

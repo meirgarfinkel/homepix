@@ -1,4 +1,4 @@
-"""M6 in the app: the "who is this?" page, someone's faces, renaming people, and face boxes in the
+"""In the app: the "who is this?" page, someone's faces, renaming people, and face boxes in the
 viewer. Every change goes through the journal, so Undo takes it back."""
 
 import os

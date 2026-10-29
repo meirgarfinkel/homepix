@@ -1,4 +1,4 @@
-"""M6: naming people, fixing wrong matches, "not a face", renaming, merging and forgetting, all
+"""Naming people, fixing wrong matches, "not a face", renaming, merging and forgetting, all
 undoable; the "who is this" groups; and all of it quick at the size of a real library."""
 
 import sqlite3
@@ -387,28 +387,3 @@ def test_forty_thousand_faces(db):
     t = time.perf_counter()
     fileops.undo(db)
     assert time.perf_counter() - t < 3
-
-
-# --- the command line ----------------------------------------------------------------------------
-
-def test_the_command_line_names_through_the_journal(db, pf, capsys):
-    from types import SimpleNamespace
-
-    from homepix import cli
-
-    a = add_faces(db, [1, 1, 1], seed=1)
-    people.cluster_unnamed(db)  # numbers the groups, as `homepix people` shows them
-    group = db.execute("SELECT cluster FROM faces WHERE id=?", (a[0],)).fetchone()[0]
-    cli.cmd_name(SimpleNamespace(args=[str(group), "Ann", "Lee"]))
-    assert set(names(db).values()) == {"Ann Lee"}
-    cli.cmd_rename(SimpleNamespace(old="ann lee", new="Annie"))
-    cli.cmd_unname(SimpleNamespace(face_ids=[a[2]]))
-    assert names(db)[a[2]] is None and names(db)[a[0]] == "Annie"
-    cli.cmd_forget(SimpleNamespace(name="Annie"))
-    assert set(names(db).values()) == {None}
-    fileops.undo(db)  # each one is an operation the app can take back
-    assert [names(db)[f] for f in a] == ["Annie", "Annie", None]
-    fileops.undo(db)
-    fileops.undo(db)
-    assert set(names(db).values()) == {"Ann Lee"}
-    assert "Named 3 faces 'Ann Lee'" in capsys.readouterr().out

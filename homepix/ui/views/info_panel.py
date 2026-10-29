@@ -7,7 +7,7 @@ import html
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
-from ...core import open_db
+from ...core.db import open_db
 from ...core.info import photo_info
 from .. import theme, workers
 from .timeline import clock

@@ -1,4 +1,4 @@
-"""M4: moving, renaming, copying and trashing files: never overwriting one, never losing one (even if
+"""Moving, renaming, copying and trashing files: never overwriting one, never losing one (even if
 the app is killed partway), undo and redo, and the index matching the disk after each."""
 
 import hashlib
@@ -8,7 +8,7 @@ import sys
 import textwrap
 
 import pytest
-from conftest import own_trash, photo, rel, trash_records, trashed_files
+from conftest import own_trash, photo, recycled_from, rel, trash_records, trashed_files
 
 
 @pytest.fixture
@@ -189,7 +189,7 @@ def test_recycle_bin_records_say_where_a_file_came_from(tmp_path, monkeypatch):
     assert name.startswith("$R") and len(name) == len("$RABC123.jpg") and name.endswith(".jpg")
     info = tmp_path / "bin" / ("$I" + name[2:])
     version, size = struct.unpack_from("<qq", info.read_bytes())
-    assert (version, size) == (2, 1234) and trash.recycled_from(info) == str(f)
+    assert (version, size) == (2, 1234) and recycled_from(info) == str(f)
     assert trash._reserve_recycled(f) != dest  # every reservation gets a name of its own
 
 
@@ -200,7 +200,8 @@ def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monke
     monkeypatch.delenv("HOMEPIX_RECYCLE_BIN")
     f = photo(tmp_path / "homepix-recycle-test.jpg")
     data = f.read_bytes()
-    dest = trash.trash(f)
+    dest = trash.reserve(f)
+    os.rename(f, dest)
     assert not f.exists() and os.path.dirname(dest).lower().endswith(trash._sid().lower())
     listed = subprocess.run(
         ["powershell", "-NoProfile", "-Command",
@@ -294,7 +295,8 @@ def test_stopping_partway_keeps_what_was_done_and_undo_takes_it_back(home, lib):
 
 KILLER = textwrap.dedent("""
     import os, sys
-    from homepix.core import fileops, open_db, safefs
+    from homepix.core import fileops, safefs
+    from homepix.core.db import open_db
     lib, action, after = sys.argv[1], sys.argv[2], int(sys.argv[3])
     count = 0
     def die_soon(real):

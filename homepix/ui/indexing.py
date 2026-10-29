@@ -5,7 +5,8 @@ import time
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QToolButton, QWidget
 
-from ..core import Indexer, library_folders
+from ..core.indexer import Indexer
+from ..core.settings import library_folders
 
 RESCAN_EVERY = 30 * 60  # look for new photos every 30 minutes while the app is open
 REFRESH_EVERY = 30  # while photos are being added, show the new ones this often (seconds)

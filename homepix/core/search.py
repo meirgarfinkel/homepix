@@ -1,7 +1,6 @@
 """Search by description: scoring every photo, and turning the scores into clear matches and possibly
 related photos."""
 
-import os
 import threading
 import time
 
@@ -9,7 +8,8 @@ import numpy as np
 
 from .config import MATCH_STRICTNESS, MAX_NEAR, NEAR_STRICTNESS
 from .db import open_db
-from .settings import excluded_folders, left_out
+from .settings import excluded_folders
+from .util import folder_prefix, within
 
 
 def split_matches(scores: np.ndarray):
@@ -75,7 +75,7 @@ class SearchIndex:
             # the folders excluded aren't searched
             hidden = tuple(excluded_folders())
             if hidden != self._hidden_for:
-                self.hidden = np.array([left_out(r["path"], hidden) for r in self.rows], bool)
+                self.hidden = np.array([within(r["path"], hidden) for r in self.rows], bool)
                 self._hidden_for = hidden
             return self.rows, self.ids, self.mat
 
@@ -98,7 +98,7 @@ class SearchIndex:
         rows, ids, mat = self.vectors()
         keep = np.ones(len(rows), bool)
         hidden = self.hidden
-        if len(hidden) == len(rows) and (folder is None or not left_out(folder, self._hidden_for)):
+        if len(hidden) == len(rows) and (folder is None or not within(folder, self._hidden_for)):
             keep &= ~hidden
         sel = np.flatnonzero(keep)
         if person_id is not None or folder is not None:
@@ -110,7 +110,7 @@ class SearchIndex:
                         "SELECT DISTINCT photo_id FROM faces WHERE person_id=?", (person_id,))]
                     keep &= np.isin(ids, theirs)
                 if folder is not None:
-                    prefix = str(folder).rstrip(os.sep) + os.sep
+                    prefix = folder_prefix(folder)
                     keep &= np.array([r["path"].startswith(prefix) for r in rows], bool)
                 sel = np.flatnonzero(keep)
             finally:

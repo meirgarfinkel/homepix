@@ -3,12 +3,10 @@ and Undo takes it back."""
 
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
-from ..core import open_db, people
+from ..core import people
+from ..core.db import open_db
+from .fileops import plural
 from .views.faces import ask_name
-
-
-def _faces(n: int) -> str:
-    return f"{n:,} face{'s' if n != 1 else ''}"
 
 
 class PeopleActions:
@@ -27,14 +25,14 @@ class PeopleActions:
     # --- faces --------------------------------------------------------------------------------------
 
     def name(self, face_ids, name: str):
-        self._run(f"Name {_faces(len(face_ids))} {name}", f"Named {_faces(len(face_ids))} {name}",
+        self._run(f"Name {plural(len(face_ids), 'face')} {name}", f"Named {plural(len(face_ids), 'face')} {name}",
                   lambda db: people.plan_name(db, face_ids, name))
 
     def confirm(self, yes, no, name: str):
         """Of the faces that might be name: yes are them, the rest (no) aren't."""
-        self._run(f"Name {_faces(len(yes))} {name}, not {_faces(len(no))}",
-                  f"Named {_faces(len(yes))} {name}; {_faces(len(no))} aren't {name}" if yes
-                  else f"{_faces(len(no))} aren't {name}",
+        self._run(f"Name {plural(len(yes), 'face')} {name}, not {plural(len(no), 'face')}",
+                  f"Named {plural(len(yes), 'face')} {name}; {plural(len(no), 'face')} aren't {name}" if yes
+                  else f"{plural(len(no), 'face')} aren't {name}",
                   lambda db: people.plan_confirm(db, yes, no, name))
 
     def ask_and_name(self, face_ids, title="Who is this?", current=""):
@@ -44,11 +42,11 @@ class PeopleActions:
 
     def not_them(self, face_ids, pid=None):
         who = self._name_of(pid) if pid is not None else "them"
-        self._run(f"Unname {_faces(len(face_ids))} (not {who})", f"Took {_faces(len(face_ids))} away from {who}",
+        self._run(f"Unname {plural(len(face_ids), 'face')} (not {who})", f"Took {plural(len(face_ids), 'face')} away from {who}",
                   lambda db: people.plan_not(db, face_ids))
 
     def hide(self, face_ids):
-        self._run(f"Ignore {_faces(len(face_ids))}", f"Won't ask about {_faces(len(face_ids))} again",
+        self._run(f"Ignore {plural(len(face_ids), 'face')}", f"Won't ask about {plural(len(face_ids), 'face')} again",
                   lambda db: people.plan_hide(db, face_ids))
 
     # --- people -------------------------------------------------------------------------------------
@@ -99,7 +97,7 @@ class PeopleActions:
         def work(progress, should_stop):
             db = open_db()
             try:
-                return people.reset_faces(db)
+                return people.resetplural(db, 'face')
             finally:
                 db.close()
 
@@ -109,7 +107,7 @@ class PeopleActions:
                 self.w.ops.finished.emit("")
                 return
             n, _ = res
-            self.w.ops.finished.emit(f"Forgot {_faces(n)}. Looking for faces again, in the background")
+            self.w.ops.finished.emit(f"Forgot {plural(n, 'face')}. Looking for faces again, in the background")
 
         self.w.ops._go("Forgetting the faces...", work, done)
 

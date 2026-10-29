@@ -1,7 +1,9 @@
 """The duplicates review from the window: find the groups in the background, and move extras to the
 Trash (or say they aren't duplicates) after a preview, as operations Undo takes back."""
 
-from ..core import duplicates, library_folders, open_db
+from ..core import duplicates
+from ..core.db import open_db
+from ..core.settings import library_folders
 from . import workers
 from .fileops import plural
 from .views.changes_dialog import ChangesDialog, relative

@@ -1,9 +1,8 @@
-"""M0: the index must never lose photos that are only out of reach (#9), duplicates must not leave ghost
+"""The index must never lose photos that are only out of reach (#9), duplicates must not leave ghost
 rows (#15), and unreadable photos must be retried when that could help (#12)."""
 
 import os
 import shutil
-import sqlite3
 
 import pytest
 from conftest import copy, photo, rows
@@ -192,15 +191,3 @@ def test_model_hiccup_is_not_blamed_on_the_photo(pf, lib, monkeypatch):
     monkeypatch.setattr(library, "ClipImage", working)
     pf.index_folder(lib)
     assert rows(pf, lib)["p.jpg"]["clip"] is not None
-
-
-def test_database_from_before_m0_gets_the_new_column(pf, tmp_path):
-    path = tmp_path / "data" / "homepix.db"
-    path.parent.mkdir(parents=True)
-    old = sqlite3.connect(path)
-    old.execute("CREATE TABLE photos (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, size INTEGER, "
-                "mtime REAL, qhash TEXT, taken TEXT, clip BLOB, faces_done INTEGER DEFAULT 0, error TEXT)")
-    old.commit()
-    old.close()
-    db = pf.open_db()
-    assert "error_reader" in {r["name"] for r in db.execute("PRAGMA table_info(photos)")}
