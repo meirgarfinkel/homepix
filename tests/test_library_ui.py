@@ -44,7 +44,7 @@ def test_removing_a_folder_forgets_only_its_photos(pf, lib, tmp_path):
 
 
 def test_only_one_indexer_runs_at_a_time(pf, lib):
-    from photofind.core.indexer import _IndexLock
+    from homepix.core.indexer import _IndexLock
 
     photo(lib / "a.jpg")
     pf.add_folder(lib)
@@ -114,7 +114,7 @@ def test_search_sees_new_photos(pf, lib):
 
 
 def test_folder_items_and_counts(pf, lib):
-    from photofind.core.timeline import folder_counts, load_items
+    from homepix.core.timeline import folder_counts, load_items
 
     photo(lib / "a.jpg")
     photo(lib / "2023" / "b.jpg")
@@ -129,7 +129,7 @@ def test_folder_items_and_counts(pf, lib):
 
 
 def test_folder_tree_totals():
-    from photofind.ui.views.sidebar import folder_tree
+    from homepix.ui.views.sidebar import folder_tree
 
     sep = os.sep
     root = f"{sep}lib"
@@ -141,7 +141,7 @@ def test_folder_tree_totals():
 
 
 def test_indexing_status_text():
-    from photofind.ui.indexing import describe
+    from homepix.ui.indexing import describe
 
     assert describe({"running": False, "phase": "idle"}) == ""
     assert describe({"running": True, "phase": "indexing", "done": 30, "todo": 200, "eta": 150}) \
@@ -171,7 +171,7 @@ def wait_until(app, cond, timeout=20.0):
 
 @pytest.fixture
 def window(pf, app):
-    from photofind.ui.main_window import MainWindow
+    from homepix.ui.main_window import MainWindow
 
     w = MainWindow()
     w.resize(900, 600)
@@ -252,8 +252,8 @@ def test_removing_a_library_folder_from_the_app(window, pf, lib, app):
 def test_toggling_the_scrubber_lays_the_grid_out_again(app):
     from test_ui import NoThumbs
 
-    from photofind.core.timeline import Item, group_by_month
-    from photofind.ui.views.timeline import TimelineView
+    from homepix.core.timeline import Item, group_by_month
+    from homepix.ui.views.timeline import TimelineView
 
     v = TimelineView(NoThumbs())
     v.resize(800, 600)

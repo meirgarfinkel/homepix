@@ -1,4 +1,4 @@
-"""The portable copy: a library folder carries what Photo Finder knows about it (faces, names, search,
+"""The portable copy: a library folder carries what HomePix knows about it (faces, names, search,
 duplicate choices, folders left out), so copying the folder to another computer brings it along."""
 
 import os
@@ -9,8 +9,8 @@ import time
 import numpy as np
 from conftest import photo
 
-from photofind.core import portable
-from photofind.core.db import to_blob
+from homepix.core import portable
+from homepix.core.db import to_blob
 
 
 def setup_library(pf, lib):
@@ -57,14 +57,14 @@ def apart_pairs(pf, root):
 
 
 def new_computer(monkeypatch, tmp_path, name="data2"):
-    monkeypatch.setenv("PHOTOFIND_HOME", str(tmp_path / name))
+    monkeypatch.setenv("HOMEPIX_HOME", str(tmp_path / name))
 
 
 def test_the_copy_holds_the_folders_photos_with_relative_paths(pf, lib):
     setup_library(pf, lib)
     assert portable.write_copy(lib) == 5
-    path = lib / ".photofind" / "library.db"
-    assert path.is_file() and (lib / ".photofind" / portable.NOTE).is_file()
+    path = lib / ".homepix" / "library.db"
+    assert path.is_file() and (lib / ".homepix" / portable.NOTE).is_file()
     con = sqlite3.connect(path)
     try:
         assert sorted(r[0] for r in con.execute("SELECT path FROM photos")) == [
@@ -108,7 +108,7 @@ def test_another_computer_picks_up_where_it_left_off(pf, lib, tmp_path, monkeypa
 
     # this computer now owns the copy: writing it again replaces it, nothing set aside
     portable.write_copy(there)
-    assert sorted(p.name for p in (there / ".photofind").iterdir()) == [portable.NOTE, "library.db"]
+    assert sorted(p.name for p in (there / ".homepix").iterdir()) == [portable.NOTE, "library.db"]
 
 
 def test_a_photo_gone_from_the_folder_is_left_out(pf, lib, tmp_path, monkeypatch):
@@ -149,7 +149,7 @@ def test_a_copy_is_never_replaced_by_an_empty_one_or_another_librarys(pf, lib, t
 
     pf.index_folder(lib)  # started afresh instead of bringing the copy in
     portable.write_copy(lib)
-    files = sorted(p.name for p in (lib / ".photofind").iterdir())
+    files = sorted(p.name for p in (lib / ".homepix").iterdir())
     assert files == [portable.NOTE, f"library-{first['written'][:10]}.db", "library.db"]  # the old one kept
     assert portable.info(lib)["library"] != first["library"]
 

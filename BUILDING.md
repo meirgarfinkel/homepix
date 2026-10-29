@@ -1,9 +1,9 @@
-# Packaging Photo Finder
+# Packaging HomePix
 
-This turns Photo Finder into something you can hand to anyone:
+This turns HomePix into something you can hand to anyone:
 
-- **Linux:** `PhotoFinder-x86_64.AppImage`, a single file of about 235 MB. Make it executable once, then double-click.
-- **Windows:** `PhotoFinderSetup.exe`, a normal installer with Start menu and desktop shortcuts.
+- **Linux:** `HomePix-x86_64.AppImage`, a single file of about 235 MB. Make it executable once, then double-click.
+- **Windows:** `HomePixSetup.exe`, a normal installer with Start menu and desktop shortcuts.
 
 Both contain their own copy of Python and every library, so the people you give them to install nothing else. The AI models (about 130 MB) download automatically the first time the app looks through photos.
 
@@ -17,26 +17,26 @@ The AppImage runs on the Linux it was built on and on newer ones. Release builds
 
 1. **Install Docker or Podman** (one time). On Pop!_OS/Ubuntu: `sudo apt install podman`.
 
-2. **Build**, from the `photofind` folder:
+2. **Build**, from the `homepix` folder:
    ```bash
    bash packaging/build_in_container.sh
    ```
-   The first time takes about 10 minutes, because it sets up the AlmaLinux build machine and downloads about 400 MB. Later builds take a few minutes. When it finishes it prints `Done: .../PhotoFinder-x86_64.AppImage`. The build stops with an error if any bundled library would need a newer system than AlmaLinux 9.
+   The first time takes about 10 minutes, because it sets up the AlmaLinux build machine and downloads about 400 MB. Later builds take a few minutes. When it finishes it prints `Done: .../HomePix-x86_64.AppImage`. The build stops with an error if any bundled library would need a newer system than AlmaLinux 9.
 
 3. **Check it works:**
    ```bash
-   ./PhotoFinder-x86_64.AppImage --self-test
+   ./HomePix-x86_64.AppImage --self-test
    ```
-   A window opens for a few seconds, then it should print `SELF-TEST OK`. After that, double-click the AppImage to use it normally. The first time it runs, it adds **Photo Finder** to your applications menu.
+   A window opens for a few seconds, then it should print `SELF-TEST OK`. After that, double-click the AppImage to use it normally. The first time it runs, it adds **HomePix** to your applications menu.
 
 4. **Optional: check it on other distros.** This runs the self-test in a fresh Debian, Ubuntu, Fedora or Arch container. Add the models folder to also check that the AI runs:
    ```bash
-   bash packaging/smoke_test.sh debian:12 PhotoFinder-x86_64.AppImage ~/.local/share/photofind/models
+   bash packaging/smoke_test.sh debian:12 HomePix-x86_64.AppImage ~/.local/share/homepix/models
    ```
    GitHub runs this on six distros for every pull request that changes the app (see below).
 
 5. **Share that one file.** The person receiving it does this once:
-   - Right-click the file, choose **Properties**, then **Permissions**, and turn on **Allow executing file as program** (in a terminal: `chmod +x PhotoFinder-x86_64.AppImage`).
+   - Right-click the file, choose **Properties**, then **Permissions**, and turn on **Allow executing file as program** (in a terminal: `chmod +x HomePix-x86_64.AppImage`).
    - Double-click it.
 
 **Quicker builds while trying things:** `bash packaging/build_linux.sh` builds directly on your computer, without a container (it needs `sudo apt install python3-venv libxcb-cursor0`). That AppImage may not run on systems older than yours.
@@ -45,7 +45,7 @@ The AppImage runs on the Linux it was built on and on newer ones. Release builds
 
 **ExifTool** (which writes details into photos) is bundled with a Perl of its own by `packaging/bundle_exiftool.sh`: the version is pinned and checked against its published checksum, only the Perl modules it uses are included (found by watching it read and write every kind of file), and the build checks that it works with nothing but the bundle. To update it, change `VERSION` and `SHA256` there together, and the same two lines in `packaging/bundle_exiftool.ps1`, which bundles ExifTool's official Windows build (it comes with its own Perl) for the Windows installer.
 
-If double-clicking does nothing on some computer, running it as `./PhotoFinder-x86_64.AppImage --appimage-extract-and-run` works without the FUSE support AppImages normally use.
+If double-clicking does nothing on some computer, running it as `./HomePix-x86_64.AppImage --appimage-extract-and-run` works without the FUSE support AppImages normally use.
 
 ---
 
@@ -55,15 +55,15 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
 
 2. **Install Inno Setup 6** from [jrsoftware.org](https://jrsoftware.org/isinfo.php). It's what turns the app into an installer.
 
-3. **Copy the `photofind` folder** to the PC, open it in File Explorer, type `cmd` in the address bar and press Enter.
+3. **Copy the `homepix` folder** to the PC, open it in File Explorer, type `cmd` in the address bar and press Enter.
 
 4. **Build:**
    ```
    packaging\build_windows.bat
    ```
-   It shows five steps: setting up Python, bundling the app, adding ExifTool (downloaded and checked against its published checksum), a quick self-test where the app window opens and closes by itself, and making the installer. It finishes with `Done: PhotoFinderSetup.exe`. The self-test uses a data folder of its own (`build\selftest`), never yours; put the AI models in `build\selftest\models` to have it check them too.
+   It shows five steps: setting up Python, bundling the app, adding ExifTool (downloaded and checked against its published checksum), a quick self-test where the app window opens and closes by itself, and making the installer. It finishes with `Done: HomePixSetup.exe`. The self-test uses a data folder of its own (`build\selftest`), never yours; put the AI models in `build\selftest\models` to have it check them too.
 
-5. **Share `PhotoFinderSetup.exe`.** Double-clicking it installs Photo Finder for that user (no administrator password needed) and adds it to the Start menu and, optionally, the desktop.
+5. **Share `HomePixSetup.exe`.** Double-clicking it installs HomePix for that user (no administrator password needed) and adds it to the Start menu and, optionally, the desktop.
 
 **The "Windows protected your PC" warning:** because the installer isn't digitally signed, Windows shows this warning the first time. People can click **More info**, then **Run anyway**. Removing the warning requires a code-signing certificate, which comes with a yearly fee.
 
@@ -74,7 +74,7 @@ If double-clicking does nothing on some computer, running it as `./PhotoFinder-x
 `.github/workflows/build.yml` builds on GitHub's computers:
 
 - **Every pull request** that changes the app or its packaging builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch. It also builds the Windows installer and runs its app's self-test on Windows, with the AI models.
-- **By hand** (Actions tab > **Build Photo Finder** > **Run workflow**): the same. After 15–25 minutes, download **PhotoFinder-Linux** and **PhotoFinder-Windows** under **Artifacts**.
+- **By hand** (Actions tab > **Build HomePix** > **Run workflow**): the same. After 15–25 minutes, download **HomePix-Linux** and **HomePix-Windows** under **Artifacts**.
 - **A version tag** such as `v0.2.0` does everything and publishes a GitHub Release with both files.
 
 A pull request merges itself (`.github/workflows/automerge.yml`) once CI and, when they ran, the builds have all passed. To hold one back, make it a draft or give it the label `no-automerge`.
@@ -83,9 +83,9 @@ A pull request merges itself (`.github/workflows/automerge.yml`) once CI and, wh
 
 ## Releasing an update
 
-Change the code, build again, and share the new file. Each person's index, folders and people's names are stored separately (`~/.local/share/photofind` on Linux, `%LOCALAPPDATA%\photofind` on Windows), so updating or reinstalling keeps everything.
+Change the code, build again, and share the new file. Each person's index, folders and people's names are stored separately (`~/.local/share/homepix` on Linux, `%LOCALAPPDATA%\homepix` on Windows), so updating or reinstalling keeps everything.
 
-Raise the version in `photofind/__init__.py` and `AppVersion` in `packaging/photofind.iss` together, so the Windows installer replaces the old version cleanly. Then push a tag for it (`git tag v1.0.0 && git push origin v1.0.0`): GitHub builds and checks both downloads and publishes them as a Release.
+Raise the version in `homepix/__init__.py` and `AppVersion` in `packaging/homepix.iss` together, so the Windows installer replaces the old version cleanly. Then push a tag for it (`git tag v1.0.0 && git push origin v1.0.0`): GitHub builds and checks both downloads and publishes them as a Release.
 
 ## Why it's about 140 MB
 
@@ -94,4 +94,4 @@ Unpacked it's about 400 MB, and the AppImage compresses that. The biggest parts 
 ## If something goes wrong
 
 - Run the app with `--self-test`. It checks the AI libraries, HEIC support, that Qt can decode thumbnails, and that the window opens and loads the library, and says which part failed.
-- The app writes a log to `~/.local/share/photofind/app.log` (Windows: `%LOCALAPPDATA%\photofind\app.log`).
+- The app writes a log to `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`).

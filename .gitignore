@@ -1,6 +1,6 @@
 build/
 *.AppImage
-PhotoFinderSetup.exe
+HomePixSetup.exe
 __pycache__/
 *.py[cod]
 .venv/

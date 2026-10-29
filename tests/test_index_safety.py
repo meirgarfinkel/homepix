@@ -8,7 +8,7 @@ import sqlite3
 import pytest
 from conftest import copy, photo, rows
 
-from photofind.core import library
+from homepix.core import library
 
 # --- #9: deleted vs. out of reach ------------------------------------------------------------------
 
@@ -195,7 +195,7 @@ def test_model_hiccup_is_not_blamed_on_the_photo(pf, lib, monkeypatch):
 
 
 def test_database_from_before_m0_gets_the_new_column(pf, tmp_path):
-    path = tmp_path / "data" / "photofind.db"
+    path = tmp_path / "data" / "homepix.db"
     path.parent.mkdir(parents=True)
     old = sqlite3.connect(path)
     old.execute("CREATE TABLE photos (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, size INTEGER, "

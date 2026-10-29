@@ -36,7 +36,7 @@ def since_1904(d: dt.datetime) -> int:
 
 
 def test_video_date_and_length_from_the_movie_header(tmp_path):
-    from photofind.core.video import video_meta
+    from homepix.core.video import video_meta
 
     utc = dt.datetime(2024, 7, 1, 9, 30, 0, tzinfo=dt.UTC)
     f = tmp_path / "a.mp4"
@@ -47,7 +47,7 @@ def test_video_date_and_length_from_the_movie_header(tmp_path):
 
 
 def test_apples_local_date_wins(tmp_path):
-    from photofind.core.video import video_meta
+    from homepix.core.video import video_meta
 
     f = tmp_path / "a.mov"
     f.write_bytes(tiny_mp4(since_1904(dt.datetime(2024, 7, 1, 6, 30, tzinfo=dt.UTC)),
@@ -56,7 +56,7 @@ def test_apples_local_date_wins(tmp_path):
 
 
 def test_a_broken_or_empty_video_tells_nothing(tmp_path):
-    from photofind.core.video import video_meta
+    from homepix.core.video import video_meta
 
     (tmp_path / "junk.mp4").write_bytes(b"\0\0\0\x10ftypisom" + os.urandom(200))
     (tmp_path / "unset.mp4").write_bytes(tiny_mp4(0))  # some cameras leave the date at 0
@@ -65,7 +65,7 @@ def test_a_broken_or_empty_video_tells_nothing(tmp_path):
 
 
 def test_dates_in_file_names():
-    from photofind.core.dates import in_name, is_placeholder
+    from homepix.core.dates import in_name, is_placeholder
 
     assert in_name("2023_05_28_23_07_00_82.jpg") == dt.datetime(2023, 5, 28, 23, 7)
     assert in_name("VID_20230528_230700.mp4") == dt.datetime(2023, 5, 28, 23, 7)
@@ -96,7 +96,7 @@ def photo_taken(path, when: str):
 # --- indexing videos -------------------------------------------------------------------------------
 
 def test_videos_are_indexed_without_ai_and_get_a_thumbnail(pf, lib, monkeypatch):
-    import photofind.core.library as library
+    import homepix.core.library as library
 
     def no_ai():
         raise AssertionError("videos don't need the AI models")
@@ -119,7 +119,7 @@ def recorded(path, local: str):
     """Give a video the clock a camera would: when it was recorded, in UTC."""
     import subprocess
 
-    from photofind.core.exiftool import available
+    from homepix.core.exiftool import available
 
     if not available():
         pytest.skip("needs ExifTool")
@@ -130,7 +130,7 @@ def recorded(path, local: str):
 
 
 def test_a_short_clip_taken_with_a_photo_is_its_motion(pf, lib):
-    from photofind.core.timeline import folder_counts, load_items
+    from homepix.core.timeline import folder_counts, load_items
 
     photo_taken(lib / "live.jpg", "2024:05:01 12:00:01")
     recorded(make_video(lib / "2024_05_01_12_00_00.mp4", 2.5), "2024-05-01 12:00:00")  # the Live Photo's motion
@@ -151,7 +151,7 @@ def test_a_short_clip_taken_with_a_photo_is_its_motion(pf, lib):
 
 
 def test_video_info(pf, lib):
-    from photofind.core.info import photo_info
+    from homepix.core.info import photo_info
 
     make_video(lib / "clip.mp4", 3)
     pf.index_folder(lib, want_faces=False)
@@ -231,7 +231,7 @@ def wait_until(app, cond, timeout=20.0):
 
 @pytest.fixture
 def window(pf, app):
-    from photofind.ui.main_window import MainWindow
+    from homepix.ui.main_window import MainWindow
 
     w = MainWindow(index=False)
     w.resize(900, 600)
@@ -241,7 +241,7 @@ def window(pf, app):
 
 
 def test_people_page_and_a_persons_photos(window, pf, lib, app):
-    from photofind.ui.views.sidebar import PEOPLE, person_place
+    from homepix.ui.views.sidebar import PEOPLE, person_place
 
     for i in range(4):
         photo(lib / f"{i}.jpg")
@@ -286,7 +286,7 @@ def test_videos_in_the_grid_and_the_viewer(window, pf, lib, app, monkeypatch):
 
 
 def test_counting_photos_and_videos():
-    from photofind.ui.main_window import counted
+    from homepix.ui.main_window import counted
 
     assert counted(1, 0) == "1 photo"
     assert counted(1234, 2) == "1,234 photos and 2 videos"

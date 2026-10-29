@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-# A safety net under every test: nothing reaches the real data folder (~/.local/share/photofind), even
+# A safety net under every test: nothing reaches the real data folder (~/.local/share/homepix), even
 # a test that forgets the pf fixture or undoes its setting. Tests that need one get their own (pf).
-_SAFE = tempfile.mkdtemp(prefix="photofind-tests-")
-os.environ["PHOTOFIND_HOME"] = os.path.join(_SAFE, "data")
+_SAFE = tempfile.mkdtemp(prefix="homepix-tests-")
+os.environ["HOMEPIX_HOME"] = os.path.join(_SAFE, "data")
 os.environ["XDG_DATA_HOME"] = os.path.join(_SAFE, "share")
-os.environ["PHOTOFIND_RECYCLE_BIN"] = os.path.join(_SAFE, "recycle")  # (Windows) never the real Recycle Bin
+os.environ["HOMEPIX_RECYCLE_BIN"] = os.path.join(_SAFE, "recycle")  # (Windows) never the real Recycle Bin
 
 
 class FakeClip:
@@ -32,12 +32,12 @@ class FakeFaces:
 
 @pytest.fixture
 def pf(tmp_path, monkeypatch):
-    """photofind with its data folder in tmp_path and fake models (no downloads, fast)."""
-    monkeypatch.setenv("PHOTOFIND_HOME", str(tmp_path / "data"))
-    library = importlib.import_module("photofind.core.library")
+    """homepix with its data folder in tmp_path and fake models (no downloads, fast)."""
+    monkeypatch.setenv("HOMEPIX_HOME", str(tmp_path / "data"))
+    library = importlib.import_module("homepix.core.library")
     monkeypatch.setattr(library, "ClipImage", FakeClip)
     monkeypatch.setattr(library, "Faces", FakeFaces)
-    return importlib.import_module("photofind.core")
+    return importlib.import_module("homepix.core")
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def rel(path, lib) -> str:
 
 def et_command() -> list[str]:
     """How to run ExifTool (the bundled one on Windows)."""
-    from photofind.core import exiftool
+    from homepix.core import exiftool
 
     b = exiftool.bundled()
     if b and (b / "perl" / "so").is_dir():  # the Linux bundle's Perl needs its own libraries
@@ -95,7 +95,7 @@ def rows(pf, lib):
 def own_trash(monkeypatch, tmp_path):
     """A Trash (or Recycle Bin) of the test's own, in tmp_path."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    monkeypatch.setenv("PHOTOFIND_RECYCLE_BIN", str(tmp_path / "recycle"))
+    monkeypatch.setenv("HOMEPIX_RECYCLE_BIN", str(tmp_path / "recycle"))
 
 
 def trashed_files(tmp_path) -> list[Path]:
@@ -110,7 +110,7 @@ def trashed_files(tmp_path) -> list[Path]:
 def trash_records(tmp_path) -> list[str]:
     """Where each item the Trash knows of came from (its info files)."""
     if os.name == "nt":
-        from photofind.core.trash import recycled_from
+        from homepix.core.trash import recycled_from
 
         folder = tmp_path / "recycle"
         return sorted(recycled_from(i) for i in folder.glob("$I*")) if folder.exists() else []

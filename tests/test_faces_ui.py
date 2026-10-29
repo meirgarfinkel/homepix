@@ -8,7 +8,7 @@ import pytest
 from conftest import photo
 from test_faces import look
 
-from photofind.core.db import to_blob
+from homepix.core.db import to_blob
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtWidgets  # noqa: E402
@@ -50,7 +50,7 @@ def library(pf, lib):
 
 @pytest.fixture
 def window(pf, app, library):
-    from photofind.ui.main_window import MainWindow
+    from homepix.ui.main_window import MainWindow
 
     w = MainWindow(index=False)
     w.resize(1000, 700)
@@ -76,8 +76,8 @@ def settle(app, window):
 
 
 def test_most_like_ticked_brings_their_look_alikes_to_the_front(app):
-    from photofind.ui import workers
-    from photofind.ui.views.faces import WhoView
+    from homepix.ui import workers
+    from homepix.ui.views.faces import WhoView
 
     rng = np.random.default_rng(1)
     who = [1, 2, 1, 2, 1, 2]
@@ -99,9 +99,9 @@ def test_most_like_ticked_brings_their_look_alikes_to_the_front(app):
 
 
 def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
-    from photofind.core.people import KNOWN, NEW
-    from photofind.ui import workers
-    from photofind.ui.views.faces import WhoView
+    from homepix.core.people import KNOWN, NEW
+    from homepix.ui import workers
+    from homepix.ui.views.faces import WhoView
 
     rng = np.random.default_rng(2)
 
@@ -146,8 +146,8 @@ def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
 
 
 def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
-    from photofind.ui.views.people import WHO_TILE
-    from photofind.ui.views.sidebar import PEOPLE
+    from homepix.ui.views.people import WHO_TILE
+    from homepix.ui.views.sidebar import PEOPLE
 
     window.show_place(PEOPLE)  # it's the first circle on the People page
     wait_until(app, lambda: window.people.count() and window.people.item(0).data(256) == WHO_TILE)
@@ -186,8 +186,8 @@ def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
 
 
 def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
-    from photofind.core import people
-    from photofind.ui.views.sidebar import faces_place, person_place
+    from homepix.core import people
+    from homepix.ui.views.sidebar import faces_place, person_place
 
     db = pf.open_db()
     ann = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY photo_id")]
@@ -228,9 +228,9 @@ def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
 
 
 def test_rename_and_forget_from_the_people_page(window, pf, app, monkeypatch):
-    from photofind.ui import people_actions
-    from photofind.ui.views.people import WHO_TILE
-    from photofind.ui.views.sidebar import PEOPLE
+    from homepix.ui import people_actions
+    from homepix.ui.views.people import WHO_TILE
+    from homepix.ui.views.sidebar import PEOPLE
 
     def named():  # the people's circles (not "Who is this?")
         items = [window.people.item(i) for i in range(window.people.count())]
@@ -285,7 +285,7 @@ def test_face_boxes_in_the_viewer(window, pf, app):
 def test_a_face_grid_can_be_drawn_before_it_has_faces(app, monkeypatch):
     import sys
 
-    from photofind.ui.views.faces import FaceGrid
+    from homepix.ui.views.faces import FaceGrid
 
     errors = []
     monkeypatch.setattr(sys, "excepthook", lambda *e: errors.append(e[1]))

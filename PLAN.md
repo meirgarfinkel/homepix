@@ -1,4 +1,4 @@
-# Photo Finder — build plan
+# HomePix — build plan
 
 How we get from today's app to the one in `REQUIREMENTS.md`. Each milestone ends with something that works
 and has been checked; the current app stays usable until the new one reaches feature parity (end of M3).
@@ -8,7 +8,7 @@ and has been checked; the current app stays usable until the new one reaches fea
 Two layers. The core never imports Qt, so it can be tested on its own and the CLI keeps working.
 
 ```
-photofind/
+homepix/
   core/                 no UI code
     db.py               schema, versioned migrations (PRAGMA user_version), backup before migrating
     library.py          scanning, indexing, offline drives, outside-change detection
@@ -45,14 +45,14 @@ tests/
 Work on today's code, before any rewrite, so your data is clean when it migrates.
 - #9: never delete index rows because a folder looks empty or unreadable (unmounted drive, permissions).
 - #15: duplicate fingerprints no longer leave ghost rows.
-- `.photofind-ignore` in the `photofind/` project folder (it's inside `~/Pictures` and currently indexed).
+- `.homepix-ignore` in the `homepix/` project folder (it's inside `~/Pictures` and currently indexed).
 - Enable `pillow-heif` (175 HEIC photos are invisible today).
 - #12: retry unreadable photos when the reason may have gone away; read slightly truncated JPEGs.
 
 **Done when:** tests cover each fix, and a re-index of your library loses nothing and adds the HEIC photos.
 
 ### M1 — Core package and migrations
-- Split `photofind.py` into `core/` + `cli.py`. The behavior stays the same.
+- Split `homepix.py` into `core/` + `cli.py`. The behavior stays the same.
 - Versioned schema migrations. The first migration adds what the new app needs:
   date source, media type, file fingerprint, sidecar links, journal tables.
 - A test suite on synthetic libraries.
@@ -80,7 +80,7 @@ current app.
 
 Delivered in three steps; the current app keeps working until the last:
 - **M3a:** window, timeline (month headers, year scrubber, selection, keyboard), thumbnail loading,
-  viewer, info panel. Run it with `python -m photofind.ui`; the installer adds "Photo Finder (new,
+  viewer, info panel. Run it with `python -m homepix.ui`; the installer adds "HomePix (new,
   preview)" to the menu. *Status: done.*
 - **M3b:** folders, search, background indexing with progress and the missing-photos notice, settings.
   Settings, the indexer and search moved into the core, shared by both apps; only one app indexes at a
@@ -183,7 +183,7 @@ from crashes, and never overwriting. On a copy of your library's index it looks 
 (`Duplicates/` is left alone) in 1.3 s and proposes 943 changes, all of them Live Photo clips that were
 named by the day they were copied: each is renamed to match its photo. Nothing else would change.
 A Live Photo's clip and a photo's `.aae` / `.xmp` / `.json` sidecars are named and moved with it;
-a year folder's own subfolders are kept. Also from the command line: `photofind organize [--apply]`.
+a year folder's own subfolders are kept. Also from the command line: `homepix organize [--apply]`.
 Moving, renaming and trashing a photo elsewhere in the app don't take its sidecars along yet.
 
 ### M8 — Duplicates
@@ -224,7 +224,7 @@ from the timeline and search, organizing leaving it alone, and reading `duplicat
 **Done when:** the test suite passes on Windows, and the installer's app passes its self-test there
 (AI included), built and checked by CI on every pull request.
 
-*Status: done.* CI runs the whole test suite on Windows and builds `PhotoFinderSetup.exe` on every
+*Status: done.* CI runs the whole test suite on Windows and builds `HomePixSetup.exe` on every
 pull request; its app's self-test (AI, HEIC, thumbnails, ExifTool, the window) passes there. Delete
 goes to the Recycle Bin the way Explorer does it (a `$R` file and its `$I` record, so Explorer shows
 and restores it too), with undo and crash recovery as on Linux; CI checks Windows lists it.

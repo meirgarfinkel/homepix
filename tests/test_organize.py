@@ -33,7 +33,7 @@ def shot(path, taken=None, created=None, mtime=dt.datetime(2025, 11, 30, 9, 52))
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
     own_trash(monkeypatch, tmp_path)
-    from photofind.core import fileops, organize
+    from homepix.core import fileops, organize
 
     pf.add_folder(lib)
     db = pf.open_db()
@@ -240,7 +240,7 @@ def test_only_a_folder_in_the_library(home, lib, tmp_path):
 def test_the_command_line_previews_then_applies(home, lib, capsys):
     from types import SimpleNamespace
 
-    from photofind import cli
+    from homepix import cli
 
     shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")
     home[0].index_folder(lib, want_faces=False)
@@ -259,8 +259,8 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     from test_faces_ui import app as _app
     from test_faces_ui import wait_until
 
-    from photofind.ui.main_window import MainWindow
-    from photofind.ui.views import changes_dialog
+    from homepix.ui.main_window import MainWindow
+    from homepix.ui.views import changes_dialog
 
     app = _app.__wrapped__()
     shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")

@@ -15,7 +15,7 @@ from conftest import own_trash, photo, rel, trash_records, trashed_files
 def home(pf, lib, tmp_path, monkeypatch):
     """An indexed library and a Trash of its own. Returns (core, db, fileops)."""
     own_trash(monkeypatch, tmp_path)
-    from photofind.core import fileops
+    from homepix.core import fileops
 
     db = pf.open_db()
     yield pf, db, fileops
@@ -41,7 +41,7 @@ def index_matches_disk(db, lib):
     indexed = {r["path"]: r["qhash"] for r in db.execute("SELECT path, qhash FROM photos")}
     on_disk = {os.path.normpath(os.path.join(lib, p)) for p in contents(lib) if not os.path.basename(p).startswith(".")}
     assert set(indexed) == on_disk
-    from photofind.core.util import quick_hash
+    from homepix.core.util import quick_hash
 
     for p, q in indexed.items():
         if q != 'q':  # (a made-up row)
@@ -49,7 +49,7 @@ def index_matches_disk(db, lib):
 
 
 def no_leftovers(lib):
-    assert [p for p in contents(lib) if os.path.basename(p).startswith(".photofind-")] == []
+    assert [p for p in contents(lib) if os.path.basename(p).startswith(".homepix-")] == []
 
 
 def make(pf, lib, names):
@@ -118,7 +118,7 @@ def test_a_name_taken_after_planning(home, lib):
 
 
 def test_safefs_never_replaces(tmp_path):
-    from photofind.core.safefs import copy_file, move_file, rename_noreplace
+    from homepix.core.safefs import copy_file, move_file, rename_noreplace
 
     a, b = tmp_path / "a", tmp_path / "b"
     a.write_text("a")
@@ -179,9 +179,9 @@ def test_recycle_bin_records_say_where_a_file_came_from(tmp_path, monkeypatch):
     """Windows' $I file: version 2, the size, when, then the path (checked on every system)."""
     import struct
 
-    from photofind.core import trash
+    from homepix.core import trash
 
-    monkeypatch.setenv("PHOTOFIND_RECYCLE_BIN", str(tmp_path / "bin"))
+    monkeypatch.setenv("HOMEPIX_RECYCLE_BIN", str(tmp_path / "bin"))
     f = tmp_path / "Ünïcode photo.jpg"
     f.write_bytes(b"x" * 1234)
     dest = trash._reserve_recycled(f)
@@ -195,10 +195,10 @@ def test_recycle_bin_records_say_where_a_file_came_from(tmp_path, monkeypatch):
 
 @pytest.mark.skipif(os.name != "nt" or not os.environ.get("CI"), reason="the real Recycle Bin, on a test machine")
 def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monkeypatch):
-    from photofind.core import trash
+    from homepix.core import trash
 
-    monkeypatch.delenv("PHOTOFIND_RECYCLE_BIN")
-    f = photo(tmp_path / "photofind-recycle-test.jpg")
+    monkeypatch.delenv("HOMEPIX_RECYCLE_BIN")
+    f = photo(tmp_path / "homepix-recycle-test.jpg")
     data = f.read_bytes()
     dest = trash.trash(f)
     assert not f.exists() and os.path.dirname(dest).lower().endswith(trash._sid().lower())
@@ -206,7 +206,7 @@ def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monke
         ["powershell", "-NoProfile", "-Command",
          "(New-Object -ComObject Shell.Application).NameSpace(10).Items() | ForEach-Object { $_.Name }"],
         capture_output=True, text=True, timeout=60).stdout
-    assert "photofind-recycle-test" in listed  # Windows sees it in the Recycle Bin, under its own name
+    assert "homepix-recycle-test" in listed  # Windows sees it in the Recycle Bin, under its own name
     trash.restore(dest, f)
     assert f.read_bytes() == data and not os.path.exists(dest)
     assert not os.path.exists(os.path.join(os.path.dirname(dest), "$I" + os.path.basename(dest)[2:]))
@@ -268,7 +268,7 @@ def test_rename_keeps_the_extension_and_takes_the_live_photo_clip(home, lib):
 def test_pattern_names():
     import datetime as dt
 
-    from photofind.core.fileops import pattern_names
+    from homepix.core.fileops import pattern_names
 
     items = [(f"/p/IMG_{i}.jpg", dt.datetime(2024, 7, 1)) for i in range(10)] + [("/p/x.jpg", None)]
     names = pattern_names("{date} Trip {n}", items)
@@ -294,7 +294,7 @@ def test_stopping_partway_keeps_what_was_done_and_undo_takes_it_back(home, lib):
 
 KILLER = textwrap.dedent("""
     import os, sys
-    from photofind.core import fileops, open_db, safefs
+    from homepix.core import fileops, open_db, safefs
     lib, action, after = sys.argv[1], sys.argv[2], int(sys.argv[3])
     count = 0
     def die_soon(real):
@@ -355,7 +355,7 @@ def test_killed_partway_loses_nothing(home, lib, tmp_path, action, after):
 def test_a_move_to_another_drive_copies_checks_and_removes(home, lib, monkeypatch):
     import errno
 
-    from photofind.core import safefs
+    from homepix.core import safefs
 
     pf, db, fo = home
     make(pf, lib, ["a.jpg"])
@@ -379,7 +379,7 @@ def test_a_move_to_another_drive_copies_checks_and_removes(home, lib, monkeypatc
 def test_the_clipboard_speaks_the_file_managers_formats(app):
     from PySide6.QtCore import QMimeData, QUrl
 
-    from photofind.ui import desktop
+    from homepix.ui import desktop
 
     ab, c = os.path.abspath("/p/a b.jpg"), os.path.abspath("/p/c.jpg")
     mime = desktop.files_mime([ab, c], cut=True)
@@ -402,7 +402,7 @@ def test_the_clipboard_speaks_the_file_managers_formats(app):
 
 
 def test_commands_to_open_with_keep_their_paths():
-    from photofind.ui import desktop
+    from homepix.ui import desktop
 
     if os.name == "nt":
         assert desktop.split_command(r'"C:\Program Files\GIMP 3\bin\gimp.exe" --new %f') == \
@@ -437,7 +437,7 @@ def window(home, lib, app):
         photo(lib / "trip" / f"IMG_{i}.jpg")
     pf.add_folder(lib)
     pf.index_folder(lib, want_faces=False)
-    from photofind.ui.main_window import MainWindow
+    from homepix.ui.main_window import MainWindow
 
     w = MainWindow(index=False)
     w.resize(900, 600)
@@ -491,7 +491,7 @@ def test_cut_here_and_paste_into_another_folder(window, lib, app):
 
 
 def test_renaming_many_with_a_pattern(window, lib, app, monkeypatch):
-    from photofind.ui.views import file_dialogs
+    from homepix.ui.views import file_dialogs
 
     w = window
     w.timeline.select_all()

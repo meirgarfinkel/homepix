@@ -9,8 +9,8 @@ import pytest
 from conftest import et_command
 from test_metadata import edit_and_run, index, make_photo, row
 
-from photofind.core import dates
-from photofind.core import exiftool as et_mod
+from homepix.core import dates
+from homepix.core import exiftool as et_mod
 
 needs_exiftool = pytest.mark.skipif(not et_mod.available(), reason="needs ExifTool")
 
@@ -18,7 +18,7 @@ needs_exiftool = pytest.mark.skipif(not et_mod.available(), reason="needs ExifTo
 @pytest.fixture
 def home(pf, lib, tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    from photofind.core import fileops, metadata
+    from homepix.core import fileops, metadata
 
     pf.add_folder(lib)
     db = pf.open_db()
@@ -69,7 +69,7 @@ def test_indexing_and_the_timeline_go_by_it(pf, lib):
     nothing = make_photo(lib / "IMG_2.jpg")
     os.utime(nothing, (dt.datetime(2020, 1, 5).timestamp(),) * 2)
     pf.index_folder(lib, want_faces=False)
-    from photofind.core.timeline import load_items
+    from homepix.core.timeline import load_items
 
     db = pf.open_db()
     got = [(os.path.basename(it.path), it.taken) for it in load_items(db)]
@@ -83,7 +83,7 @@ def test_indexing_and_the_timeline_go_by_it(pf, lib):
 @needs_exiftool
 @pytest.mark.parametrize("name", ["2021_08_01_19_09_00.jpg", "IMG_1.heic", "a.png"])
 def test_both_ways_of_reading_agree(lib, name):
-    from photofind.core import metadata
+    from homepix.core import metadata
 
     p = make_photo(lib / name, exif={0x9003: "2021:08:01 19:09:04", 0x9004: "2021:08:01 19:09:03"})
     d = metadata.read([p])[str(p)]
@@ -166,7 +166,7 @@ def test_a_photo_dated_by_its_name_only_can_be_moved_but_a_guess_cant(home, lib)
 
 
 def test_renaming_a_file_away_from_its_date(pf, lib):
-    from photofind.core import fileops
+    from homepix.core import fileops
 
     p = old_mtime(make_photo(lib / "2022_04_01_07_32_31.jpg"))
     exif = make_photo(lib / "2010_01_01_10_00_00.jpg", exif={0x9003: "2011:05:05 05:05:05"})
@@ -191,7 +191,7 @@ def test_an_older_index_gets_the_new_dates_on_the_next_pass(pf, lib):
     # as 0.5 left it: the date from when the file changed, everything read
     db.execute("UPDATE photos SET taken='2025-11-30 09:52:00', taken_source='file-modified', details_done=1")
     db.commit()
-    from photofind.core.db import _m7_dates
+    from homepix.core.db import _m7_dates
 
     db.execute("ALTER TABLE photos DROP COLUMN moment")
     _m7_dates(db)

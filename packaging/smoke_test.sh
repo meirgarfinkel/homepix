@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Runs the AppImage's self-test inside a fresh container of another Linux distribution, set up
 # like a normal desktop (graphics, fonts, X libraries) but with nothing else installed.
-#   bash packaging/smoke_test.sh debian:12 [PhotoFinder-x86_64.AppImage] [models folder]
+#   bash packaging/smoke_test.sh debian:12 [HomePix-x86_64.AppImage] [models folder]
 # With a models folder (holding the downloaded AI models), it also checks the AI runs.
 set -euo pipefail
 
 IMAGE="$1"
-APPIMAGE="$(readlink -f "${2:-PhotoFinder-x86_64.AppImage}")"
+APPIMAGE="$(readlink -f "${2:-HomePix-x86_64.AppImage}")"
 MODELS="${3:-}"
 ENGINE="${CONTAINER_ENGINE:-$(command -v podman || command -v docker || true)}"
 
@@ -36,7 +36,7 @@ fi
 
 # Runs as an ordinary user, the way people run it, from a copy (the AppImage extracts itself:
 # containers have no FUSE).
-"$ENGINE" run --rm -v "$APPIMAGE:/PhotoFinder.AppImage:ro" "${MOUNT_MODELS[@]}" "$IMAGE" bash -c "
+"$ENGINE" run --rm -v "$APPIMAGE:/HomePix.AppImage:ro" "${MOUNT_MODELS[@]}" "$IMAGE" bash -c "
   set -e
   $SETUP
   useradd -m tester
@@ -45,10 +45,10 @@ fi
     cd ~
     mkdir -p data/models
     [ -d /models ] && cp /models/* data/models/
-    cp /PhotoFinder.AppImage . && chmod +x PhotoFinder.AppImage
+    cp /HomePix.AppImage . && chmod +x HomePix.AppImage
     echo \"== $IMAGE (glibc \$(ldd --version | head -1 | grep -o \"[0-9.]*\$\"))\"
-    PHOTOFIND_HOME=~/data APPIMAGE_EXTRACT_AND_RUN=1 timeout 180 \
-      xvfb-run -a ./PhotoFinder.AppImage --self-test 2>&1 | tee log.txt | grep -E \"SELF-TEST|rror\" || true
+    HOMEPIX_HOME=~/data APPIMAGE_EXTRACT_AND_RUN=1 timeout 180 \
+      xvfb-run -a ./HomePix.AppImage --self-test 2>&1 | tee log.txt | grep -E \"SELF-TEST|rror\" || true
     grep -q \"SELF-TEST OK\" log.txt || { echo \"--- full log\"; cat log.txt; exit 1; }
   '
 "
