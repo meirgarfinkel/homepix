@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QStackedWidget,
+    QStyle,
+    QStyleOptionSlider,
     QToolBar,
     QToolButton,
     QVBoxLayout,
@@ -165,6 +167,24 @@ def _gap(width: int, stretch: bool = False) -> QWidget:
     else:
         w.setFixedWidth(width)
     return w
+
+
+class JumpSlider(QSlider):
+    """A slider that jumps to where it's clicked (rather than a step toward it), and drags from there."""
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            opt = QStyleOptionSlider()
+            self.initStyleOption(opt)
+            style = self.style()
+            groove = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderGroove, self)
+            handle = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderHandle, self)
+            if not handle.contains(e.position().toPoint()):
+                span = groove.width() - handle.width()
+                x = round(e.position().x()) - groove.x() - handle.width() // 2
+                self.setValue(QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), x, span,
+                                                             opt.upsideDown))
+        super().mousePressEvent(e)  # (now on the handle: a drag carries on from here)
 
 
 class SearchBox(QLineEdit):
@@ -455,7 +475,7 @@ class MainWindow(QMainWindow):
         find.setShortcut(QKeySequence.StandardKey.Find)
         find.triggered.connect(lambda: (self.search_box.setFocus(), self.search_box.selectAll()))
         self.addAction(find)
-        self.zoom = QSlider(Qt.Orientation.Horizontal)
+        self.zoom = JumpSlider(Qt.Orientation.Horizontal)
         self.zoom.setRange(MIN_TILE, MAX_TILE)
         self.zoom.setFixedWidth(96)
         self.zoom.setToolTip("Thumbnail size (Ctrl + mouse wheel, Ctrl + / Ctrl -)")

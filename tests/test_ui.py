@@ -360,3 +360,26 @@ def test_the_info_panel_says_when_it_was_taken(pf, lib, app):
     text = panel.label.text()
     assert "Friday, April 1, 2022<br>07:32:31" in text and "written in the photo (EXIF)" in text
     panel.close()
+
+
+def test_size_slider_jumps_to_a_click_and_drags_from_there(app):
+    from PySide6.QtCore import Qt as _Qt
+
+    from homepix.ui.main_window import JumpSlider
+
+    s = JumpSlider(_Qt.Orientation.Horizontal)
+    s.setRange(90, 360)
+    s.setFixedWidth(200)
+    s.show()
+    QTest.qWaitForWindowExposed(s)
+    s.setValue(90)
+    QTest.mouseClick(s, _Qt.MouseButton.LeftButton, pos=QPoint(170, s.height() // 2))
+    assert s.value() > 300  # straight there, not one page step (+27) toward it
+    QTest.mouseClick(s, _Qt.MouseButton.LeftButton, pos=QPoint(100, s.height() // 2))
+    assert 200 < s.value() < 250  # (the middle)
+    QTest.mousePress(s, _Qt.MouseButton.LeftButton, pos=QPoint(30, s.height() // 2))
+    low = s.value()
+    QTest.mouseMove(s, QPoint(120, s.height() // 2))
+    assert s.value() > low  # the click goes on as a drag
+    QTest.mouseRelease(s, _Qt.MouseButton.LeftButton, pos=QPoint(120, s.height() // 2))
+    s.close()
