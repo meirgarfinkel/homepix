@@ -20,7 +20,6 @@ from PySide6.QtWidgets import QApplication
 
 from .. import __version__
 from ..core import data_dir
-from ..core.config import OLD_NAME, move_old_data, old_data_dir
 from ..core.media import HEIF  # noqa: F401  (registers the HEIC reader before anything decodes)
 
 ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix-icon.png"
@@ -29,16 +28,11 @@ ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "ho
 def main(argv=None):
     argv = list(sys.argv if argv is None else argv)
     self_test = "--self-test" in argv
-    if not self_test and old_app_open():
-        return 0  # Photo Finder (as it was called) is open on the same library: it's been brought forward
-    moved = False if self_test else move_old_data()
     # from the applications menu there's no terminal (on Windows, no output at all): keep a log
     if sys.stdout is None or (not self_test and not sys.stdout.isatty()):
         log = open(data_dir() / "app.log", "a", buffering=1, encoding="utf-8")
         sys.stdout = sys.stderr = log
         print(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} HomePix {__version__}")
-    if moved:
-        print(f"Photo Finder's data folder is HomePix's now: {data_dir()}", flush=True)
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(argv)
@@ -69,23 +63,9 @@ def main(argv=None):
 
 # --- one at a time -----------------------------------------------------------------------------------
 
-def _server_name(folder=None, name="homepix") -> str:
-    where = hashlib.sha1(str(folder or data_dir()).encode()).hexdigest()[:10]  # one per data folder
-    return f"{name}-{getpass.getuser()}-{where}"
-
-
-def old_app_open() -> bool:
-    """Photo Finder, from before the new name, is open on the data folder that's to be moved (told
-    to show itself). Its folder is only moved once it's closed."""
-    old = old_data_dir()
-    if old is None:
-        return False
-    probe = QLocalSocket()
-    probe.connectToServer(_server_name(old, OLD_NAME))
-    if probe.waitForConnected(500):
-        probe.disconnectFromServer()
-        return True
-    return False
+def _server_name() -> str:
+    where = hashlib.sha1(str(data_dir()).encode()).hexdigest()[:10]  # one per data folder
+    return f"homepix-{getpass.getuser()}-{where}"
 
 
 def single_instance():
@@ -122,9 +102,6 @@ def add_menu_entry():
         icon = data_dir() / "homepix-icon.png"
         icon.write_bytes(ICON.read_bytes())
         entry = share / "applications" / "homepix.desktop"
-        old = share / "applications" / f"{OLD_NAME}.desktop"  # Photo Finder's: it's HomePix now
-        if old.is_file() and "Name=Photo Finder" in old.read_text(errors="replace"):
-            old.unlink()
         text = ("[Desktop Entry]\nType=Application\nName=HomePix\n"
                 "Comment=Browse, search and organize your photos\n"
                 f'Exec="{appimage}"\nIcon={icon}\nTerminal=false\n'

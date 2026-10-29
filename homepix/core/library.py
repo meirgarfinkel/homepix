@@ -18,7 +18,6 @@ from .util import quick_hash
 from .video import VIDEO_EXTS, is_video, video_frame, video_meta
 
 IGNORE_MARKER = ".homepix-ignore"  # a folder holding this file is never indexed (e.g. the app's own copies)
-OLD_IGNORE_MARKER = ".photofind-ignore"  # (Photo Finder's name for it)
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 MOTION_MAX = 4.0  # seconds: a video this short, taken at the same moment as a photo, is that photo's motion
 
@@ -31,7 +30,7 @@ def scan_folder(root: Path):
     skip = data_dir().resolve()
     files, unreadable, seen, empty, ignored = {}, set(), set(), set(), set()
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: unreadable.add(os.path.normpath(e.filename))):
-        if IGNORE_MARKER in filenames or OLD_IGNORE_MARKER in filenames:
+        if IGNORE_MARKER in filenames:
             ignored.add(dirpath)
             dirnames[:] = []
             continue

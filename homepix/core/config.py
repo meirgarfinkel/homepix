@@ -28,57 +28,21 @@ MISSING_SHARE = 0.25      # index: if more than this share of a folder's photos 
 MISSING_MIN = 50          # ...(and at least this many), keep them: more likely an unplugged drive than a deletion
 
 
-OLD_NAME = "photofind"  # HomePix was called Photo Finder: its data folder, files and markers had this name
-DB_NAME, OLD_DB_NAME = "homepix.db", f"{OLD_NAME}.db"
-
-
-def _home() -> Path | None:
-    """HOMEPIX_HOME (or Photo Finder's PHOTOFIND_HOME), if set."""
-    home = os.environ.get("HOMEPIX_HOME") or os.environ.get("PHOTOFIND_HOME")
-    return Path(home).expanduser() if home else None
-
-
-def _parent() -> Path:
-    if os.name == "nt":
-        return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-    return Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
-
-
-def old_data_dir() -> Path | None:
-    """Photo Finder's data folder, while it's still there to move (see move_old_data)."""
-    if _home() is not None:
-        return None
-    old, new = _parent() / OLD_NAME, _parent() / "homepix"
-    return old if old.is_dir() and not new.exists() else None
+DB_NAME = "homepix.db"
 
 
 def data_dir() -> Path:
-    """Where the database, models and thumbnails live (Photo Finder's folder, until it's moved)."""
-    base = _home() or old_data_dir() or _parent() / "homepix"
+    """Where the database, models and thumbnails live."""
+    if os.environ.get("HOMEPIX_HOME"):
+        base = Path(os.environ["HOMEPIX_HOME"]).expanduser()
+    elif os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "homepix"
+    else:
+        xdg = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
+        base = Path(xdg) / "homepix"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
 
-def db_file(folder: Path | None = None) -> Path:
-    """The database in a data folder (Photo Finder's name for it, in a folder it hasn't been moved from)."""
-    folder = folder or data_dir()
-    return folder / (OLD_DB_NAME if (folder / OLD_DB_NAME).exists() and not (folder / DB_NAME).exists() else DB_NAME)
-
-
-def move_old_data() -> bool:
-    """Photo Finder's data folder becomes HomePix's: renamed in place (the database in it too), so
-    nothing is copied. Only when Photo Finder isn't open. True if it was moved."""
-    old = old_data_dir()
-    if old is None:
-        return False
-    new = _parent() / "homepix"
-    try:
-        old.rename(new)
-    except OSError as e:
-        print(f"Couldn't move {old} to {new}: {e!r}", flush=True)
-        return False
-    if (new / OLD_DB_NAME).exists() and not (new / DB_NAME).exists():
-        for ext in ("-wal", "-shm", ""):  # (the write-ahead log goes with it, or changes in it are lost)
-            if (new / (OLD_DB_NAME + ext)).exists():
-                (new / (OLD_DB_NAME + ext)).rename(new / (DB_NAME + ext))
-    return True
+def db_file() -> Path:
+    return data_dir() / DB_NAME

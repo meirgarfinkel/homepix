@@ -4,8 +4,6 @@ A private photo manager with AI search and face recognition that runs entirely o
 
 Nothing is uploaded anywhere. The only network access is a one-time download of the AI models (about 130 MB) the first time you index.
 
-HomePix used to be called **Photo Finder**. The first time HomePix opens (with Photo Finder closed), it moves Photo Finder's data folder, with your index, names and settings, to HomePix's, so nothing is lost or indexed again. Photo folders that Photo Finder left notes in are still read.
-
 ## Desktop app (HomePix)
 
 One download per system, with nothing else to install (on the project's GitHub Releases page, once a version is published):
