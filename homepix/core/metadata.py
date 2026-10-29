@@ -224,25 +224,7 @@ def changes(path, d: Details, edit: Edit, shown: dt.datetime | None = None) -> d
     if words is not None and words != d.keywords:
         also(KEYWORDS, words or None)
     if edit.touches_date():
-        if video:
-            # The clock gets the date as it's shown (dates.py), so setting one shows that one.
-            for t in VIDEO_DATES:
-                if t in has or t == "QuickTime:CreateDate":
-                    value = has.get(t) or (_fmt(shown) if t == "QuickTime:CreateDate" and shown else None)
-                    if t == "QuickTime:CreateDate" and edit.date is None and not parse(value, any_year=True):
-                        continue
-                    new = _moved_date(value, edit)
-                    if new:
-                        out[t] = new
-        else:
-            base = d.taken or shown
-            if edit.date is None and base is None:
-                raise CantChange("it has no date to move")
-            for t in PHOTO_DATES:
-                if t == PHOTO_DATES[0] or t in has:
-                    new = _moved_date(has.get(t) if t in has else (_fmt(base) if base else ""), edit)
-                    if new:
-                        out[t] = new
+        out.update(_date_changes(has, d, edit, shown, video))
     if edit.gps is not None and not video and tuple(edit.gps or ()) != tuple(d.gps or ()):
         if edit.gps:
             lat, lon = edit.gps
@@ -251,19 +233,47 @@ def changes(path, d: Details, edit: Edit, shown: dt.datetime | None = None) -> d
         else:
             out.update({t: None for t in GPS if t in has})
     if edit.turn:
-        if video:
-            raise CantChange("videos can't be turned here (your video player can)")
-        new = turned(d.orientation, edit.turn)
-        if d.kind == "HEIC":
-            if new not in HEIC_ROTATION:
-                raise CantChange("HEIC photos can be turned, but not flipped")
-            if "QuickTime:Rotation" not in has:
-                raise CantChange("this HEIC photo can't be turned")
-            out["QuickTime:Rotation"] = heic_raw(HEIC_ROTATION[new])
-            if "IFD0:Orientation" in has:
-                out["IFD0:Orientation"] = new
-        else:
-            out["IFD0:Orientation"] = new
+        out.update(_turn_changes(has, d, edit.turn, video))
+    return out
+
+
+def _date_changes(has, d: Details, edit: Edit, shown, video: bool) -> dict:
+    out = {}
+    if video:
+        # The clock gets the date as it's shown (dates.py), so setting one shows that one.
+        for t in VIDEO_DATES:
+            if t in has or t == "QuickTime:CreateDate":
+                value = has.get(t) or (_fmt(shown) if t == "QuickTime:CreateDate" and shown else None)
+                if t == "QuickTime:CreateDate" and edit.date is None and not parse(value, any_year=True):
+                    continue
+                new = _moved_date(value, edit)
+                if new:
+                    out[t] = new
+        return out
+    base = d.taken or shown
+    if edit.date is None and base is None:
+        raise CantChange("it has no date to move")
+    for t in PHOTO_DATES:
+        if t == PHOTO_DATES[0] or t in has:
+            new = _moved_date(has.get(t) if t in has else (_fmt(base) if base else ""), edit)
+            if new:
+                out[t] = new
+    return out
+
+
+def _turn_changes(has, d: Details, turn: str, video: bool) -> dict:
+    if video:
+        raise CantChange("videos can't be turned here (your video player can)")
+    new = turned(d.orientation, turn)
+    if d.kind != "HEIC":
+        return {"IFD0:Orientation": new}
+    if new not in HEIC_ROTATION:
+        raise CantChange("HEIC photos can be turned, but not flipped")
+    if "QuickTime:Rotation" not in has:
+        raise CantChange("this HEIC photo can't be turned")
+    out = {"QuickTime:Rotation": heic_raw(HEIC_ROTATION[new])}
+    if "IFD0:Orientation" in has:
+        out["IFD0:Orientation"] = new
     return out
 
 

@@ -117,6 +117,13 @@ def plan(db, folders, scope=None) -> Plan:
     scope = os.path.abspath(scope) if scope else None
     if scope and root_of(scope, roots) is None:
         raise ValueError(f"{scope} isn't in the library")
+    files, not_ready = _files(db, roots, scope)
+    moving = [g for g in _groups(db, files) if not g.unchanged()]
+    return Plan(_named(moving), len(files), not_ready)
+
+
+def _files(db, roots, scope):
+    """The files to organize, as (path, kind, root, date taken or None), and how many aren't indexed yet."""
     where, params = "", ()
     if scope:
         where, params = " AND (path LIKE ? ESCAPE '\\')", (_like(os.path.join(scope, "")),)
@@ -134,7 +141,11 @@ def plan(db, folders, scope=None) -> Plan:
             continue
         real = r["taken_source"] not in (None, "file-modified")
         files.append((r["path"], r["kind"], root, dt.datetime.fromisoformat(r["taken"]) if real else None))
+    return files, not_ready
 
+
+def _groups(db, files) -> list:
+    """Each photo or video with what goes along with it: a Live Photo's clip, its sidecars."""
     clips = companions(db, [p for p, kind, _, _ in files if kind == "photo"])
     with_photo = set(clips.values())
     sidecars, groups = _Sidecars(), []
@@ -147,8 +158,11 @@ def plan(db, folders, scope=None) -> Plan:
             members.append((clips[path], os.path.splitext(clips[path])[1].lower(), "with its photo"))
         members += [(side, tail.lower(), "with its photo") for side, tail in sidecars.of(path)]
         groups.append(_Group(path, taken, folder, base, members))
+    return groups
 
-    moving = [g for g in groups if not g.unchanged()]
+
+def _named(moving) -> list:
+    """The changes, each group under its name or, where that's taken, the first free numbered one."""
     # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
     leaving = {os.path.normcase(src) for g in moving for src, _, _ in g.members}
     planned, changes = set(), []
@@ -166,7 +180,7 @@ def plan(db, folders, scope=None) -> Plan:
         planned.update(keys)
         changes += [Change(src, dst, why) for (src, _, why), dst in zip(g.members, targets, strict=True)
                     if src != dst]
-    return Plan(changes, len(files), not_ready)
+    return changes
 
 
 def _numbered_base(stem: str) -> str:
