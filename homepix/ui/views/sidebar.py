@@ -1,4 +1,5 @@
-"""The sidebar: all photos, and the library's real folder tree with how many photos each holds."""
+"""The sidebar: all photos, and the library's real folder tree with how many photos each folder
+inside it holds."""
 
 import os
 from pathlib import Path
@@ -175,6 +176,7 @@ class Sidebar(QTreeWidget):
         self.addTopLevelItem(heading)
         for root, node in folder_tree(roots, counts).items():
             item = self._add(None, node)
+            item.setText(1, "")  # its count is All photos' again: just the name and the arrow
             item.setToolTip(0, root)
             if not Path(root).is_dir():
                 item.setText(0, f"{node['name']} (not connected)")
