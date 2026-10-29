@@ -1,6 +1,7 @@
 """HomePix was called Photo Finder: its data folder, database and the markers it left in photo
 folders are found under their old names, and moved to the new ones."""
 
+import os
 import sqlite3
 
 from conftest import photo
@@ -11,6 +12,7 @@ def test_photo_finders_data_folder_is_moved_not_copied(tmp_path, monkeypatch):
 
     monkeypatch.delenv("HOMEPIX_HOME")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))  # (where it is on Windows)
     old = tmp_path / "photofind"
     (old / "models").mkdir(parents=True)
     con = sqlite3.connect(old / "photofind.db")
@@ -48,7 +50,7 @@ def test_photo_finders_marks_in_photo_folders(pf, lib):
     pf.add_folder(lib)
     pf.index_folder(lib, want_faces=False)
     db = pf.open_db()
-    assert [r[0].rsplit("/", 1)[-1] for r in db.execute("SELECT path FROM photos")] == ["a.jpg"]
+    assert [os.path.basename(r[0]) for r in db.execute("SELECT path FROM photos")] == ["a.jpg"]
     db.close()
 
     assert portable.write_copy(lib) == 1  # (a folder's copy, as Photo Finder kept it)
