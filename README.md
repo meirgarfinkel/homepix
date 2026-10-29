@@ -4,21 +4,21 @@ A private photo manager with AI search and face recognition that runs entirely o
 
 Nothing is uploaded anywhere. The only network access is a one-time download of the AI models (about 130 MB) the first time you index.
 
-## Desktop app (HomePix)
+## Getting it
 
 One download per system, with nothing else to install (on the project's GitHub Releases page, once a version is published):
 
 - **Linux:** `HomePix-x86_64.AppImage`, for Debian 12+, Ubuntu 22.04+, Fedora, Arch and others. Make it executable once (right-click, Properties, Permissions), then double-click it. The first time, it adds **HomePix** to your applications menu.
 - **Windows 10 and 11:** `HomePixSetup.exe`. It installs for you alone (no administrator password) and adds HomePix to the Start menu. Windows warns about an unknown publisher the first time, because the installer isn't signed: click **More info**, then **Run anyway**.
 
-To build these yourself, see **[BUILDING.md](BUILDING.md)**. On Linux you can also install straight from this folder: `bash install_linux.sh`.
+To build these yourself, see **[BUILDING.md](BUILDING.md)**.
 
 HomePix is a native desktop app (Qt). While it's open, it looks for new photos every 30 minutes; opening it a second time brings the open window forward. `--self-test` checks that the window, thumbnails and AI parts all work.
 
 What's in it:
 
 - **Timeline:** every photo and video by date, newest first, in month sections, with a year scrubber down the side for jumping through the years. Ctrl + mouse wheel (or the Size slider) makes the thumbnails bigger or smaller.
-- **Folders:** your library's real folder tree, with how many photos each holds. A folder on an unplugged drive is marked *not connected*; its photos still show. Right-click a folder and choose *Exclude from library* to keep its photos out of All photos, people and search (nothing is deleted; opening the folder still shows them, and the same menu includes it again).
+- **Folders:** your library's real folder tree, with how many photos each folder inside it holds. A folder on an unplugged drive is marked *not connected*; its photos still show. Right-click a folder and choose *Exclude from library* to keep its photos out of All photos, people and search (nothing is deleted; opening the folder still shows them, and the same menu includes it again).
 - **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time, with the closest look-alikes side by side. None are ticked to start with: click the ones of the same person (Ctrl+A ticks them all; **Most like ticked** brings the faces most like the ones ticked to the front, most alike to least), type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that clearly match the faces you named are named too (a face named that way is never used to name more, and faces too small to tell aren't named by themselves). Skip a group for now, or say it's no one you know, and it isn't asked about again. Right after you name a group, **Is this ...?** shows once the faces that might be them too, from every group, most alike first: tick the ones that are and press Enter, or choose *The rest aren't ...* to also say the others aren't (they're not asked about as them again, and the app learns from it). Then the groups go on, those least like anyone you've named first (someone new), and last those that look like someone you've named (with their name already typed in, as a guess).
 - **People:** everyone you've named, as a page of faces. Click one to see their photos; right-click to rename them (a name someone else has makes them one person), say they're the same person as someone else, or forget them.
 - **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Click the wrong ones to tick them, as on Who is this? (Ctrl+A ticks them all; **Most like ticked** brings the faces most like them to the front), and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself. It also teaches HomePix who they *aren't*: their other automatic matches that look like the faces you took away are unnamed at once, and faces like them in new photos aren't taken to be them. A couple of these is enough to tell apart look-alikes such as siblings; Undo takes it all back.
@@ -37,73 +37,9 @@ What's in it:
 - **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
 - **Menus:** File, Edit, Photo and View are under the **⋯** button at the top right. Their shortcuts work anywhere in the window.
 
-Every change to who's who is undoable like a file operation, from the app or the command line.
+Every change to who's who is undoable like a file operation.
 
-The app and the command-line tool share the same index, so anything you indexed or named in one shows up in the other. If the app misbehaves, its log is in `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`).
-
-## Command-line tool
-
-### Install (Debian)
-
-```bash
-sudo apt install python3-venv
-python3 -m venv ~/homepix-env
-~/homepix-env/bin/pip install -r requirements.txt
-```
-
-To make the commands below shorter, add an alias to `~/.bashrc`:
-
-```bash
-alias homepix="PYTHONPATH=$HOME/homepix $HOME/homepix-env/bin/python -m homepix"
-```
-
-### Use
-
-```bash
-homepix index ~/Pictures                 # scan the folder (stop with Ctrl+C, resume any time)
-homepix search dog on the beach          # opens a results page in your browser
-homepix search birthday --since 2023     # with a date filter (--since / --until)
-
-homepix people                           # groups unknown faces and shows them in your browser
-homepix name 1 Mom                       # group 1 is Mom
-homepix name 4 9 Dad                     # groups 4 and 9 are both Dad
-homepix search --person Mom              # every photo of Mom
-homepix search beach --person Mom --person Dad
-
-homepix organize                         # what tidying the library would rename or move
-homepix organize --apply ~/Pictures/new  # do it, for one folder (Undo in the app takes it back)
-
-homepix duplicates                       # copies of the same photo found (nothing is moved)
-homepix status                           # what's indexed, any unreadable files
-```
-
-Search shows only photos that score clearly above the rest of your library for that search. Photos that stand out a little are listed as "possibly related" (at most 8). If nothing stands out at all, it just says there are no matches. Add `--all` to rank every photo instead.
-
-Fixing mistakes: `homepix unname <face id>` (the number under each face on the people page), `homepix rename Mom "Mom (Sarah)"`, `homepix forget Mom`.
-
-Run `index` again whenever you add photos. It only processes new or changed files, notices moved or renamed photos (names stay attached), and drops deleted ones.
-
-### Run it overnight
-
-`index` already runs at low priority and uses half your CPU cores. To run it every night at 2 am, add this with `crontab -e`:
-
-```
-0 2 * * * cd $HOME/homepix && ionice -c3 $HOME/homepix-env/bin/python -m homepix index $HOME/Pictures --max-minutes 300 >> $HOME/.local/share/homepix/index.log 2>&1
-```
-
-`--max-minutes` stops it after that long; the next night continues where it left off.
-
-### Windows
-
-Same code. Install Python from python.org, then:
-
-```
-py -m venv %USERPROFILE%\homepix-env
-%USERPROFILE%\homepix-env\Scripts\pip install -r requirements.txt
-%USERPROFILE%\homepix-env\Scripts\python -m homepix index C:\Users\you\Pictures
-```
-
-Use Task Scheduler for nightly runs. Data is stored in `%LOCALAPPDATA%\homepix`.
+If the app misbehaves, its log is in `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`).
 
 ## Where things are stored
 
@@ -112,7 +48,6 @@ Use Task Scheduler for nightly runs. Data is stored in `%LOCALAPPDATA%\homepix`.
 - `homepix.db`: one SQLite file holding everything it learned (about 1–2 KB per photo)
 - `models/`: the downloaded AI models
 - `thumbs/`: small previews of every photo
-- `results.html`, `people.html`: the latest pages
 
 Each library folder also gets `.homepix/library.db`, the copy of what's known about its photos (see *Taking your library along*), and a note saying what it is. A copy found from another library is never overwritten; it's kept beside the new one as `library-<date>.db`.
 

@@ -17,23 +17,13 @@ from .util import normalize
 
 def load_faces(db, where="1=1", params=()):
     rows = db.execute(
-        f"SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.emb, f.cluster, f.person_id, f.locked, "
+        f"SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.emb, f.person_id, f.locked, "
         f"f.not_person, p.path, p.qhash "
         f"FROM faces f JOIN photos p ON p.id = f.photo_id WHERE {where}",
         params,
     ).fetchall()
     embs = np.stack([from_blob(r["emb"]) for r in rows]) if rows else np.zeros((0, 128), np.float32)
     return rows, normalize(embs)
-
-
-def person_centroids(db):
-    rows, embs = load_faces(db, "f.person_id IS NOT NULL")
-    if not rows:
-        return [], np.zeros((0, 128), np.float32)
-    ids = np.array([r["person_id"] for r in rows])
-    people = sorted(set(ids.tolist()))
-    cents = normalize(np.stack([embs[ids == pid].mean(axis=0) for pid in people]))
-    return people, cents
 
 
 RECOGNIZE_K = 3  # a face is compared with the 3 most like it of someone's named faces
@@ -149,7 +139,7 @@ def auto_assign(db, write: bool = True):
             updates.append((pid, rows[i]["id"]))
     if not write:
         return updates
-    db.executemany("UPDATE faces SET person_id=?, cluster=NULL WHERE id=?", updates)
+    db.executemany("UPDATE faces SET person_id=? WHERE id=?", updates)
     db.commit()
     return len(updates)
 
@@ -172,9 +162,8 @@ def reset_faces(db):
     return n, saved
 
 
-def cluster_unnamed(db, save: bool = True):
-    """Group unnamed faces that look like the same person. Group 1 is the biggest. save: keep the
-    group numbers in the index (the command line names groups by them)."""
+def cluster_unnamed(db):
+    """Group unnamed faces that look like the same person, biggest group first."""
     rows, embs = load_faces(db, "f.person_id IS NULL AND f.hidden = 0")
     if not rows:
         return []
@@ -199,13 +188,7 @@ def cluster_unnamed(db, save: bool = True):
         members.append([i])
         groups_in.setdefault(photo, []).append(n)
     members.sort(key=len, reverse=True)
-    if save:
-        updates = []
-        for num, group in enumerate(members, start=1):
-            updates += [(num, rows[i]["id"]) for i in group]
-        db.executemany("UPDATE faces SET cluster=? WHERE id=?", updates)
-        db.commit()
-    return [(num, [rows[i] for i in group]) for num, group in enumerate(members, start=1)]
+    return [[rows[i] for i in group] for group in members]
 
 
 _portraits = {}  # (database, person id) -> (their face count, chosen face): chosen again when it changes
@@ -299,7 +282,7 @@ def apply(db, state: dict):
             db.execute("INSERT INTO people (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name",
                        (int(pid), name))
     faces = state.get("faces", {}).items()
-    db.executemany("UPDATE faces SET person_id=?, locked=?, hidden=?, cluster=NULL WHERE id=?",
+    db.executemany("UPDATE faces SET person_id=?, locked=?, hidden=? WHERE id=?",
                    [(v[0], v[1], v[2], int(fid)) for fid, v in faces])
     db.executemany("UPDATE faces SET not_person=? WHERE id=?",  # (steps from before it was kept have none)
                    [(v[3], int(fid)) for fid, v in faces if len(v) > 3])
@@ -397,7 +380,7 @@ def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
     clearest face comes first and the closest look-alikes sit together (see likeness_order). Each
     face has its "emb" (normalized), to sort by, and its group's "tier" and "like": the name of who
     it looks like (None for NEW). Changes nothing (about a second for 40,000 faces)."""
-    groups = [g for _, g in cluster_unnamed(db, save=False) if len(g) >= min_faces]
+    groups = [g for g in cluster_unnamed(db) if len(g) >= min_faces]
     owners, refs = references(db)
     people = sorted(set(owners.tolist()))
     names = dict(db.execute("SELECT id, name FROM people"))

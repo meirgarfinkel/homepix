@@ -1,4 +1,4 @@
-"""M5: details written into the photos themselves: round trips in each format, names that survive,
+"""Details written into the photos themselves: round trips in each format, names that survive,
 undo that restores the original values, dates shifted, photos turned, and crashes."""
 
 import datetime as dt
@@ -277,7 +277,8 @@ def test_indexing_reads_keywords_and_descriptions_written_elsewhere(home, lib):
 
 KILLER = textwrap.dedent("""
     import os, sys
-    from homepix.core import fileops, metadata, open_db
+    from homepix.core import fileops, metadata
+    from homepix.core.db import open_db
     real = metadata.write
     count = 0
     def write(*a, **k):

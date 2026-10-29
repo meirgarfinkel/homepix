@@ -19,6 +19,8 @@ import re
 
 from PIL import Image
 
+from .video import is_video, video_meta
+
 # Dates in file names, most precise first
 _NAME_DATES = [
     (re.compile(r"(19|20)(\d{2})-(\d{2})-(\d{2}) at (\d{2})[-.](\d{2})[-.](\d{2})"), True),  # macOS screenshots
@@ -57,8 +59,9 @@ def in_name(name: str):
     return None
 
 
-def parse(text):
-    """A stored date ("2024:07:01 09:30:05", maybe with more after it) -> datetime, or None."""
+def parse(text, any_year: bool = False):
+    """A stored date ("2024:07:01 09:30:05", maybe with .123 or +02:00 after it) -> datetime, or None.
+    Unless any_year, only a plausible one (1990 to next year) counts."""
     m = _STORED.match(str(text or "").strip())
     if not m:
         return None
@@ -66,7 +69,7 @@ def parse(text):
         d = dt.datetime(*map(int, m.groups()))
     except ValueError:
         return None
-    return d if _plausible(d) else None
+    return d if any_year or _plausible(d) else None
 
 
 def _iso(d: dt.datetime) -> str:
@@ -106,8 +109,6 @@ def _photo_found(path) -> list:
 def of_file(path, kind: str, mtime: float) -> tuple[str, str, str | None]:
     """(date, source, moment) of a file, read the quick way (no ExifTool)."""
     if kind in ("video", "motion"):
-        from .video import video_meta
-
         meta = video_meta(path)
         taken, source = pick(path, [(meta["clock"], "video")], mtime)
         return taken, source, _iso(meta["taken"]) if meta["taken"] else None
@@ -118,7 +119,7 @@ def of_file(path, kind: str, mtime: float) -> tuple[str, str, str | None]:
 
 def from_tags(path, tags: dict, mtime: float) -> tuple[str, str, str | None]:
     """The same, from what ExifTool read (its family 1 tag names), so both ways agree."""
-    if os.path.splitext(str(path))[1].lower() in _video_exts():
+    if is_video(path):
         clock = parse(tags.get("QuickTime:CreateDate"))
         moment = parse(tags.get("Keys:CreationDate"))  # local, as recorded
         if moment is None and clock is not None:
@@ -128,9 +129,3 @@ def from_tags(path, tags: dict, mtime: float) -> tuple[str, str, str | None]:
     found = [(parse(tags.get(t)), "exif") for t in ("ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate")]
     taken, source = pick(path, found, mtime)
     return taken, source, _photo_moment(taken, found)
-
-
-def _video_exts():
-    from .video import VIDEO_EXTS
-
-    return VIDEO_EXTS

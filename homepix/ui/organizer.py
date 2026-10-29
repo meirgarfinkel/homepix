@@ -6,7 +6,9 @@ from collections import Counter
 
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-from ..core import library_folders, open_db, organize
+from ..core import organize
+from ..core.db import open_db
+from ..core.settings import library_folders
 from . import workers
 from .fileops import plural
 from .views.changes_dialog import ChangesDialog, relative

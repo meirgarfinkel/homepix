@@ -1,9 +1,11 @@
 import importlib
 import os
 import shutil
+import struct
 import tempfile
 import urllib.parse
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -37,7 +39,16 @@ def pf(tmp_path, monkeypatch):
     library = importlib.import_module("homepix.core.library")
     monkeypatch.setattr(library, "ClipImage", FakeClip)
     monkeypatch.setattr(library, "Faces", FakeFaces)
-    return importlib.import_module("homepix.core")
+    from homepix.core import config, db, indexer, media, people, search, settings, thumbs
+
+    return SimpleNamespace(
+        data_dir=config.data_dir, open_db=db.open_db, to_blob=db.to_blob, from_blob=db.from_blob,
+        DatabaseVersionError=db.DatabaseVersionError, Indexer=indexer.Indexer, HEIF=media.HEIF,
+        index_folder=library.index_folder, scan_folder=library.scan_folder, IGNORE_MARKER=library.IGNORE_MARKER,
+        named_people=people.named_people, SearchIndex=search.SearchIndex, face_thumb=thumbs.face_thumb,
+        add_folder=settings.add_folder, remove_folder=settings.remove_folder, set_excluded=settings.set_excluded,
+        excluded_folders=settings.excluded_folders, library_folders=settings.library_folders,
+    )
 
 
 @pytest.fixture
@@ -107,11 +118,16 @@ def trashed_files(tmp_path) -> list[Path]:
     return sorted(folder.iterdir()) if folder.exists() else []
 
 
+def recycled_from(info) -> str:
+    """Where a Recycle Bin item ($I file) came from."""
+    data = Path(info).read_bytes()
+    n = struct.unpack_from("<i", data, 24)[0]
+    return data[28:28 + 2 * n].decode("utf-16-le").rstrip("\0")
+
+
 def trash_records(tmp_path) -> list[str]:
     """Where each item the Trash knows of came from (its info files)."""
     if os.name == "nt":
-        from homepix.core.trash import recycled_from
-
         folder = tmp_path / "recycle"
         return sorted(recycled_from(i) for i in folder.glob("$I*")) if folder.exists() else []
     folder = tmp_path / "xdg" / "Trash" / "info"

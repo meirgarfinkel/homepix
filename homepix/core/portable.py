@@ -25,9 +25,9 @@ from pathlib import Path
 
 from .. import __version__
 from .config import data_dir, db_file
-from .db import LATEST, NewerDatabaseError, open_db, upgrade
+from .db import VERSION, DatabaseVersionError, columns, open_db, upgrade
 from .settings import load_settings, save_settings, set_excluded
-from .util import quick_hash
+from .util import folder_prefix, quick_hash
 
 FOLDER = ".homepix"
 NAME = "library.db"
@@ -46,10 +46,6 @@ loses nothing on this computer, but then another computer would start from scrat
 
 def copy_path(root) -> Path:
     return Path(root) / FOLDER / NAME
-
-
-def _prefix(root) -> str:
-    return str(root).rstrip(os.sep) + os.sep
 
 
 def stamp() -> str:
@@ -97,7 +93,7 @@ def info(root) -> dict | None:
 
 
 def photos_in(db, root) -> int:
-    prefix = _prefix(root)
+    prefix = folder_prefix(root)
     return db.execute("SELECT COUNT(*) FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix)).fetchone()[0]
 
 
@@ -148,7 +144,7 @@ def write_copy(root) -> int | None:
 def _write_copy(root: Path) -> int | None:
     if not root.is_dir():
         return None
-    prefix = _prefix(root)
+    prefix = folder_prefix(root)
     source = stamp()  # taken first: a change made while copying leaves the copy older than the database
     work = data_dir() / "portable-out.tmp.db"
     work.unlink(missing_ok=True)
@@ -169,9 +165,7 @@ def _write_copy(root: Path) -> int | None:
         out.execute("DELETE FROM ops")
         n = len(prefix)
         out.execute("DELETE FROM photos WHERE substr(path, 1, ?) != ?", (n, prefix))
-        out.execute("DELETE FROM sidecars WHERE substr(path, 1, ?) != ?", (n, prefix))
-        for table in ("photos", "sidecars"):
-            out.execute(f"UPDATE {table} SET path = replace(substr(path, ?), ?, '/')", (n + 1, os.sep))
+        out.execute("UPDATE photos SET path = replace(substr(path, ?), ?, '/')", (n + 1, os.sep))
         out.execute("DELETE FROM people WHERE id NOT IN (SELECT person_id FROM faces WHERE person_id IS NOT NULL)")
         library = _owned(root)
         if library is None:
@@ -247,16 +241,16 @@ def read_copy(root) -> dict:
     from .library import scan_folder
 
     root = Path(root)
-    prefix = _prefix(root)
+    prefix = folder_prefix(root)
     work = data_dir() / "portable-in.tmp.db"
     shutil.copyfile(copy_path(root), work)  # never change the copy itself: it may be on a read-only drive
     cp = sqlite3.connect(work)
     cp.row_factory = sqlite3.Row
     try:
         version = cp.execute("PRAGMA user_version").fetchone()[0]
-        if version > LATEST:
-            raise NewerDatabaseError(f"This folder's library was saved by a newer HomePix (database "
-                                     f"version {version}; this one knows up to {LATEST}). Update HomePix first.")
+        if version > VERSION:
+            raise DatabaseVersionError(f"This folder's library was saved by a newer HomePix (database "
+                                       f"version {version}; this one knows up to {VERSION}). Update HomePix first.")
         upgrade(cp)
         meta = dict(cp.execute("SELECT key, value FROM portable").fetchall())
         rows = cp.execute("SELECT * FROM photos").fetchall()
@@ -292,7 +286,7 @@ def read_copy(root) -> dict:
                     claimed.add(p)
                     if not same:
                         del waiting[qh]
-            named = _bring_in(db, cp, found, prefix)
+            named = _bring_in(db, cp, found)
             db.commit()
         except BaseException:
             db.rollback()
@@ -309,14 +303,10 @@ def read_copy(root) -> dict:
     return {"photos": len(found), "missing": len(rows) - len(found), "people": named}
 
 
-def _columns(con, table) -> list[str]:
-    return [r[1] for r in con.execute(f"PRAGMA table_info({table})")]
-
-
-def _bring_in(db, cp, found: dict, prefix: str) -> int:
+def _bring_in(db, cp, found: dict) -> int:
     """Copy the found photos' rows (and what hangs off them) from the copy into the database. Returns
     how many people they're of."""
-    cols = [c for c in _columns(cp, "photos") if c != "id" and c in _columns(db, "photos")]
+    cols = [c for c in columns(cp, "photos") if c != "id" and c in columns(db, "photos")]
     new = {}
     for r in cp.execute(f"SELECT id, {', '.join(cols)} FROM photos"):
         if r["id"] not in found:
@@ -329,8 +319,7 @@ def _bring_in(db, cp, found: dict, prefix: str) -> int:
     for pid, name in cp.execute("SELECT id, name FROM people"):
         row = db.execute("SELECT id FROM people WHERE name = ?", (name,)).fetchone()
         people[pid] = row[0] if row else db.execute("INSERT INTO people (name) VALUES (?)", (name,)).lastrowid
-    shift = (db.execute("SELECT MAX(cluster) FROM faces").fetchone()[0] or 0) + 1  # its groups stay its own
-    fcols = [c for c in _columns(cp, "faces") if c != "id" and c in _columns(db, "faces")]
+    fcols = [c for c in columns(cp, "faces") if c != "id" and c in columns(db, "faces")]
     named = set()
     for f in cp.execute(f"SELECT {', '.join(fcols)} FROM faces"):
         if f["photo_id"] not in new:
@@ -343,14 +332,8 @@ def _bring_in(db, cp, found: dict, prefix: str) -> int:
             elif c == "person_id" and v is not None:
                 v = people.get(v)
                 named.add(v)
-            elif c == "cluster" and v is not None:
-                v += shift
             values.append(v)
         db.execute(f"INSERT INTO faces ({', '.join(fcols)}) VALUES ({', '.join('?' * len(fcols))})", values)
-    for photo_id, path, kind in cp.execute("SELECT photo_id, path, kind FROM sidecars"):
-        if photo_id in new:
-            db.execute("INSERT OR IGNORE INTO sidecars (photo_id, path, kind) VALUES (?, ?, ?)",
-                       (new[photo_id], prefix + path.replace("/", os.sep), kind))
     for a, b in cp.execute("SELECT a, b FROM apart"):
         if a in new and b in new:
             db.execute("INSERT OR IGNORE INTO apart (a, b) VALUES (?, ?)", sorted((new[a], new[b])))

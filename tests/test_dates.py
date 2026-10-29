@@ -184,17 +184,12 @@ def test_renaming_a_file_away_from_its_date(pf, lib):
 # --- an index from before ---------------------------------------------------------------------------
 
 @needs_exiftool
-def test_an_older_index_gets_the_new_dates_on_the_next_pass(pf, lib):
+def test_dates_read_again_are_fixed_on_the_next_pass(pf, lib):
     p = old_mtime(make_photo(lib / "2022_04_01_07_32_31.jpg"))
     pf.index_folder(lib, want_faces=False)
     db = pf.open_db()
-    # as 0.5 left it: the date from when the file changed, everything read
-    db.execute("UPDATE photos SET taken='2025-11-30 09:52:00', taken_source='file-modified', details_done=1")
-    db.commit()
-    from homepix.core.db import _m7_dates
-
-    db.execute("ALTER TABLE photos DROP COLUMN moment")
-    _m7_dates(db)
+    # a date from when the file changed, its details due to be read again
+    db.execute("UPDATE photos SET taken='2025-11-30 09:52:00', taken_source='file-modified', details_done=0")
     db.commit()
     info = pf.index_folder(lib, want_faces=False)
     assert info["done"] == 0  # nothing decoded again

@@ -9,6 +9,7 @@ from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
 
+from ...core.util import folder_prefix
 from .. import theme
 
 ALL = "all"
@@ -45,7 +46,7 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
     tree = {}
     for root in roots:
         node = {"path": root, "name": Path(root).name or root, "total": 0, "children": {}}
-        prefix = root.rstrip(os.sep) + os.sep
+        prefix = folder_prefix(root)
         for folder, n in counts.items():
             if folder == root:
                 node["total"] += n

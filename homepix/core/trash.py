@@ -104,17 +104,6 @@ def unreserve(trashed):
         (t.parent.parent / "info" / f"{t.name}.trashinfo").unlink(missing_ok=True)
 
 
-def trash(path) -> str:
-    """Move a file to the Trash. Returns where it is now (to restore it from)."""
-    dest = reserve(path)
-    try:
-        rename_noreplace(path, dest)
-    except BaseException:
-        unreserve(dest)
-        raise
-    return dest
-
-
 def restore(trashed, dst):
     """Put a file back from the Trash at dst (which must not exist)."""
     rename_noreplace(trashed, dst)
@@ -205,9 +194,3 @@ def _reserve_recycled(path: Path) -> str:
         f.write(struct.pack("<qqqi", 2, path.stat().st_size, when, len(original)) + original.encode("utf-16-le"))
     return str(folder / f"$R{tag}{ext}")
 
-
-def recycled_from(info) -> str:
-    """Where a Recycle Bin item ($I file) came from."""
-    data = Path(info).read_bytes()
-    n = struct.unpack_from("<i", data, 24)[0]
-    return data[28:28 + 2 * n].decode("utf-16-le").rstrip("\0")

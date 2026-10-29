@@ -6,7 +6,8 @@ import os
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 
-from ..core import fileops, open_db
+from ..core import fileops
+from ..core.db import open_db
 from ..core.export import export
 from ..core.indexer import library_lock
 from . import workers

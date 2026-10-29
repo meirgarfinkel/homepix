@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from . import dates
 from .fileops import companions
+from .util import within
 
 UNSORTED = "Unsorted"
 SIDECAR_EXTS = (".aae", ".xmp", ".json")
@@ -42,10 +43,6 @@ def root_of(path, folders) -> str | None:
     inside = [os.path.abspath(f) for f in folders
               if path == os.path.abspath(f) or path.startswith(os.path.join(os.path.abspath(f), ""))]
     return max(inside, key=len) if inside else None
-
-
-def _under(path: str, folder: str) -> bool:
-    return path.startswith(os.path.join(folder, ""))
 
 
 class _Sidecars:
@@ -102,11 +99,11 @@ def _place(root: str, path: str, taken: dt.datetime | None) -> tuple[str, str, s
     stem = os.path.splitext(name)[0]
     if taken is None:  # no real date
         unsorted = os.path.join(root, UNSORTED)
-        if folder == unsorted or _under(folder, unsorted):
+        if within(folder, [unsorted]):
             return folder, stem, "renamed"
         return unsorted, stem, f"to {UNSORTED}"
     year = os.path.join(root, str(taken.year))
-    in_place = folder == year or _under(folder, year)
+    in_place = within(folder, [year])
     named = taken.strftime(dates.FORMAT)
     if in_place and dates.ORGANIZED.match(stem) and stem[:len(named)] == named:
         named = stem  # already named so, maybe with its _1: kept

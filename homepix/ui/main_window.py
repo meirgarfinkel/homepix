@@ -29,27 +29,27 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import (
-    SearchIndex,
+from ..core import fileops as files
+from ..core import people as known_people
+from ..core.config import data_dir
+from ..core.db import open_db
+from ..core.people import named_people
+from ..core.search import SearchIndex
+from ..core.settings import (
     add_folder,
-    data_dir,
     excluded_folders,
-    left_out,
     library_folders,
     load_settings,
-    named_people,
-    open_db,
     pictures_folder,
     remove_folder,
     set_excluded,
 )
-from ..core import fileops as files
-from ..core import people as known_people
 from ..core.timeline import Month, folder_counts, group_by_month, item_from_row, load_items
+from ..core.util import within
 from . import desktop, theme, workers
 from . import portable as portable_ui
 from .dedupe import Dedupe
-from .fileops import FileOps, bad_name
+from .fileops import FileOps, bad_name, plural
 from .indexing import IndexStatus, IndexWatcher
 from .organizer import Organizer
 from .people_actions import PeopleActions
@@ -87,7 +87,7 @@ def load_library(place):
                  if shows_photos(place) else [])
         counts = folder_counts(db)
         unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
-        total = sum(n for f, n in counts.items() if not left_out(f, excluded))
+        total = sum(n for f, n in counts.items() if not within(f, excluded))
         return group_by_month(items), counts, total, named_people(db), bool(unnamed)
     finally:
         db.close()
@@ -148,14 +148,9 @@ def run_search(index: SearchIndex, q: str, place):
     return sections, len(found["matches"]), time.perf_counter() - start
 
 
-def inside(path: str, folders) -> bool:
-    """Is path one of folders or inside one?"""
-    return any(path == f or path.startswith(f.rstrip(os.sep) + os.sep) for f in folders)
-
-
 def counted(photos: int, videos: int) -> str:
     """'1,234 photos', '1 video', '1,234 photos and 56 videos'."""
-    parts = [f"{n:,} {word}{'s' if n != 1 else ''}" for n, word in ((photos, "photo"), (videos, "video")) if n]
+    parts = [plural(n, word) for n, word in ((photos, "photo"), (videos, "video")) if n]
     return " and ".join(parts) or "0 photos"
 
 
@@ -702,7 +697,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("There are no files to paste. Copy some first, here or in your file "
                                          "manager.", 6000)
             return
-        if not inside(folder, library_folders()):
+        if not within(folder, library_folders()):
             return
         name = os.path.basename(folder) or folder
         what = f"{len(paths):,} file{'s' if len(paths) != 1 else ''}"
@@ -751,7 +746,7 @@ class MainWindow(QMainWindow):
 
     def _into(self, kind, items, folder):
         roots = library_folders()
-        if not inside(folder, roots):
+        if not within(folder, roots):
             QMessageBox.information(
                 self, "HomePix",
                 f"{folder} isn't in your library.\n\nHomePix moves and copies photos only within your "
@@ -858,7 +853,7 @@ class MainWindow(QMainWindow):
         excluded = excluded_folders()
         if path in excluded:
             menu.addAction("Include in library again", lambda: self._exclude(path, False))
-        elif not left_out(path, excluded):  # (not inside one already left out)
+        elif not within(path, excluded):  # (not inside one already left out)
             ex = menu.addAction("Exclude from library", lambda: self._exclude(path, True))
             ex.setToolTip("Hide its photos from All photos, people and search. Nothing is deleted, and "
                           "opening the folder still shows them.")
@@ -1097,7 +1092,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Remove folder", f"Couldn't remove {path}:\n{err}")
             else:
                 self.statusBar().showMessage(f"Removed {path} ({n:,} photos) from the library.", 8000)
-            if self.place != ALL and (self.place == path or self.place.startswith(path.rstrip(os.sep) + os.sep)):
+            if self.place != ALL and within(self.place, [path]):
                 self.place = ALL
             self.reload(fresh=True)
             self.watcher.start()

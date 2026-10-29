@@ -15,7 +15,7 @@ from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QStyledItemDelegate
 
-from ..core import load_settings, save_settings
+from ..core.settings import load_settings, save_settings
 
 FONT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix" / "ui" / "fonts"
 FAMILY = "Plus Jakarta Sans"
@@ -58,10 +58,6 @@ def _qcolor(value: str) -> QColor:
 
 def color(name: str) -> QColor:
     return _qcolor(_tokens[name])
-
-
-def is_dark() -> bool:
-    return _dark
 
 
 def font(px: float, weight=QFont.Weight.Normal) -> QFont:

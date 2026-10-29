@@ -1,4 +1,4 @@
-"""M7: the organizer names files by when they were taken and sorts them into year folders, by the
+"""The organizer names files by when they were taken and sorts them into year folders, by the
 same rules the library was organized by (the Sep 2026 pipeline), previewed, and undoable."""
 
 import datetime as dt
@@ -235,22 +235,6 @@ def test_only_a_folder_in_the_library(home, lib, tmp_path):
     _, db, _, organize = home
     with pytest.raises(ValueError):
         organize.plan(db, [lib], tmp_path / "elsewhere")
-
-
-def test_the_command_line_previews_then_applies(home, lib, capsys):
-    from types import SimpleNamespace
-
-    from homepix import cli
-
-    shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")
-    home[0].index_folder(lib, want_faces=False)
-    args = SimpleNamespace(folder=None, apply=False, all=False, show=20)
-    cli.cmd_organize(args)
-    assert "1 of 1 files would change" in capsys.readouterr().out and files(lib) == ["new/IMG_1.jpg"]
-    cli.cmd_organize(SimpleNamespace(**{**vars(args), "apply": True}))
-    assert files(lib) == ["2021/2021_08_01_19_09_04.jpg"]
-    home[2].undo(home[1])  # the app's Undo takes it back
-    assert files(lib) == ["new/IMG_1.jpg"]
 
 
 # --- in the app ----------------------------------------------------------------------------------

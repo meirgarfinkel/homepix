@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core import face_thumb
 from ...core.people import KNOWN, MAYBE, NEW, by_likeness
+from ...core.thumbs import face_thumb
 from .. import workers
 from .people import CROP
 

@@ -12,21 +12,16 @@ from pathlib import Path
 
 from PIL import Image
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontMetrics, QImage, QPainter, QPalette, QPen, QPolygonF
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontMetrics, QPainter, QPalette, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
 
-from ...core import load_photo
+from ...core.media import load_photo
 from ...core.video import video_frame, video_size
 from .. import theme, workers
+from ..thumbs import to_qimage
 
 FULL = 1 << 15  # "no limit" for load_photo
 MAX_ZOOM = 8.0
-
-
-def to_qimage(img) -> QImage:
-    img = img.convert("RGB")
-    data = img.tobytes("raw", "RGB")
-    return QImage(data, img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888).copy()
 
 
 def decode(path: str, max_side: int, video: bool = False):

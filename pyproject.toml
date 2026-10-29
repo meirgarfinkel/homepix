@@ -11,6 +11,6 @@ pythonpath = [".", "tests"]
 # pycodestyle errors/warnings, pyflakes, bugbear (likely bugs), pyupgrade, import order
 select = ["E", "W", "F", "B", "UP", "I"]
 ignore = [
-    "E501",  # long lines: style only; the code is reorganized in M1
+    "E501",  # long lines: style only
     "E731",  # small `q = lambda ...` helpers are used on purpose
 ]

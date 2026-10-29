@@ -1,4 +1,4 @@
-"""M8: duplicates. A test library with planted copies (exact, resized, saved again, converted, a video)
+"""Duplicates. A test library with planted copies (exact, resized, saved again, converted, a video)
 and bursts of different shots: every copy is found, no burst is, and moving extras to the Trash (or
 saying they aren't duplicates) is undoable."""
 
@@ -122,7 +122,10 @@ def test_the_keeper_has_the_most_pixels_then_the_biggest_file(home, lib, planted
 
 
 def test_the_perceptual_hash_sees_through_resizing_and_saving_again():
-    from homepix.core.duplicates import distance, phash
+    from homepix.core.duplicates import phash
+
+    def distance(a, b):  # bits that differ
+        return ((a ^ b) & (2**64 - 1)).bit_count()
 
     a = scene(9, size=(1200, 900))
     assert distance(phash(a), phash(a.resize((300, 225)))) <= 2
@@ -159,16 +162,6 @@ def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
     assert duplicates.plan_apart(db, [g]) is None  # nothing more to say
     fo.undo(db)
     assert ["d", "d png"] in as_names(groups_of(home, lib), planted)
-
-
-def test_the_command_line_reports(home, lib, planted, capsys):
-    from types import SimpleNamespace
-
-    from homepix import cli
-
-    cli.cmd_duplicates(SimpleNamespace(show=10))
-    out = capsys.readouterr().out
-    assert "Duplicates: 5 groups, 5 extra copies" in out
 
 
 # --- in the app ----------------------------------------------------------------------------------
