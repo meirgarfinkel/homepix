@@ -280,11 +280,12 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     wait_until(app, lambda: w.loaded)
     try:
         w.organizer.tidy()
-        wait_until(app, lambda: files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"]
-                   and not w.ops.busy)
+        # (the files are only read once it's done: Windows won't open one that's being moved)
+        wait_until(app, lambda: not w.ops.busy
+                   and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"])
         assert shown == [[os.path.normpath("new/IMG_1.jpg"), os.path.normpath("2021/2021_08_01_19_09_04.jpg"),
                           "Into 2021/"]]
         w.ops.undo()
-        wait_until(app, lambda: files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"] and not w.ops.busy)
+        wait_until(app, lambda: not w.ops.busy and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"])
     finally:
         w.close()
