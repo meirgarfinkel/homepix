@@ -236,7 +236,8 @@ class PersonFaces(QWidget):
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
         self.hint = QLabel("The least like the rest come first. Click the faces that aren't them to tick "
-                           "them (Ctrl+A ticks them all); double-click a face to see its photo.")
+                           "them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the front); "
+                           "double-click a face to see its photo.")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         self.grid = FaceGrid()
@@ -250,11 +251,18 @@ class PersonFaces(QWidget):
         self.else_button.clicked.connect(lambda: self.someone_else.emit(self._ids()))
         self.hide_button = QPushButton("Not a face")
         self.hide_button.clicked.connect(lambda: self.hidden.emit(self._ids()))
+        self.sort_button = QPushButton("Most like ticked")
+        self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most "
+                                    "alike to least: tick a wrong one to find the others like it")
+        self.sort_button.clicked.connect(
+            lambda: self.grid.reorder(by_likeness(self.grid.faces, self.grid.selected_faces())))
         photos = QPushButton("Their photos")
         photos.clicked.connect(self.back)
         row = QHBoxLayout()
         for b in (self.not_button, self.else_button, self.hide_button):
             row.addWidget(b)
+        row.addSpacing(12)
+        row.addWidget(self.sort_button)
         row.addStretch(1)
         row.addWidget(photos)
         lay = QVBoxLayout(self)
@@ -290,9 +298,10 @@ class PersonFaces(QWidget):
         return m
 
     def _selection_changed(self):
-        on = bool(self.grid.selectedItems())
+        n, faces = len(self.grid.selectedItems()), self.grid.faces
         for b in (self.not_button, self.else_button, self.hide_button):
-            b.setEnabled(on)
+            b.setEnabled(n > 0)
+        self.sort_button.setEnabled(0 < n < len(faces) and "emb" in faces[0])
 
 
 class WhoView(QWidget):

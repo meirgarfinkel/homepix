@@ -167,6 +167,9 @@ def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
     assert {f["id"] for f in grid.selected_faces()} == {grid.faces[0]["id"], grid.faces[1]["id"]}
     click(1)
     assert [f["id"] for f in grid.selected_faces()] == [first["id"]]
+    window.person_faces.sort_button.click()  # Most like ticked: the ticked one first, the rest after
+    assert grid.faces[0]["id"] == first["id"] and len(grid.faces) == 6
+    assert [f["id"] for f in grid.selected_faces()] == [first["id"]]
     window.person_faces.not_button.click()
     settle(app, window)
     wait_until(app, lambda: window.person_faces.grid.count() == 5)
