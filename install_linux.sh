@@ -5,7 +5,6 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 BASE="${XDG_DATA_HOME:-$HOME/.local/share}/homepix"
-OLD="${XDG_DATA_HOME:-$HOME/.local/share}/photofind"  # Photo Finder's, from before the new name
 APP="$BASE/app"
 ENV="$BASE/env"
 MENU="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
@@ -17,21 +16,6 @@ if ! python3 -c "import ensurepip, venv" 2>/dev/null; then
   sudo apt-get install -y python3-venv
 fi
 
-if [ -d "$OLD" ] && [ ! -e "$BASE" ]; then  # the library comes along: renamed, nothing copied
-  if pgrep -u "$USER" -f "photofind_app.py|PhotoFinder" >/dev/null; then
-    echo "Close Photo Finder first, then run this again."
-    exit 1
-  fi
-  mv "$OLD" "$BASE"
-  if [ -e "$BASE/photofind.db" ] && [ ! -e "$BASE/homepix.db" ]; then
-    for x in "" -wal -shm; do
-      if [ -e "$BASE/photofind.db$x" ]; then mv "$BASE/photofind.db$x" "$BASE/homepix.db$x"; fi
-    done
-  fi
-  rm -rf "$BASE/app/photofind" "$BASE/app/photofind_app.py" "$BASE/app/photofind-icon.png"
-  rm -rf "$BASE/env"  # (its scripts know the folder's old name: made again below)
-fi
-rm -f "$MENU/photofind.desktop"
 mkdir -p "$APP" "$MENU"
 rm -f "$APP/homepix.py" "$APP/homepix_ui.html"  # from before the code became a package
 rm -rf "$APP/homepix"

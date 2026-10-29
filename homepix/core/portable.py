@@ -30,7 +30,6 @@ from .settings import load_settings, save_settings, set_excluded
 from .util import quick_hash
 
 FOLDER = ".homepix"
-OLD_FOLDER = ".photofind"  # (Photo Finder's name for it: still read, and renamed when next written)
 NAME = "library.db"
 NOTE = "About this folder.txt"
 NOTE_TEXT = """\
@@ -45,21 +44,8 @@ loses nothing on this computer, but then another computer would start from scrat
 """
 
 
-def _folder(root, moving: bool = False) -> Path:
-    """The folder root's copy is in: Photo Finder's, if that's the one there (moving: renamed first)."""
-    new, old = Path(root) / FOLDER, Path(root) / OLD_FOLDER
-    if not new.exists() and old.is_dir():
-        if not moving:
-            return old
-        try:
-            old.rename(new)
-        except OSError:
-            return old  # (a read-only drive, say: it stays as it is)
-    return new
-
-
 def copy_path(root) -> Path:
-    return _folder(root) / NAME
+    return Path(root) / FOLDER / NAME
 
 
 def _prefix(root) -> str:
@@ -174,7 +160,7 @@ def _write_copy(root: Path) -> int | None:
         db.backup(out)
     finally:
         db.close()
-    folder = _folder(root, moving=True)
+    folder = root / FOLDER
     tmp = folder / (NAME + ".tmp")
     try:
         out.execute("PRAGMA foreign_keys = ON")

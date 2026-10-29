@@ -30,13 +30,6 @@ Name: "desktopicon"; Description: "Put a shortcut on the desktop"
 [Files]
 Source: "..\build\dist\HomePix\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
-[InstallDelete]
-; HomePix was called Photo Finder: an update over it (the same AppId, so the same folder) leaves none
-; of its own program or shortcuts behind (its data folder is moved by the app itself, on first start)
-Type: files; Name: "{app}\PhotoFinder.exe"
-Type: files; Name: "{autoprograms}\Photo Finder.lnk"
-Type: files; Name: "{autodesktop}\Photo Finder.lnk"
-
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\HomePix.exe"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\HomePix.exe"; Tasks: desktopicon
