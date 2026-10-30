@@ -8,7 +8,7 @@ from PIL import Image
 
 from ..config import FACE_READ_MAX, FACE_READ_PX, FACE_SCORE, MIN_FACE_PX, WORK_SIZE
 from ..media import load_photo
-from ..util import normalize
+from ..util import unit_vectors
 from .models import ensure_models, model_path
 
 
@@ -46,7 +46,7 @@ class Faces:
             at[:14] *= scale  # the box and the five landmarks
             aligned = self.rec.alignCrop(src, at)
             # the face and its mirror image, averaged: steadier than either alone
-            vec = normalize(self.rec.feature(aligned)[0] + self.rec.feature(self.cv2.flip(aligned, 1))[0])
+            vec = unit_vectors(self.rec.feature(aligned)[0] + self.rec.feature(self.cv2.flip(aligned, 1))[0])
             results.append((fx / w, fy / h, fw / w, fh / h, float(row[-1]), vec, min(fw, fh) * scale))
         return results
 

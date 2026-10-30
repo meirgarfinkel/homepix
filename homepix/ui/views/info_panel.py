@@ -10,10 +10,10 @@ from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 from ...core.db import open_db
 from ...core.info import photo_info
 from .. import theme, workers
-from .timeline import clock
+from .timeline import video_length
 
 
-def _lookup(photo_id):
+def _load_info(photo_id):
     db = open_db()
     try:
         return photo_info(db, photo_id)
@@ -40,7 +40,7 @@ class InfoPanel(QScrollArea):
         body.setObjectName("infoBody")
         lay = QVBoxLayout(body)
         lay.setContentsMargins(20, 20, 20, 16)
-        self.head = QLabel()  # its name
+        self.head = QLabel()  # the file's name
         self.head.setWordWrap(True)
         self.head.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         lay.addWidget(self.head)
@@ -64,24 +64,24 @@ class InfoPanel(QScrollArea):
         if self._id is None:
             self.show_photo(None)
         elif self._info is not None:
-            self._show(self._info, None)
+            self._show_info(self._info, None)
 
     def show_photo(self, photo_id, count: int = 1):
         """photo_id None: nothing selected. count > 1: several selected (the info is for photo_id)."""
         self._id = photo_id
         if photo_id is None:
             self.head.hide()
-            self.label.setText(f"<p style='color:{_c('muted')}'>Select a photo to see its details.</p>")
+            self.label.setText(f"<p style='color:{_colour('muted')}'>Select a photo to see its details.</p>")
             return
         self._count = count
-        self._latest.run(_lookup, self._show, photo_id)
+        self._latest.run(_load_info, self._show_info, photo_id)
 
     def refresh(self):
         if self._id is not None:
             self.show_photo(self._id, self._count)
 
-    def _show(self, info, err):
-        muted, danger = _c("muted"), _c("danger")
+    def _show_info(self, info, err):
+        muted, danger = _colour("muted"), _colour("danger")
         if err is not None or info is None:
             self._info = None
             self.head.hide()
@@ -120,7 +120,7 @@ class InfoPanel(QScrollArea):
         row("Taken", e(day) + (f"<br>{e(time)}" if time else ""), info.get("date_source"))
         row("Keywords", e(", ".join(info.get("keywords", []))))
         if info.get("duration"):
-            row("Length", e(clock(info["duration"])))
+            row("Length", e(video_length(info["duration"])))
         row("Camera", e(info.get("camera", "")), info.get("lens"))
         row("Exposure", e(info.get("exposure", "")))
         if "dimensions" in info:
@@ -132,11 +132,14 @@ class InfoPanel(QScrollArea):
         if "gps" in info:
             lat, lon = info["gps"]
             url = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}"
-            row("Location", f"{lat:.5f}, {lon:.5f}<br><a href='{url}' style='color:{_c('accentText')}'>Open map</a>")
+            row(
+                "Location",
+                f"{lat:.5f}, {lon:.5f}<br><a href='{url}' style='color:{_colour('accentText')}'>Open map</a>",
+            )
         row("People", e(", ".join(info["people"])))
         row("Folder", e(info["folder"]))
         self.label.setText(head + "<table cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>")
 
 
-def _c(name: str) -> str:
+def _colour(name: str) -> str:
     return theme.color(name).name()

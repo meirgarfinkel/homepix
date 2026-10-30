@@ -126,7 +126,7 @@ def index_folder(
             vanished.append(r)
     todo, vanished = _find_moved(db, todo, known, vanished, want_faces, info)
     if vanished and not forget_missing:
-        vanished = _not_missing(vanished, len(known), on_disk, seen, empty, prefix, info)
+        vanished = _really_deleted(vanished, len(known), on_disk, seen, empty, prefix, info)
     removed = [r["id"] for r in excluded + vanished]
     db.executemany("DELETE FROM photos WHERE id=?", [(i,) for i in removed])
     db.commit()
@@ -134,14 +134,14 @@ def index_folder(
 
     if todo:
         _index_all(db, todo, want_faces, info, report, lambda: stop() or bool(deadline and time.time() > deadline))
-    _follow_up(db, prefix, want_faces, info, report, stop, deadline, changed=bool(todo or removed))
+    _after_indexing(db, prefix, want_faces, info, report, stop, deadline, changed=bool(todo or removed))
     db.close()
     info["phase"] = "done"
     report(info)
     return info
 
 
-def _complete(r, want_faces: bool) -> bool:
+def _fully_indexed(r, want_faces: bool) -> bool:
     """Indexed with everything it needs."""
     return not r["error"] and (r["kind"] != "photo" or (r["has_clip"] and (r["faces_done"] or not want_faces)))
 
@@ -154,7 +154,7 @@ def _to_index(on_disk: dict, known: dict, want_faces: bool) -> list:
         unchanged = r is not None and r["size"] == st.st_size and abs(r["mtime"] - st.st_mtime) < 1
         if unchanged and r["error"] and r["error_reader"] == READER:
             continue  # couldn't be read, and nothing has changed since
-        if unchanged and _complete(r, want_faces):
+        if unchanged and _fully_indexed(r, want_faces):
             continue
         todo.append((path, st, r if unchanged else None))
     return todo
@@ -179,13 +179,13 @@ def _find_moved(db, todo, known, vanished, want_faces, info):
                 found_again.add(old["id"])
                 db.execute("UPDATE photos SET path=?, mtime=? WHERE id=?", (path, st.st_mtime, old["id"]))
                 info["moved"] += 1
-                if _complete(old, want_faces):
+                if _fully_indexed(old, want_faces):
                     continue
         still_todo.append((path, st, r))
     return still_todo, [r for r in vanished if r["id"] not in found_again]
 
 
-def _not_missing(vanished, known: int, on_disk, seen, empty, prefix, info) -> list:
+def _really_deleted(vanished, known: int, on_disk, seen, empty, prefix, info) -> list:
     """The vanished photos that were deleted. A lot vanishing at once looks more like an unplugged drive
     or a glitch than a deletion, so those are kept (and counted as missing) until the user says to
     forget them: a whole folder of MISSING_MIN or more that emptied or disappeared, more than
@@ -212,7 +212,7 @@ def _not_missing(vanished, known: int, on_disk, seen, empty, prefix, info) -> li
 def _index_all(db, todo, want_faces, info, report, stop):
     models = {}
 
-    def ai():  # loaded on the first photo (a folder of videos needs none)
+    def load_models():  # loaded on the first photo (a folder of videos needs none)
         if not models:
             info["phase"] = "loading"
             report(info)
@@ -238,7 +238,7 @@ def _index_all(db, todo, want_faces, info, report, stop):
                     info["errors"] += 1
                     print(f"index: {path}: {e!r}", file=sys.stderr)
             else:
-                info["faces"] += _index_one_photo(db, *ai(), path, st, prev, info)
+                info["faces"] += _index_one_photo(db, *load_models(), path, st, prev, info)
             info["done"] += 1
             if info["done"] % 25 == 0:
                 db.commit()
@@ -251,7 +251,7 @@ def _index_all(db, todo, want_faces, info, report, stop):
         db.commit()
 
 
-def _follow_up(db, prefix, want_faces, info, report, stop, deadline, changed: bool):
+def _after_indexing(db, prefix, want_faces, info, report, stop, deadline, changed: bool):
     """After indexing: recognize named people, read the details written in the files, work out how
     they look (for duplicates), sharpen thumbnails, and pair Live Photos with their clips."""
     if want_faces:
@@ -355,7 +355,7 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
     need_clip = prev is None or not prev["has_clip"] or bool(prev["error"])
     vec = clip.embed(img) if need_clip else None
     found = faces.find(img, p) if faces else []
-    taken, source, moment = dates.of_file(p, "photo", st.st_mtime)
+    taken, source, moment = dates.quick_file_date(p, "photo", st.st_mtime)
     qh = quick_hash(p, st.st_size)
     if need_clip:
         db.execute(
@@ -386,7 +386,7 @@ def _index_video(db, path, st):
     """Store a video: its date, length, fingerprint and a frame for its thumbnail (no AI)."""
     p = Path(path)
     meta = video_meta(p)
-    taken, source, moment = dates.of_file(p, "video", st.st_mtime)
+    taken, source, moment = dates.quick_file_date(p, "video", st.st_mtime)
     qh = quick_hash(p, st.st_size)
     db.execute(
         "INSERT INTO photos (path, size, mtime, qhash, taken, taken_source, moment, kind, duration, faces_done, "

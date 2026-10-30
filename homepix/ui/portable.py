@@ -39,7 +39,7 @@ class PortableCopies(QObject):
     def _tick(self):
         if self._busy:
             return
-        s = portable.stamp()
+        s = portable.db_stamp()
         now = time.time()
         if s != self._seen:
             self._seen, self._changed_at = s, now
@@ -109,7 +109,7 @@ def offer(window, roots, then=None):
 
     def find():
         watcher.indexer.stop_and_wait()
-        return [(r, m) for r in roots if (m := portable.offered(r)) is not None]
+        return [(r, m) for r in roots if (m := portable.copy_to_offer(r)) is not None]
 
     def found(res, err):
         if err is not None or not res:

@@ -14,7 +14,7 @@ from .fileops import plural
 from .views.changes_dialog import ChangesDialog, relative
 
 
-def _why(why: str) -> str:
+def _why_text(why: str) -> str:
     if why == "renamed":
         return "Named by its date"
     if why == "with its photo":
@@ -43,7 +43,7 @@ def preview(plan, folders, title, parent):
     )
     if plan.not_ready:
         note += f" {plan.not_ready:,} files are still being indexed and are left for now."
-    rows = [(relative(c.src, folders), relative(c.dst, folders), _why(c.why), c.src) for c in plan.changes]
+    rows = [(relative(c.src, folders), relative(c.dst, folders), _why_text(c.why), c.src) for c in plan.changes]
     return ChangesDialog(
         title,
         f"<b>{n:,} of {plan.looked_at:,} files</b> will be renamed or moved: {summary(plan)}.",
@@ -54,7 +54,7 @@ def preview(plan, folders, title, parent):
     )
 
 
-def _plan(scope):
+def _start_plan(scope):
     folders = library_folders()
     db = open_db()
     try:
@@ -96,9 +96,9 @@ class Organizer:
         self._looking = True
         name = "the library" if scope is None else os.path.basename(scope) or scope
         self.w.statusBar().showMessage(f"Looking through {name}...")
-        workers.run(_plan, lambda res, err: self._planned(scope, name, res, err), scope)
+        workers.run(_start_plan, lambda res, err: self._plan_ready(scope, name, res, err), scope)
 
-    def _planned(self, scope, name, res, err):
+    def _plan_ready(self, scope, name, res, err):
         self._looking = False
         self.w.statusBar().clearMessage()
         title = "Tidy the library" if scope is None else f"Organize {name}"
@@ -115,5 +115,5 @@ class Organizer:
         dlg = preview(plan, folders, title, self.w)
         if not dlg.exec():
             return
-        steps, n = plan.steps(), len(plan.changes)
+        steps, n = plan.as_steps(), len(plan.changes)
         self.w.ops.run("organize", f"Organize {plural(n, 'file')}", f"Organized {plural(n, 'file')}", lambda db: steps)

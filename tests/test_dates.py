@@ -28,30 +28,30 @@ def old_mtime(p):
 
 
 def test_the_rule():
-    pick = dates.pick
+    best_date = dates.best_date
     mtime = dt.datetime(2025, 11, 30, 9, 52).timestamp()
     exif = dt.datetime(2022, 12, 13, 15, 11, 16)
     # the name, when the photo holds no date (not when the file was copied)
-    assert pick("/p/2022_04_01_07_32_31.jpg", [], mtime) == ("2022-04-01 07:32:31", "filename")
+    assert best_date("/p/2022_04_01_07_32_31.jpg", [], mtime) == ("2022-04-01 07:32:31", "filename")
     # the earliest real one
-    assert pick("/p/2022_12_13_15_11_18.heic", [(exif, "exif")], mtime) == ("2022-12-13 15:11:16", "exif")
-    assert pick("/p/2019_01_02_03_04_05.jpg", [(exif, "exif")], mtime) == ("2019-01-02 03:04:05", "filename")
+    assert best_date("/p/2022_12_13_15_11_18.heic", [(exif, "exif")], mtime) == ("2022-12-13 15:11:16", "exif")
+    assert best_date("/p/2019_01_02_03_04_05.jpg", [(exif, "exif")], mtime) == ("2019-01-02 03:04:05", "filename")
     # the same moment: the photo's own wins
-    assert pick("/p/2022_12_13_15_11_16.jpg", [(exif, "exif")], mtime)[1] == "exif"
+    assert best_date("/p/2022_12_13_15_11_16.jpg", [(exif, "exif")], mtime)[1] == "exif"
     # a placeholder never beats a real date, even an earlier one
     stamp = dt.datetime(2023, 1, 1)
-    assert pick("/p/2023_05_28_23_07_00_38.jpg", [(stamp, "exif")], mtime) == ("2023-05-28 23:07:00", "filename")
-    assert pick("/p/IMG_1.jpg", [(dt.datetime(1998, 2, 9, 6, 49), "exif"), (exif, "exif")], mtime)[0] == str(exif)
+    assert best_date("/p/2023_05_28_23_07_00_38.jpg", [(stamp, "exif")], mtime) == ("2023-05-28 23:07:00", "filename")
+    assert best_date("/p/IMG_1.jpg", [(dt.datetime(1998, 2, 9, 6, 49), "exif"), (exif, "exif")], mtime)[0] == str(exif)
     # but it's better than nothing
-    assert pick("/p/2015_01_01_00_00_00_3.jpg", [], mtime) == ("2015-01-01 00:00:00", "placeholder")
-    assert pick("/p/IMG_1.jpg", [], mtime) == ("2025-11-30 09:52:00", "file-modified")
+    assert best_date("/p/2015_01_01_00_00_00_3.jpg", [], mtime) == ("2015-01-01 00:00:00", "placeholder")
+    assert best_date("/p/IMG_1.jpg", [], mtime) == ("2025-11-30 09:52:00", "file-modified")
 
 
 def test_dates_out_of_range_dont_count():
     assert dates.parse("0000:00:00 00:00:00") is None
     assert dates.parse("1970:01:01 00:00:00") is None
     assert dates.parse("2024:07:01 09:30:05+02:00") == dt.datetime(2024, 7, 1, 9, 30, 5)
-    assert dates.in_name("IMG_4411.jpg") is None
+    assert dates.date_in_name("IMG_4411.jpg") is None
 
 
 def test_indexing_and_the_timeline_go_by_it(pf, lib):
@@ -83,7 +83,7 @@ def test_both_ways_of_reading_agree(lib, name):
 
     p = make_photo(lib / name, exif={0x9003: "2021:08:01 19:09:04", 0x9004: "2021:08:01 19:09:03"})
     d = metadata.read([p])[str(p)]
-    assert dates.of_file(p, "photo", 0) == dates.from_tags(p, d.tags, 0)
+    assert dates.quick_file_date(p, "photo", 0) == dates.from_tags(p, d.tags, 0)
 
 
 # --- videos ----------------------------------------------------------------------------------------

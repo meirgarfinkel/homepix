@@ -40,7 +40,7 @@ def _mount_point(path: Path) -> Path:
     return path
 
 
-def _ready(trash: Path) -> Path:
+def _with_subfolders(trash: Path) -> Path:
     for sub in ("files", "info"):
         (trash / sub).mkdir(parents=True, exist_ok=True, mode=0o700)
     return trash
@@ -53,7 +53,7 @@ def trash_for(path: Path) -> tuple[Path, Path | None]:
     try:
         home.mkdir(parents=True, exist_ok=True, mode=0o700)
         if home.stat().st_dev == folder.stat().st_dev:
-            return _ready(home), None
+            return _with_subfolders(home), None
     except OSError:
         pass
     top = _mount_point(folder)
@@ -62,11 +62,11 @@ def trash_for(path: Path) -> tuple[Path, Path | None]:
     try:  # an admin-made .Trash: a real folder, sticky, not a link
         st = shared.lstat()
         if stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX:
-            return _ready(shared / uid), top
+            return _with_subfolders(shared / uid), top
     except OSError:
         pass
     try:
-        return _ready(top / f".Trash-{uid}"), top
+        return _with_subfolders(top / f".Trash-{uid}"), top
     except OSError as e:
         raise TrashError(f"There's no Trash on the drive {top} that HomePix can use: {e}") from e
 

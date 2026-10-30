@@ -47,14 +47,14 @@ def test_the_copy_is_kept_up_to_date(pf, lib, app, monkeypatch):
         monkeypatch.setattr(portable_ui, "QUIET", 0)
         monkeypatch.setattr(portable_ui, "GAP", 0)
         copies._tick()
-        wait_until(app, lambda: portable.current(lib))
-        assert portable.info(lib)["people"] == 1
+        wait_until(app, lambda: portable.is_current(lib))
+        assert portable.copy_details(lib)["people"] == 1
         db = pf.open_db()
         db.execute("UPDATE people SET name = 'Anna'")
         db.commit()
         db.close()
-        assert not portable.current(lib)
+        assert not portable.is_current(lib)
         copies.flush()  # as on closing
-        assert portable.current(lib)
+        assert portable.is_current(lib)
     finally:
         w.close()

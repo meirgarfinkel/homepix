@@ -20,7 +20,7 @@ DATE_SOURCES = {
 }
 
 
-def _deg(value, ref):
+def _gps_decimal(value, ref):
     """EXIF degrees/minutes/seconds to a signed decimal."""
     d, m, s = (float(x) for x in value)
     v = d + m / 60 + s / 3600
@@ -57,8 +57,8 @@ def read_exif(path: Path) -> dict:
             out["exposure"] = " · ".join(parts)
         gps = exif.get_ifd(GPS_IFD)
         try:
-            lat = _deg(gps[ExifTags.GPS.GPSLatitude], gps.get(ExifTags.GPS.GPSLatitudeRef))
-            lon = _deg(gps[ExifTags.GPS.GPSLongitude], gps.get(ExifTags.GPS.GPSLongitudeRef))
+            lat = _gps_decimal(gps[ExifTags.GPS.GPSLatitude], gps.get(ExifTags.GPS.GPSLatitudeRef))
+            lon = _gps_decimal(gps[ExifTags.GPS.GPSLongitude], gps.get(ExifTags.GPS.GPSLongitudeRef))
             if lat or lon:  # 0,0 is what some phones write when they had no fix
                 out["gps"] = (round(lat, 6), round(lon, 6))
         except (KeyError, TypeError, ValueError, ZeroDivisionError):

@@ -40,13 +40,13 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         lay.addWidget(note)
         self.list = QListWidget()
-        self.list.itemSelectionChanged.connect(self._selection)
+        self.list.itemSelectionChanged.connect(self._selected_folder)
         lay.addWidget(self.list, 1)
         row = QHBoxLayout()
         add = QPushButton("Add a folder...")
-        add.clicked.connect(self._add)
+        add.clicked.connect(self._add_folder)
         self.remove = QPushButton("Remove")
-        self.remove.clicked.connect(self._remove)
+        self.remove.clicked.connect(self._remove_folder)
         rescan = QPushButton("Check for new photos now")
         rescan.clicked.connect(self.rescan_requested)
         row.addWidget(add)
@@ -99,17 +99,17 @@ class SettingsDialog(QDialog):
             item = QListWidgetItem(f if Path(f).is_dir() else f"{f}   (not connected right now)")
             item.setData(Qt.ItemDataRole.UserRole, f)
             self.list.addItem(item)
-        self._selection()
+        self._selected_folder()
 
-    def _selection(self):
+    def _selected_folder(self):
         self.remove.setEnabled(bool(self.list.selectedItems()))
 
-    def _add(self):
+    def _add_folder(self):
         path = QFileDialog.getExistingDirectory(self, "Choose a folder with photos", str(pictures_folder()))
         if path:
             self.add_requested.emit(path)
 
-    def _remove(self):
+    def _remove_folder(self):
         items = self.list.selectedItems()
         if not items:
             return

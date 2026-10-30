@@ -113,7 +113,7 @@ def test_details_round_trip(home, lib, ext):
     from homepix.core import dates
     from homepix.core.util import quick_hash
 
-    assert dates.of_file(p, "photo", 0)[:2] == ("2019-05-06 07:08:09", "exif")  # what indexing reads agrees
+    assert dates.quick_file_date(p, "photo", 0)[:2] == ("2019-05-06 07:08:09", "exif")  # what indexing reads agrees
     r = row(db, p)
     assert r["qhash"] == quick_hash(p, os.path.getsize(p)) and r["size"] == os.path.getsize(p)
     assert (r["taken"], json.loads(r["keywords"]), r["description"]) == (
@@ -396,11 +396,14 @@ def test_moving_the_date_of_several(window, app, monkeypatch):
 def test_rotating_in_the_viewer_shows_it_turned(window, app):
     w = window
     w.open_viewer(0)
-    wait_until(app, lambda: w.viewer._image() is not None)
-    before = w.viewer._image()[0].size()
+    wait_until(app, lambda: w.viewer._best_image() is not None)
+    before = w.viewer._best_image()[0].size()
     w.photo.turns["right"].trigger()
-    wait_until(app, lambda: not w.ops.busy and w.viewer._image() is not None and w.viewer._image()[0].size() != before)
-    assert w.viewer._image()[0].size().width() == before.height()
+    wait_until(
+        app,
+        lambda: not w.ops.busy and w.viewer._best_image() is not None and w.viewer._best_image()[0].size() != before,
+    )
+    assert w.viewer._best_image()[0].size().width() == before.height()
 
 
 def test_all_details_lists_the_tags(window, app, monkeypatch):

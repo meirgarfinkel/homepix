@@ -80,7 +80,7 @@ def heic_raw(degrees: int) -> int:
     return degrees // 90 if _quarter_turns() else degrees
 
 
-def _compose(a, b):
+def _compose_transforms(a, b):
     """The map doing b, then a."""
     (a11, a12, a21, a22), (at1, at2) = a
     (b11, b12, b21, b22), (bt1, bt2) = b
@@ -90,7 +90,7 @@ def _compose(a, b):
 
 def turned(orientation: int, turn: str) -> int:
     """The orientation after turning (or flipping) what's shown."""
-    want = _compose(TURNS[turn], _MAPS.get(orientation, _MAPS[1]))
+    want = _compose_transforms(TURNS[turn], _MAPS.get(orientation, _MAPS[1]))
     return next(o for o, m in _MAPS.items() if m == want)
 
 
@@ -99,7 +99,7 @@ def move_box(box, old: int, new: int):
     with orientation new instead of old."""
     (m11, m12, m21, m22), (t1, t2) = _MAPS.get(old, _MAPS[1])
     inverse = ((m11, m21, m12, m22), (-(m11 * t1 + m21 * t2), -(m12 * t1 + m22 * t2)))  # M is orthogonal
-    (n11, n12, n21, n22), (s1, s2) = _compose(_MAPS.get(new, _MAPS[1]), inverse)
+    (n11, n12, n21, n22), (s1, s2) = _compose_transforms(_MAPS.get(new, _MAPS[1]), inverse)
     x, y, w, h = box
     corners = [(n11 * u + n12 * v + s1, n21 * u + n22 * v + s2) for u, v in ((x, y), (x + w, y + h))]
     xs, ys = sorted(c[0] for c in corners), sorted(c[1] for c in corners)
@@ -120,13 +120,13 @@ class Details:
     tags: dict = field(default_factory=dict)  # the tags above that the file has, as ExifTool gives them
 
 
-def _listed(v) -> list:
+def _as_list(v) -> list:
     if v is None or v == "":
         return []
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
-def details(path, tags: dict) -> Details:
+def parse_details(path, tags: dict) -> Details:
     d = Details(kind=tags.get("File:FileType", ""), tags={k: v for k, v in tags.items() if k in ALL})
     for t in DESCRIPTION:
         text = str(tags.get(t) or "").strip()
@@ -135,7 +135,7 @@ def details(path, tags: dict) -> Details:
             break
     for t in KEYWORDS:
         if tags.get(t):
-            d.keywords = _listed(tags[t])
+            d.keywords = _as_list(tags[t])
             break
     if is_video(path):
         d.taken = parse(tags.get("QuickTime:CreateDate"), any_year=True)
@@ -163,7 +163,7 @@ def details(path, tags: dict) -> Details:
 def read(paths) -> dict[str, Details]:
     """{path: Details} for the files ExifTool can read."""
     found = exiftool().read(paths, ALL)
-    return {p: details(p, t) for p, t in found.items()}
+    return {p: parse_details(p, t) for p, t in found.items()}
 
 
 def read_all(path) -> dict:
@@ -311,7 +311,7 @@ def _unique(words) -> list:
     return out
 
 
-def before(d: Details, tags) -> dict:
+def values_before(d: Details, tags) -> dict:
     """The current values of these tags (None where the file doesn't have one), to undo a change."""
     return {t: d.tags.get(t) for t in tags}
 
@@ -340,12 +340,12 @@ def write(path, values: dict):
     raise MetadataError(reason or "ExifTool couldn't change it")
 
 
-def leftover(path) -> str:
+def exiftool_temp_file(path) -> str:
     """The temporary file ExifTool writes beside a file while changing it."""
     return f"{path}_exiftool_tmp"
 
 
-def written(path, values: dict) -> bool:
+def holds_values(path, values: dict) -> bool:
     """Does the file hold these values (so a write finished)?"""
     now = read([path]).get(os.path.abspath(str(path)))
     if now is None:
@@ -356,7 +356,7 @@ def written(path, values: dict) -> bool:
             if have not in (None, "", []):
                 return False
         elif isinstance(v, list):
-            if _listed(have) != [str(x) for x in v]:
+            if _as_list(have) != [str(x) for x in v]:
                 return False
         elif t in NUMERIC:
             try:

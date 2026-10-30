@@ -85,7 +85,7 @@ def test_the_copy_holds_the_folders_photos_with_relative_paths(pf, lib):
         assert con.execute("PRAGMA journal_mode").fetchone()[0] == "delete"  # readable from a read-only drive
     finally:
         con.close()
-    meta = portable.info(lib)
+    meta = portable.copy_details(lib)
     assert (meta["photos"], meta["people"]) == (5, 1)
     assert pf.scan_folder(lib)[0].keys() == {
         str(lib / n) for n in ("a.jpg", "b.jpg", "2024/c.jpg", "2024/d.jpg", "Old/e.jpg")
@@ -106,10 +106,10 @@ def test_another_computer_picks_up_where_it_left_off(pf, lib, tmp_path, monkeypa
     new_computer(monkeypatch, tmp_path)
     pf.add_folder(there)
 
-    assert portable.offered(there)["photos"] == 5
+    assert portable.copy_to_offer(there)["photos"] == 5
     got = portable.read_copy(there)
     assert got == {"photos": 5, "missing": 0, "people": 1}
-    assert portable.offered(there) is None  # brought in: not offered again
+    assert portable.copy_to_offer(there) is None  # brought in: not offered again
     after = named(pf, there)
     assert after == {("2024/renamed.jpg" if k == "2024/c.jpg" else k): v for k, v in before.items()}
     assert apart_pairs(pf, there) == {("a.jpg", "b.jpg")}
@@ -154,17 +154,17 @@ def test_people_are_matched_by_name(pf, lib, tmp_path, monkeypatch):
 def test_a_copy_is_never_replaced_by_an_empty_one_or_another_librarys(pf, lib, tmp_path, monkeypatch):
     setup_library(pf, lib)
     portable.write_copy(lib)
-    first = portable.info(lib)
+    first = portable.copy_details(lib)
     new_computer(monkeypatch, tmp_path)
     pf.add_folder(lib)
     assert portable.write_copy(lib) is None  # none of its photos here yet: the copy stays as it was
-    assert portable.info(lib) == first
+    assert portable.copy_details(lib) == first
 
     pf.index_folder(lib)  # started afresh instead of bringing the copy in
     portable.write_copy(lib)
     files = sorted(p.name for p in (lib / ".homepix").iterdir())
     assert files == [portable.NOTE, f"library-{first['written'][:10]}.db", "library.db"]  # the old one kept
-    assert portable.info(lib)["library"] != first["library"]
+    assert portable.copy_details(lib)["library"] != first["library"]
 
 
 def test_a_folder_that_isnt_there_is_skipped(pf, tmp_path):

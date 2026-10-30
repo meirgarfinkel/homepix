@@ -295,7 +295,7 @@ def test_viewer_shows_photo_and_steps(pf, lib, app):
     v.resize(400, 300)
     v.show()
     v.show_items(items, 1)
-    wait_until(app, lambda: v._image() is not None)
+    wait_until(app, lambda: v._best_image() is not None)
     QTest.keyClick(v, Qt.Key.Key_Right)
     assert v.index == 2
     QTest.keyClick(v, Qt.Key.Key_Right)

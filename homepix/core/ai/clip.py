@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 
 from ..config import CLIP_SIZE
-from ..util import normalize
+from ..util import unit_vectors
 from .models import _ort_session, _pick_output, ensure_models, model_path
 
 
@@ -26,7 +26,7 @@ class ClipImage:
         img = img.crop((left, top, left + CLIP_SIZE, top + CLIP_SIZE))
         x = np.asarray(img, dtype=np.float32) / 255.0  # MobileCLIP: no mean/std normalization
         x = x.transpose(2, 0, 1)[None]
-        return normalize(self.sess.run([self.out], {self.inp: x})[0][0])
+        return unit_vectors(self.sess.run([self.out], {self.inp: x})[0][0])
 
 
 class ClipText:
@@ -56,8 +56,8 @@ class ClipText:
                 feed[i.name] = np.array([mask], dtype=dtype)
             else:
                 feed[i.name] = np.array([ids], dtype=dtype)
-        return normalize(self.sess.run([self.out], feed)[0][0])
+        return unit_vectors(self.sess.run([self.out], feed)[0][0])
 
     def query(self, text: str) -> np.ndarray:
         # Blend the plain phrase with "a photo of ..." - CLIP models search better that way.
-        return normalize(self.embed(text) + self.embed(f"a photo of {text}"))
+        return unit_vectors(self.embed(text) + self.embed(f"a photo of {text}"))

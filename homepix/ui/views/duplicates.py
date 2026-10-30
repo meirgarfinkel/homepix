@@ -55,7 +55,7 @@ class _Groups(QAbstractListModel):
         self.endResetModel()
 
 
-def _pill(p: QPainter, x: int, y: int, text: str, bg: QColor, fg: QColor, centre: bool = False) -> QRect:
+def _draw_pill(p: QPainter, x: int, y: int, text: str, bg: QColor, fg: QColor, centre: bool = False) -> QRect:
     fm = p.fontMetrics()
     w, h = fm.horizontalAdvance(text) + 20, fm.height() + 8
     r = QRect(x - w // 2 if centre else x, y - h // 2 if centre else y, w, h)
@@ -75,12 +75,18 @@ class _Row(QStyledItemDelegate):
         super().__init__(view)
         self.view = view
 
-    def lines(self) -> int:
+    def line_height(self) -> int:
         return self.view.fontMetrics().height()
 
     def sizeHint(self, option, index):
         return QSize(
-            0, PAD * 2 + RING + TILE + 10 + self.lines() * 3 + (HEADER if index.row() == self.view.first_skipped else 0)
+            0,
+            PAD * 2
+            + RING
+            + TILE
+            + 10
+            + self.line_height() * 3
+            + (HEADER if index.row() == self.view.first_skipped else 0),
         )
 
     def body(self, rect: QRect, row: int) -> QRect:
@@ -95,7 +101,7 @@ class _Row(QStyledItemDelegate):
             r = self.tile_rect(rect, i)
             if r.right() > self.tiles_end(rect):
                 break
-            if r.left() <= pos.x() <= r.right() and r.top() <= pos.y() <= r.bottom() + self.lines() * 3:
+            if r.left() <= pos.x() <= r.right() and r.top() <= pos.y() <= r.bottom() + self.line_height() * 3:
                 return i
         return None
 
@@ -139,7 +145,7 @@ class _Row(QStyledItemDelegate):
         p.setFont(theme.font(12, QFont.Weight.DemiBold))
         p.setPen(c_("text"))
         p.drawText(s, Qt.AlignmentFlag.AlignCenter, "Decide now" if self.view.is_skipped(g) else "Skip for now")
-        fm, lh = self.view.fontMetrics(), self.lines()
+        fm, lh = self.view.fontMetrics(), self.line_height()
         bold = theme.font(12, QFont.Weight.Bold)
         hover = self.view.hover
         for i, c in enumerate(self.view.shown(g)):
@@ -167,12 +173,12 @@ class _Row(QStyledItemDelegate):
                 p.setPen(QPen(c_("accent"), 3))
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawRoundedRect(QRectF(r).adjusted(-RING, -RING, RING, RING), RADIUS + RING, RADIUS + RING)
-                _pill(p, r.left() + 10, r.top() + 10, "✓ Keep", c_("accent"), c_("accentInk"))
+                _draw_pill(p, r.left() + 10, r.top() + 10, "✓ Keep", c_("accent"), c_("accentInk"))
             else:
                 mark = "Same file" if g.how == "exact" else "Extra copy"
-                _pill(p, r.left() + 10, r.top() + 10, mark, QColor(0, 0, 0, 140), QColor(255, 255, 255))
+                _draw_pill(p, r.left() + 10, r.top() + 10, mark, QColor(0, 0, 0, 140), QColor(255, 255, 255))
                 if over:
-                    _pill(
+                    _draw_pill(
                         p, r.center().x(), r.center().y(), "Keep this one", c_("accent"), c_("accentInk"), centre=True
                     )
             y = r.bottom() + 10
@@ -220,7 +226,7 @@ class _List(QListView):
         order = self._order.setdefault(key, [c.id for c in g.copies])
         return sorted(g.copies, key=lambda c: order.index(c.id))
 
-    def _hit(self, pos):
+    def _hit_test(self, pos):
         """(row, copy as shown), (row, SKIP), or (row or None, None)."""
         index = self.indexAt(pos)
         if not index.isValid():
@@ -232,7 +238,7 @@ class _List(QListView):
         return row, d.tile_at(rect, pos, len(self.model().groups[row].copies))
 
     def mousePressEvent(self, e):
-        row, i = self._hit(e.position().toPoint())
+        row, i = self._hit_test(e.position().toPoint())
         plain = e.button() == Qt.MouseButton.LeftButton and not e.modifiers() & (
             Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
         )
@@ -245,7 +251,7 @@ class _List(QListView):
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
-        row, i = self._hit(e.position().toPoint())
+        row, i = self._hit_test(e.position().toPoint())
         hover = (row, i) if i is not None else None
         if hover != self.hover:
             self.hover = hover
@@ -260,7 +266,7 @@ class _List(QListView):
         super().leaveEvent(e)
 
     def mouseDoubleClickEvent(self, e):
-        row, i = self._hit(e.position().toPoint())
+        row, i = self._hit_test(e.position().toPoint())
         if row is not None and i is not None and i != SKIP:
             self.open_copy.emit(row, i)
 
@@ -322,28 +328,28 @@ class DuplicatesView(QWidget):
         self.list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.loader.set_size(round(TILE * self.devicePixelRatioF()))
         self.trash_button.clicked.connect(self._trash)
-        self.apart_button.clicked.connect(lambda: self._act(self.apart.emit, selected_only=True))
+        self.apart_button.clicked.connect(lambda: self._on_groups(self.apart.emit, selected_only=True))
         self.list.keep.connect(self._keep)
         self.list.skip.connect(self.skip)
         self.list.open_copy.connect(lambda r, i: self.compared.emit([c.id for c in self.list.shown(self.groups[r])], i))
         self.list.selectionModel().selectionChanged.connect(lambda *_: self._update_text())
-        self._show()
+        self._refresh()
 
     def set_groups(self, groups, library, pending=0):
         """The duplicates in the library (those skipped for now last)."""
         self.list.library = library
         self.pending = pending
         for g in groups:
-            chosen = self._kept.get(self._key(g))
+            chosen = self._kept.get(self._group_key(g))
             if chosen is not None:
                 g.keep(chosen)
         self.groups = self._skipped_last(groups)
-        self._show()
+        self._refresh()
 
     def _skipped_last(self, groups):
         return [g for g in groups if not self.is_skipped(g)] + [g for g in groups if self.is_skipped(g)]
 
-    def _show(self):
+    def _refresh(self):
         self.list.empty_text = (
             "No duplicates found yet."
             if self.pending
@@ -354,14 +360,14 @@ class DuplicatesView(QWidget):
         self.list.viewport().update()
         self._update_text()
 
-    # --- skipping a group for now ---
+    # --- skipping a group for now -------------------------------------------------------------------
 
     @staticmethod
-    def _key(g) -> frozenset:
+    def _group_key(g) -> frozenset:
         return frozenset(c.id for c in g.copies)
 
     def is_skipped(self, g) -> bool:
-        return self._key(g) in self._skipped
+        return self._group_key(g) in self._skipped
 
     def to_decide(self) -> int:
         """The groups not skipped."""
@@ -369,14 +375,14 @@ class DuplicatesView(QWidget):
 
     def skip(self, row: int):
         """Skip that group for now (to the end, under Skipped for now), or decide it now if it was skipped."""
-        key = self._key(self.groups[row])
+        key = self._group_key(self.groups[row])
         self._skipped ^= {key}
-        self._skipped &= {self._key(g) for g in self.groups}  # (groups decided since are forgotten)
+        self._skipped &= {self._group_key(g) for g in self.groups}  # (groups decided since are forgotten)
         set_skipped_duplicates(self._skipped)
         self.groups = self._skipped_last(self.groups)
         bar = self.list.verticalScrollBar()
         at = bar.value()
-        self._show()
+        self._refresh()
         bar.setValue(at)  # the next group takes its place
         self.deciding.emit(self.to_decide())
 
@@ -384,7 +390,7 @@ class DuplicatesView(QWidget):
         rows = sorted({i.row() for i in self.list.selectionModel().selectedRows()})
         return [self.groups[r] for r in rows]
 
-    def _act(self, do, selected_only=False):
+    def _on_groups(self, do, selected_only=False):
         groups = self.selected() or ([] if selected_only else list(self.groups))
         if groups:
             do(groups)
@@ -397,7 +403,7 @@ class DuplicatesView(QWidget):
     def _keep(self, row, i):
         g = self.groups[row]
         g.keep(self.list.shown(g)[i].id)
-        self._kept[self._key(g)] = g.keeper.id
+        self._kept[self._group_key(g)] = g.keeper.id
         self.list.viewport().update()
 
     def _group_of(self, photo_id):

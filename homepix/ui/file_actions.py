@@ -25,7 +25,7 @@ class FileActions:
     def __init__(self, window):
         self.w = window
         self.select_after = None  # after files went away: the index of the photo to select instead
-        a, Key = window._action, QKeySequence.StandardKey
+        a, Key = window.add_action, QKeySequence.StandardKey
         self.undo = a("Undo", window.ops.undo, [Key.Undo])
         self.redo = a("Redo", window.ops.redo, ["Ctrl+Shift+Z", "Ctrl+Y"])
         self.cut = a("Cut", lambda: self.to_clipboard(cut=True), [Key.Cut])
@@ -94,7 +94,7 @@ class FileActions:
             return [w.viewer.items[w.viewer.index]]
         return w.timeline.selected_items() if shown is w.timeline else []
 
-    def update(self):
+    def update_enabled(self):
         has = bool(self.targets())
         for a in self.targeted + self.w.photo.targeted:
             a.setEnabled(has)
@@ -206,7 +206,7 @@ class FileActions:
     def _start_folder(self, items) -> str:
         return self.w.open_folder() or (os.path.dirname(items[0].path) if items else str(pictures_folder()))
 
-    def into(self, kind, items, folder):
+    def move_or_copy_into(self, kind, items, folder):
         if not within(folder, library_folders()):
             QMessageBox.information(
                 self.w,
@@ -233,7 +233,7 @@ class FileActions:
         title = f"{'Move' if kind == 'move' else 'Copy'} {count_of(items)} to"
         folder = QFileDialog.getExistingDirectory(self.w, title, self._start_folder(items))
         if folder:
-            self.into(kind, items, os.path.abspath(folder))
+            self.move_or_copy_into(kind, items, os.path.abspath(folder))
 
     def into_new_folder(self):
         items = self.targets()
@@ -248,7 +248,7 @@ class FileActions:
         if problem:
             QMessageBox.information(self.w, "Move to a new folder", problem)
             return
-        self.into("move", items, os.path.join(parent, name))
+        self.move_or_copy_into("move", items, os.path.join(parent, name))
 
     def export_them(self):
         items = self.targets()

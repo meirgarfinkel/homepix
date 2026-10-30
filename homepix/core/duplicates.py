@@ -146,13 +146,13 @@ def _keeper_order(c: Copy):
 _COLS = "id, path, kind, qhash, size, width, height, taken, taken_source, sha256, phash, clip"
 
 
-def _rows(db):
+def _candidate_rows(db):
     return db.execute(
         f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL AND kind != 'motion'"
     ).fetchall()
 
 
-def _copy(r) -> Copy:
+def _as_copy(r) -> Copy:
     return Copy(
         r["id"], r["path"], r["kind"] or "photo", r["qhash"], r["size"] or 0, r["width"], r["height"], r["taken"]
     )
@@ -176,13 +176,13 @@ def _exact_pairs(db, rows) -> list[tuple[int, int]]:
     return pairs
 
 
-def _when(r):
+def _real_date(r):
     if r["taken"] is None or r["taken_source"] in (None, "file-modified", "placeholder"):
         return None  # no real date to tell two shots apart by
     return dt.datetime.fromisoformat(r["taken"])
 
 
-def _raw(path: str) -> bool:
+def _is_raw(path: str) -> bool:
     return os.path.splitext(path)[1].lower() in RAW
 
 
@@ -190,7 +190,7 @@ def two_shots(a, b) -> bool:
     """Are these two different shots (a burst, or a series), however alike they look? Two with real
     dates up to BURST_WINDOW apart; or two of the same size in pixels and nearly the same file size
     (a copy that size is the same bytes, found as an exact one; a series of shots is like this)."""
-    ta, tb = _when(a), _when(b)
+    ta, tb = _real_date(a), _real_date(b)
     if ta is not None and tb is not None and 0 < abs((ta - tb).total_seconds()) <= BURST_WINDOW:
         return True
     same_size = a["width"] and (a["width"], a["height"]) == (b["width"], b["height"])
@@ -200,7 +200,7 @@ def two_shots(a, b) -> bool:
 
 def _near_pairs(rows) -> list[tuple[int, int, int, float]]:
     """[(id, id, bits apart, how alike to the search model)] of photos that look the same."""
-    photos = [r for r in rows if r["phash"] is not None and r["clip"] is not None and not _raw(r["path"])]
+    photos = [r for r in rows if r["phash"] is not None and r["clip"] is not None and not _is_raw(r["path"])]
     if len(photos) < 2:
         return []
     h = np.array([r["phash"] for r in photos], np.int64).view(np.uint64)
@@ -229,7 +229,7 @@ def _apart(db) -> set[tuple[int, int]]:
 def find(db) -> list[Group]:
     """The groups of duplicates in the library, newest first. Each holds files that are all copies of
     the first, its keeper."""
-    rows = _rows(db)
+    rows = _candidate_rows(db)
     by_id = {r["id"]: r for r in rows}
     apart = _apart(db)
     exact = [(a, b, -1, 1.0) for a, b in _exact_pairs(db, rows) if tuple(sorted((a, b))) not in apart]
@@ -240,7 +240,7 @@ def find(db) -> list[Group]:
     rank = {
         i: n
         for n, i in enumerate(
-            sorted({x for p in exact + near for x in p[:2]}, key=lambda i: _keeper_order(_copy(by_id[i])))
+            sorted({x for p in exact + near for x in p[:2]}, key=lambda i: _keeper_order(_as_copy(by_id[i])))
         )
     }
     best = {}
@@ -259,14 +259,14 @@ def find(db) -> list[Group]:
         members.setdefault(k, [k]).append(i)
     groups = []
     for ids in members.values():
-        copies = [_copy(by_id[i]) for i in ids]
+        copies = [_as_copy(by_id[i]) for i in ids]
         how = "exact" if all(best[i][0][0] == -1 for i in ids[1:]) else "near"
         groups.append(Group(copies, how, [(best[i][1], i) for i in ids[1:]]))
     groups.sort(key=lambda g: g.keeper.taken or "", reverse=True)
     return groups
 
 
-def pending(db) -> int:
+def count_unchecked(db) -> int:
     """Photos whose look isn't worked out yet (they're done after indexing): duplicates among them
     aren't found until then."""
     return db.execute(
@@ -312,10 +312,3 @@ def apply(db, state: dict):
         )
     else:
         db.executemany("DELETE FROM apart WHERE a=? AND b=?", pairs)
-
-
-def summary(groups) -> str:
-    extras = sum(len(g.extras) for g in groups)
-    return (
-        f"{len(groups):,} group{'s' if len(groups) != 1 else ''}, {extras:,} extra cop{'ies' if extras != 1 else 'y'}"
-    )

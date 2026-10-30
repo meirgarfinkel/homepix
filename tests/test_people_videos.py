@@ -67,14 +67,14 @@ def test_a_broken_or_empty_video_tells_nothing(tmp_path):
 
 
 def test_dates_in_file_names():
-    from homepix.core.dates import in_name, is_placeholder
+    from homepix.core.dates import date_in_name, is_placeholder
 
-    assert in_name("2023_05_28_23_07_00_82.jpg") == dt.datetime(2023, 5, 28, 23, 7)
-    assert in_name("VID_20230528_230700.mp4") == dt.datetime(2023, 5, 28, 23, 7)
-    assert in_name("Screenshot 2026-01-18 at 14-54-55.png") == dt.datetime(2026, 1, 18, 14, 54, 55)
-    assert in_name("IMG_2023-05-28.jpg") == dt.datetime(2023, 5, 28)
-    assert is_placeholder(in_name("2023_01_01_00_00_00.jpg"))  # a placeholder: only the year's likely right
-    assert in_name("IMG_4411.MOV") is None
+    assert date_in_name("2023_05_28_23_07_00_82.jpg") == dt.datetime(2023, 5, 28, 23, 7)
+    assert date_in_name("VID_20230528_230700.mp4") == dt.datetime(2023, 5, 28, 23, 7)
+    assert date_in_name("Screenshot 2026-01-18 at 14-54-55.png") == dt.datetime(2026, 1, 18, 14, 54, 55)
+    assert date_in_name("IMG_2023-05-28.jpg") == dt.datetime(2023, 5, 28)
+    assert is_placeholder(date_in_name("2023_01_01_00_00_00.jpg"))  # a placeholder: only the year's likely right
+    assert date_in_name("IMG_4411.MOV") is None
 
 
 def make_video(path, seconds: float, fps=10):
@@ -117,7 +117,7 @@ def test_videos_are_indexed_without_ai_and_get_a_thumbnail(pf, lib, monkeypatch)
     assert thumb_file(r["qhash"]).exists()
     again = pf.index_folder(lib)  # nothing to redo
     assert again["todo"] == 0
-    assert pf.SearchIndex().vectors()[0] == []  # no search for videos
+    assert pf.SearchIndex().load_vectors()[0] == []  # no search for videos
 
 
 def recorded(path, local: str):
@@ -271,7 +271,7 @@ def test_videos_in_the_grid_and_the_viewer(window, pf, lib, app, monkeypatch):
     monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
     vi = next(i for i, it in enumerate(window.timeline.items) if it.kind == "video")
     window.open_viewer(vi)
-    wait_until(app, lambda: window.viewer._image() is not None)  # its frame shows
+    wait_until(app, lambda: window.viewer._best_image() is not None)  # its frame shows
     assert opened == []  # stepping onto a video doesn't start it
     QTest.keyClick(window.viewer, Qt.Key.Key_Return)
     assert [os.path.normpath(p) for p in opened] == [str(lib / "clip.mp4")]

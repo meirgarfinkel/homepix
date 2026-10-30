@@ -13,10 +13,10 @@ class PeopleActions:
     def __init__(self, window):
         self.w = window
 
-    def _run(self, summary, past, plan):
+    def _run_change(self, summary, past, plan):
         self.w.ops.run("people", summary, past, lambda db: [s] if (s := plan(db)) is not None else [])
 
-    def _names(self):
+    def _all_names(self):
         return list(self.w.people_names.values())
 
     def _name_of(self, pid) -> str:
@@ -25,7 +25,7 @@ class PeopleActions:
     # --- faces --------------------------------------------------------------------------------------
 
     def name(self, face_ids, name: str):
-        self._run(
+        self._run_change(
             f"Name {plural(len(face_ids), 'face')} {name}",
             f"Named {plural(len(face_ids), 'face')} {name}",
             lambda db: people.plan_name(db, face_ids, name),
@@ -33,7 +33,7 @@ class PeopleActions:
 
     def confirm(self, yes, no, name: str):
         """Of the faces that might be name: yes are them, the rest (no) aren't."""
-        self._run(
+        self._run_change(
             f"Name {plural(len(yes), 'face')} {name}, not {plural(len(no), 'face')}",
             f"Named {plural(len(yes), 'face')} {name}; {plural(len(no), 'face')} aren't {name}"
             if yes
@@ -42,20 +42,20 @@ class PeopleActions:
         )
 
     def ask_and_name(self, face_ids, title="Who is this?", current=""):
-        name = ask_name(self.w, title, "Their name: someone already named, or someone new.", self._names(), current)
+        name = ask_name(self.w, title, "Their name: someone already named, or someone new.", self._all_names(), current)
         if name and name != current:
             self.name(face_ids, name)
 
     def not_them(self, face_ids, pid=None):
         who = self._name_of(pid) if pid is not None else "them"
-        self._run(
+        self._run_change(
             f"Unname {plural(len(face_ids), 'face')} (not {who})",
             f"Took {plural(len(face_ids), 'face')} away from {who}",
             lambda db: people.plan_not(db, face_ids),
         )
 
     def hide(self, face_ids):
-        self._run(
+        self._run_change(
             f"Ignore {plural(len(face_ids), 'face')}",
             f"Won't ask about {plural(len(face_ids), 'face')} again",
             lambda db: people.plan_hide(db, face_ids),
@@ -69,12 +69,14 @@ class PeopleActions:
             self.w,
             "Rename",
             f"A new name for {old}. If it's someone else's name, they become one person.",
-            [n for n in self._names() if n != old],
+            [n for n in self._all_names() if n != old],
             old,
         )
         if not name or name == old:
             return
-        self._run(f"Rename {old} to {name}", f"Renamed {old} to {name}", lambda db: people.plan_rename(db, pid, name))
+        self._run_change(
+            f"Rename {old} to {name}", f"Renamed {old} to {name}", lambda db: people.plan_rename(db, pid, name)
+        )
 
     def merge(self, pid):
         old = self._name_of(pid)
@@ -85,7 +87,7 @@ class PeopleActions:
         if not ok:
             return
         target = next(p for p, n in self.w.people_names.items() if n == into)
-        self._run(
+        self._run_change(
             f"Merge {old} into {into}",
             f"{old} and {into} are one person now",
             lambda db: people.plan_merge(db, [pid], target),
@@ -102,7 +104,7 @@ class PeopleActions:
             QMessageBox.StandardButton.Cancel,
         )
         if answer == QMessageBox.StandardButton.Yes:
-            self._run(f"Forget {name}", f"Forgot {name}", lambda db: people.plan_forget(db, pid))
+            self._run_change(f"Forget {name}", f"Forgot {name}", lambda db: people.plan_forget(db, pid))
 
     # --- starting over ------------------------------------------------------------------------------
 
@@ -136,4 +138,4 @@ class PeopleActions:
             n, _ = res
             self.w.ops.finished.emit(f"Forgot {plural(n, 'face')}. Looking for faces again, in the background")
 
-        self.w.ops._go("Forgetting the faces...", work, done)
+        self.w.ops._in_background("Forgetting the faces...", work, done)

@@ -42,7 +42,7 @@ class _Dialog(QDialog):
         self.lay.addWidget(self.error)
         self.lay.addWidget(self.buttons)
 
-    def problem(self, text):
+    def show_problem(self, text):
         self.error.setText(text or "")
         self.error.setVisible(bool(text))
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not text)
@@ -58,14 +58,14 @@ class RenameDialog(_Dialog):
         self.edit = QLineEdit(os.path.basename(path))
         stem = os.path.splitext(os.path.basename(path))[0]
         self.edit.setSelection(0, len(stem))
-        self.edit.textChanged.connect(self._check)
+        self.edit.textChanged.connect(self._validate)
         self.lay.addWidget(QLabel("New name:"))
         self.lay.addWidget(self.edit)
         self.finish_layout()
-        self._check(self.edit.text())
+        self._validate(self.edit.text())
 
-    def _check(self, text):
-        self.problem(bad_name(text))
+    def _validate(self, text):
+        self.show_problem(bad_name(text))
 
     def name(self) -> str:
         return self.edit.text().strip()
@@ -84,7 +84,7 @@ class BatchRenameDialog(_Dialog):
         self.items = [(it.path, _taken(it)) for it in items]
         self.resize(520, 0)
         self.edit = QLineEdit(pattern)
-        self.edit.textChanged.connect(self._check)
+        self.edit.textChanged.connect(self._validate)
         help_ = QLabel(self.HELP)
         help_.setWordWrap(True)
         self.preview = QLabel()
@@ -97,17 +97,17 @@ class BatchRenameDialog(_Dialog):
         note.setStyleSheet("color: palette(placeholder-text)")
         self.lay.addWidget(note)
         self.finish_layout()
-        self._check(pattern)
+        self._validate(pattern)
 
     def names(self) -> list[str]:
         return pattern_names(self.edit.text(), self.items)
 
-    def _check(self, _):
+    def _validate(self, _):
         try:
             names = self.names()
         except (KeyError, ValueError, IndexError):
             self.preview.setText("")
-            self.problem("Use only {name}, {n} and {date} in braces.")
+            self.show_problem("Use only {name}, {n} and {date} in braces.")
             return
         problem = next((p for p in map(bad_name, names) if p), None)
         ext = [os.path.splitext(p)[1] for p, _ in self.items]
@@ -115,7 +115,7 @@ class BatchRenameDialog(_Dialog):
         if len(names) > 3:
             shown.append("...")
         self.preview.setText("<br>".join(s.replace("&", "&amp;").replace("<", "&lt;") for s in shown))
-        self.problem(problem)
+        self.show_problem(problem)
 
 
 class ExportDialog(_Dialog):
@@ -142,7 +142,7 @@ class ExportDialog(_Dialog):
         self.lay.addWidget(self.smaller)
         self.lay.addLayout(form)
         self.finish_layout()
-        self.problem(None)
+        self.show_problem(None)
         smaller = settings.value("export/smaller", "false") == "true"
         (self.smaller if smaller else self.original).setChecked(True)
         self.side.setValue(int(settings.value("export/side", 2048)))

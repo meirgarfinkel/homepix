@@ -52,7 +52,7 @@ class SearchIndex:
         self._text = None
         self._text_lock = threading.Lock()
 
-    def vectors(self):
+    def load_vectors(self):
         """(rows, ids, matrix): rows are dicts with id, path, taken, qhash, kind."""
         with self.lock:
             if self.db is None:
@@ -97,13 +97,13 @@ class SearchIndex:
 
     def warm(self):
         """Load the vectors and the text model ahead of the first search (it takes a second or two)."""
-        self.vectors()
+        self.load_vectors()
         self.text_model()
 
     def search(self, q: str, person_id=None, folder=None, db=None) -> dict:
         """{"total": photos searched, "matches": [row + "score"], "related": [...]}, best first.
         person_id: only photos with that person in them. folder: only photos in it or below it."""
-        rows, ids, mat = self.vectors()
+        rows, ids, mat = self.load_vectors()
         keep = np.ones(len(rows), bool)
         hidden = self.hidden
         if len(hidden) == len(rows) and (folder is None or not within(folder, self._hidden_for)):

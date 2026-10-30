@@ -27,13 +27,13 @@ def within(path, folders) -> bool:
     return any(path == f or path.startswith(folder_prefix(f)) for f in map(os.path.abspath, folders))
 
 
-def normalize(v: np.ndarray) -> np.ndarray:
+def unit_vectors(v: np.ndarray) -> np.ndarray:
     v = np.asarray(v, dtype=np.float32)
     n = np.linalg.norm(v, axis=-1, keepdims=True)
     return v / np.maximum(n, 1e-12)
 
 
-def be_nice():
+def lower_priority():
     """Run at low priority so the computer stays usable while indexing."""
     try:
         if os.name == "nt":

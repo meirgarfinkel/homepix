@@ -36,7 +36,7 @@ FORMAT = "%Y_%m_%d_%H_%M_%S"
 _RANK = {"exif": 0, "video": 1, "filename": 2}
 
 
-def _plausible(d: dt.datetime) -> bool:
+def _plausible_date(d: dt.datetime) -> bool:
     return 1990 <= d.year <= dt.date.today().year + 1
 
 
@@ -45,7 +45,7 @@ def is_placeholder(d: dt.datetime) -> bool:
     return d == _SRGB or (d.month == 1 and d.day == 1 and d.time() == dt.time())
 
 
-def in_name(name: str):
+def date_in_name(name: str):
     """The date (and time, if there is one) in a file's name, placeholders too, or None."""
     for pattern, has_time in _NAME_DATES:
         for m in pattern.finditer(name):
@@ -54,7 +54,7 @@ def in_name(name: str):
                 d = dt.datetime(g[0] * 100 + g[1], g[2], g[3], *(g[4:7] if has_time else ()))
             except ValueError:
                 continue
-            if _plausible(d):
+            if _plausible_date(d):
                 return d
     return None
 
@@ -69,17 +69,17 @@ def parse(text, any_year: bool = False):
         d = dt.datetime(*map(int, m.groups()))
     except ValueError:
         return None
-    return d if any_year or _plausible(d) else None
+    return d if any_year or _plausible_date(d) else None
 
 
 def _iso(d: dt.datetime) -> str:
     return d.isoformat(sep=" ", timespec="seconds")
 
 
-def pick(path, found, mtime: float) -> tuple[str, str]:
+def best_date(path, found, mtime: float) -> tuple[str, str]:
     """(date, where it came from) by the rule above. found: [(datetime, "exif" or "video")]."""
     candidates = [(d, src) for d, src in found if d is not None]
-    if (named := in_name(os.path.basename(path))) is not None:
+    if (named := date_in_name(os.path.basename(path))) is not None:
         candidates.append((named, "filename"))
     real = [c for c in candidates if not is_placeholder(c[0])]
     if real or candidates:
@@ -107,14 +107,14 @@ def _photo_found(path) -> list:
         return []
 
 
-def of_file(path, kind: str, mtime: float) -> tuple[str, str, str | None]:
+def quick_file_date(path, kind: str, mtime: float) -> tuple[str, str, str | None]:
     """(date, source, moment) of a file, read the quick way (no ExifTool)."""
     if kind in ("video", "motion"):
         meta = video_meta(path)
-        taken, source = pick(path, [(meta["clock"], "video")], mtime)
+        taken, source = best_date(path, [(meta["clock"], "video")], mtime)
         return taken, source, _iso(meta["taken"]) if meta["taken"] else None
     found = _photo_found(path)
-    taken, source = pick(path, found, mtime)
+    taken, source = best_date(path, found, mtime)
     return taken, source, _photo_moment(taken, found)
 
 
@@ -125,8 +125,8 @@ def from_tags(path, tags: dict, mtime: float) -> tuple[str, str, str | None]:
         moment = parse(tags.get("Keys:CreationDate"))  # local, as recorded
         if moment is None and clock is not None:
             moment = clock.replace(tzinfo=dt.UTC).astimezone().replace(tzinfo=None)
-        taken, source = pick(path, [(clock, "video")], mtime)
+        taken, source = best_date(path, [(clock, "video")], mtime)
         return taken, source, _iso(moment) if moment else None
     found = [(parse(tags.get(t)), "exif") for t in ("ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate")]
-    taken, source = pick(path, found, mtime)
+    taken, source = best_date(path, found, mtime)
     return taken, source, _photo_moment(taken, found)

@@ -14,7 +14,7 @@ from .ai import ModelDownloadError
 from .config import data_dir
 from .library import index_folder
 from .settings import library_folders
-from .util import be_nice
+from .util import lower_priority
 
 
 class _IndexLock:
@@ -130,7 +130,7 @@ class Indexer:
         if t is not None:
             t.join(timeout=timeout)
 
-    def _progress(self, info):
+    def _on_progress(self, info):
         with self.lock:
             self.state.update(
                 phase=info["phase"],
@@ -145,18 +145,18 @@ class Indexer:
             )
 
     def _run(self):
-        be_nice()
+        lower_priority()
         lock = _IndexLock()
         if not lock.acquire():
             with self.lock:
                 self.state.update(running=False, phase="elsewhere", error=None)
             return
         try:
-            self._passes()
+            self._index_until_done()
         finally:
             lock.release()
 
-    def _passes(self):
+    def _index_until_done(self):
         while True:
             self.again = False
             with self.lock:
@@ -170,7 +170,7 @@ class Indexer:
                     continue  # e.g. an unplugged drive; its photos stay browsable and searchable
                 try:
                     info = index_folder(
-                        folder, True, self._progress, lambda: self.stop_flag or self.again, forget_missing=forget
+                        folder, True, self._on_progress, lambda: self.stop_flag or self.again, forget_missing=forget
                     )
                     missing += info["missing"]
                     changed |= bool(info["done"] or info["moved"] or info["removed"])
