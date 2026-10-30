@@ -36,7 +36,7 @@ without touching your own.
 | Workflow | Runs on | Does |
 |---|---|---|
 | `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests; required for merging into `main` |
-| `Build HomePix` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros; the Windows installer only for tags and by hand; for a tag, publishes a GitHub Release with both |
+| `Build HomePix` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros, and the Windows installer. A pull request's build saves no files on GitHub; a tag's publishes a GitHub Release with both and then deletes its copies; one started by hand keeps them, to download |
 
 ## Releasing
 

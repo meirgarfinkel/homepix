@@ -4,6 +4,12 @@
 #   packaging, so a change that breaks some distro shows up before it's merged.
 # - Windows: the installer, built the same way on Windows; its self-test runs too, with the AI models.
 # Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files.
+#
+# A pull request's build saves nothing on GitHub: each job tests what it built itself, and the AI models
+# come from the cache (free, and separate from the storage quota that saved files count against). Only a
+# tag's build and one started by hand save their files: a tag's for the Release, a hand-started one's
+# to download.
+
 name: Build HomePix
 
 on:
@@ -32,20 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: bash packaging/build_in_container.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: HomePix-Linux
-          path: HomePix-x86_64.AppImage
-          retention-days: 2  # (a build is only for checking; Releases keep their own copies)
-          if-no-files-found: error
-
-  linux-models:
-    # The AI models, so the self-test can check they run on each distro. Downloaded once, then cached.
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - id: cache
+      - id: cache  # the AI models, so the self-test can check they run on each distro
         uses: actions/cache@v4
         with:
           path: models
@@ -56,55 +49,59 @@ jobs:
           HOMEPIX_HOME="$PWD/models-home" python -c \
             "from homepix.core.ai.models import MODELS, ensure_models; ensure_models(list(MODELS))"
           mv models-home/models models
-      - uses: actions/upload-artifact@v4
-        with:
-          name: models
-          path: models
-          retention-days: 1
-
-  linux-smoke:
-    needs: [linux, linux-models]
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false  # see every distro's result, not just the first failure
-      matrix:
-        distro: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04", "fedora:latest", "archlinux:latest"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - run: bash packaging/build_in_container.sh
+      - name: Self-test on Debian, Ubuntu, Fedora and Arch
+        run: |
+          failed=""  # try every distro, so one failure doesn't hide another
+          for distro in debian:12 debian:13 ubuntu:22.04 ubuntu:24.04 fedora:latest archlinux:latest; do
+            echo "::group::$distro"
+            bash packaging/smoke_test.sh "$distro" HomePix-x86_64.AppImage models || failed="$failed $distro"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::The self-test failed on:$failed"; exit 1; fi
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
           name: HomePix-Linux
-      - uses: actions/download-artifact@v4
-        with:
-          name: models
-          path: models
-      - run: bash packaging/smoke_test.sh "${{ matrix.distro }}" HomePix-x86_64.AppImage models
+          path: HomePix-x86_64.AppImage
+          retention-days: 2
+          if-no-files-found: error
 
   windows:
-    needs: [linux-models]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - id: cache  # the AI models, where the build's self-test looks for them
+        uses: actions/cache@v4
         with:
-          name: models
           path: build/selftest/models
+          key: models-windows-${{ hashFiles('homepix/core/ai/models.py') }}
+      - if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install numpy pillow
+          $env:HOMEPIX_HOME = "$PWD\models-home"
+          python -c "from homepix.core.ai.models import MODELS, ensure_models; ensure_models(list(MODELS))"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force build\selftest | Out-Null
+          Move-Item models-home\models build\selftest\models
       - run: choco install innosetup --no-progress -y
       - run: packaging\build_windows.bat
         shell: cmd
-      - uses: actions/upload-artifact@v4
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
           name: HomePix-Windows
           path: HomePixSetup.exe
-          retention-days: 2  # (a build is only for checking; Releases keep their own copies)
+          retention-days: 2
+          if-no-files-found: error
 
   release:
     # Only for version tags: publish both builds as a GitHub Release.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux-smoke, windows]
+    needs: [linux, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -115,5 +112,19 @@ jobs:
       - run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
           dist/HomePix-Linux/HomePix-x86_64.AppImage dist/HomePix-Windows/HomePixSetup.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  cleanup:
+    # A tag's saved files were only for the Release, which keeps its own copies: delete them.
+    if: always() && github.event_name == 'push'
+    needs: [linux, windows, release]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate --jq '.artifacts[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; done
         env:
           GH_TOKEN: ${{ github.token }}
