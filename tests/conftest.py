@@ -3,6 +3,7 @@ import os
 import shutil
 import struct
 import tempfile
+import time
 import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
@@ -150,3 +151,45 @@ def trash_records(tmp_path) -> list[str]:
             if line.startswith("Path="):
                 found.append(urllib.parse.unquote(line[5:]))
     return sorted(found)
+
+
+@pytest.fixture
+def home(pf, lib, tmp_path, monkeypatch):
+    """lib as the library, with a Trash of its own. Yields (pf, an open database)."""
+    own_trash(monkeypatch, tmp_path)
+    pf.add_folder(lib)
+    db = pf.open_db()
+    yield pf, db
+    db.close()
+
+
+# --- the app ---------------------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def app():
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6 import QtWidgets
+
+    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+
+def wait_until(app, cond, timeout=20.0):
+    """Let the app run until cond() is true (fails the test if it isn't within timeout seconds)."""
+    end = time.time() + timeout
+    while not cond() and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+    assert cond()
+
+
+def open_window(app, ready=lambda w: w.loaded, index=False, size=(1000, 700)):
+    """The main window, shown, once ready(window) is true (ready=None: at once)."""
+    from homepix.ui.main_window import MainWindow
+
+    w = MainWindow(index=index)
+    w.resize(*size)
+    w.show()
+    if ready is not None:
+        wait_until(app, lambda: ready(w))
+    return w

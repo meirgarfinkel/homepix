@@ -7,9 +7,12 @@ import time
 
 import numpy as np
 import pytest
-from conftest import own_trash
+from conftest import wait_until
 from PIL import Image
 from test_fileops import contents, index_matches_disk, no_leftovers
+
+from homepix.core import fileops as fo
+from homepix.core import organize
 
 _n = 0
 
@@ -30,25 +33,14 @@ def shot(path, taken=None, created=None, mtime=dt.datetime(2025, 11, 30, 9, 52))
     return path
 
 
-@pytest.fixture
-def home(pf, lib, tmp_path, monkeypatch):
-    own_trash(monkeypatch, tmp_path)
-    from homepix.core import fileops, organize
-
-    pf.add_folder(lib)
-    db = pf.open_db()
-    yield pf, db, fileops, organize
-    db.close()
-
-
 def plan(home, lib, scope=None):
-    pf, db, _, organize = home
+    pf, db = home
     pf.index_folder(lib, want_faces=False)
     return organize.plan(db, [lib], scope)
 
 
 def apply(home, lib, scope=None):
-    pf, db, fo, _ = home
+    pf, db = home
     p = plan(home, lib, scope)
     fo.run(db, "organize", "Organize", p.steps())
     return p
@@ -152,7 +144,7 @@ def test_a_chain_each_taking_the_name_the_next_one_leaves(home, lib):
 
 def with_clip(home, lib, photo, clip, clip_taken):
     """photo indexed, and clip beside it as its Live Photo's motion (dated as its own clock says)."""
-    pf, db, _, _ = home
+    pf, db = home
     pf.index_folder(lib, want_faces=False)
     clip.write_bytes(b"clip")
     db.execute(
@@ -164,7 +156,7 @@ def with_clip(home, lib, photo, clip, clip_taken):
 
 
 def test_a_live_photo_clip_and_sidecars_go_with_their_photo_and_undo_brings_all_back(home, lib):
-    _, db, fo, organize = home
+    _, db = home
     photo = shot(lib / "new" / "IMG_1.jpg", "2022:04:01 07:32:31")
     (lib / "new" / "IMG_1.AAE").write_text("edits")
     (lib / "new" / "IMG_1.jpg.json").write_text("{}")
@@ -189,7 +181,7 @@ def test_a_live_photo_clip_and_sidecars_go_with_their_photo_and_undo_brings_all_
 
 def test_a_live_photo_clip_is_named_like_its_photo_where_it_is(home, lib):
     """Most of the library's clips were named by the day they were copied."""
-    _, db, _, organize = home
+    _, db = home
     photo = shot(lib / "2022" / "2022_04_01_07_32_31_1.jpg", "2022:04:01 07:32:31")
     with_clip(home, lib, photo, lib / "2022" / "2025_11_27_19_34_30.mov", "2025-11-27 19:34:30")
     p = organize.plan(db, [lib])
@@ -199,7 +191,7 @@ def test_a_live_photo_clip_is_named_like_its_photo_where_it_is(home, lib):
 def test_a_burst_of_live_photos_keeps_each_clip_with_its_own_photo(home, lib):
     """A photo a second before a Live Photo (with no clip of its own) mustn't take that photo's clip,
     and so on down the burst, each clip named after the photo a second before its own."""
-    pf, db, _, organize = home
+    pf, db = home
     a = shot(lib / "2022" / "IMG_1.jpg", "2022:12:14 13:51:41")
     b = shot(lib / "2022" / "IMG_2.jpg", "2022:12:14 13:51:42")
     c = shot(lib / "2022" / "IMG_3.jpg", "2022:12:14 13:51:43")
@@ -223,7 +215,7 @@ def test_a_burst_of_live_photos_keeps_each_clip_with_its_own_photo(home, lib):
 
 def test_a_clip_stays_with_the_copy_left_behind(home, lib):
     """Two copies of one Live Photo: the clip is as much the kept one's, so it doesn't go with the other."""
-    _, db, fo, _ = home
+    _, db = home
     kept = shot(lib / "2023" / "2023_05_22_17_00_08_1.jpg", "2023:05:22 17:00:08")
     extra = shot(lib / "2023" / "2023_05_22_17_00_08.jpg", "2023:05:22 17:00:08")
     clip = lib / "2023" / "2023_05_22_21_00_15.mov"
@@ -238,7 +230,7 @@ def test_a_clip_stays_with_the_copy_left_behind(home, lib):
 
 
 def test_thirty_thousand_files(home, lib):
-    _, db, _, organize = home
+    _, db = home
     start = dt.datetime(2015, 1, 1)
     rows = []
     for i in range(30_000):
@@ -255,7 +247,7 @@ def test_thirty_thousand_files(home, lib):
 
 
 def test_only_a_folder_in_the_library(home, lib, tmp_path):
-    _, db, _, organize = home
+    _, db = home
     with pytest.raises(ValueError):
         organize.plan(db, [lib], tmp_path / "elsewhere")
 
@@ -263,14 +255,10 @@ def test_only_a_folder_in_the_library(home, lib, tmp_path):
 # --- in the app ----------------------------------------------------------------------------------
 
 
-def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(pf, lib, monkeypatch):
-    from test_faces_ui import app as _app
-    from test_faces_ui import wait_until
-
+def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(pf, lib, monkeypatch, app):
     from homepix.ui.main_window import MainWindow
     from homepix.ui.views import changes_dialog
 
-    app = _app.__wrapped__()
     shot(lib / "new" / "IMG_1.jpg", "2021:08:01 19:09:04")
     shot(lib / "2019" / "2019_05_06_07_08_09.jpg", "2019:05:06 07:08:09")
     pf.add_folder(lib)

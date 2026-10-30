@@ -8,18 +8,9 @@ import sys
 import textwrap
 
 import pytest
-from conftest import own_trash, photo, recycled_from, rel, trash_records, trashed_files
+from conftest import open_window, photo, recycled_from, rel, trash_records, trashed_files, wait_until
 
-
-@pytest.fixture
-def home(pf, lib, tmp_path, monkeypatch):
-    """An indexed library and a Trash of its own. Returns (core, db, fileops)."""
-    own_trash(monkeypatch, tmp_path)
-    from homepix.core import fileops
-
-    db = pf.open_db()
-    yield pf, db, fileops
-    db.close()
+from homepix.core import fileops as fo
 
 
 def digest(p) -> str:
@@ -62,7 +53,7 @@ def make(pf, lib, names):
 
 
 def test_a_name_wanted_by_one_file_and_held_by_another_that_moves_on(home, lib):
-    pf, db, fo = home
+    pf, db = home
     p = make(pf, lib, ["clean-10.jpg", "clean.jpg"])
     a, b = digest(p["clean-10.jpg"]), digest(p["clean.jpg"])
     fo.run(
@@ -76,7 +67,7 @@ def test_a_name_wanted_by_one_file_and_held_by_another_that_moves_on(home, lib):
 
 
 def test_two_files_swap_names(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg"])
     before = contents(lib)
     fo.run(db, "rename", "swap", fo.plan_moves([(lib / "a.jpg", lib / "b.jpg"), (lib / "b.jpg", lib / "a.jpg")]))
@@ -85,7 +76,7 @@ def test_two_files_swap_names(home, lib):
 
 
 def test_a_chain_of_five(home, lib):
-    pf, db, fo = home
+    pf, db = home
     names = [f"{i}.jpg" for i in range(5)]
     make(pf, lib, names)
     before = contents(lib)
@@ -95,7 +86,7 @@ def test_a_chain_of_five(home, lib):
 
 
 def test_a_taken_name_gets_a_number_and_nothing_is_replaced(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg", "b_1.jpg"])
     before = contents(lib)
     fo.run(db, "rename", "test", fo.plan_moves([(lib / "a.jpg", lib / "b.jpg")]))
@@ -104,7 +95,7 @@ def test_a_taken_name_gets_a_number_and_nothing_is_replaced(home, lib):
 
 
 def test_two_files_wanting_the_same_name(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["x/a.jpg", "y/a.jpg"])
     before = contents(lib)
     fo.run(db, "move", "test", fo.plan_into([lib / "x/a.jpg", lib / "y/a.jpg"], lib / "z", "move"))
@@ -113,7 +104,7 @@ def test_two_files_wanting_the_same_name(home, lib):
 
 
 def test_a_name_taken_after_planning(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg"])
     steps = fo.plan_moves([(lib / "a.jpg", lib / "b.jpg")])
     (lib / "b.jpg").write_bytes(b"arrived meanwhile")
@@ -142,7 +133,7 @@ def test_safefs_never_replaces(tmp_path):
 
 
 def test_copy_keeps_the_original_and_indexes_the_copy(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg"])
     fo.run(db, "copy", "test", fo.plan_into([lib / "a.jpg"], lib / "copies", "copy"))
     assert digest(lib / "a.jpg") == digest(lib / "copies/a.jpg")
@@ -152,7 +143,7 @@ def test_copy_keeps_the_original_and_indexes_the_copy(home, lib):
 
 
 def test_trash_goes_to_the_desktop_trash_and_restores_with_everything(home, lib, tmp_path):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg"])
     db.execute("INSERT INTO people (name) VALUES ('Ann')")
     pid = db.execute("SELECT id FROM photos WHERE path=?", (str(lib / "a.jpg"),)).fetchone()[0]
@@ -176,7 +167,7 @@ def test_trash_goes_to_the_desktop_trash_and_restores_with_everything(home, lib,
 
 
 def test_two_photos_with_the_same_name_in_the_trash(home, lib, tmp_path):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["x/a.jpg", "y/a.jpg"])
     fo.run(db, "trash", "test", fo.plan_trash([lib / "x/a.jpg", lib / "y/a.jpg"]))
     assert len(trashed_files(tmp_path)) == 2
@@ -231,7 +222,7 @@ def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monke
 
 
 def test_undo_redo_and_new_work_clears_redo(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg"])
     start = contents(lib)
     fo.run(db, "rename", "rename a", fo.plan_rename(db, [(lib / "a.jpg", "first")]))
@@ -262,7 +253,7 @@ def test_undo_redo_and_new_work_clears_redo(home, lib):
 
 
 def test_undo_skips_a_file_moved_away_since(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg"])
     fo.run(db, "move", "test", fo.plan_into([lib / "a.jpg", lib / "b.jpg"], lib / "sub", "move"))
     os.rename(lib / "sub/a.jpg", lib / "elsewhere.jpg")
@@ -272,7 +263,7 @@ def test_undo_skips_a_file_moved_away_since(home, lib):
 
 
 def test_rename_keeps_the_extension_and_takes_the_live_photo_clip(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["IMG_1.jpg", "IMG_2.jpg"])
     (lib / "IMG_1.mov").write_bytes(b"clip")
     db.execute(
@@ -298,7 +289,7 @@ def test_pattern_names():
 
 
 def test_stopping_partway_keeps_what_was_done_and_undo_takes_it_back(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, [f"{i}.jpg" for i in range(6)])
     before = contents(lib)
     calls = []
@@ -360,7 +351,7 @@ KILLER = textwrap.dedent("""
     + [("trash", n) for n in range(1, 4)],
 )
 def test_killed_partway_loses_nothing(home, lib, tmp_path, action, after):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, [f"{i}.jpg" for i in range(4)])
     before = sorted(contents(lib).values())
     script = tmp_path / "killer.py"
@@ -390,7 +381,7 @@ def test_a_move_to_another_drive_copies_checks_and_removes(home, lib, monkeypatc
 
     from homepix.core import safefs
 
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg"])
     before = contents(lib)
     real = safefs.rename_noreplace
@@ -449,37 +440,13 @@ def test_commands_to_open_with_keep_their_paths():
         assert desktop.split_command("darktable --some-option '%f'") == ["darktable", "--some-option", "%f"]
 
 
-@pytest.fixture(scope="module")
-def app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6 import QtWidgets
-
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def wait_until(app, cond, timeout=20.0):
-    import time
-
-    end = time.time() + timeout
-    while not cond() and time.time() < end:
-        app.processEvents()
-        time.sleep(0.01)
-    assert cond()
-
-
 @pytest.fixture
 def window(home, lib, app):
-    pf, db, fo = home
+    pf, db = home
     for i in range(4):
         photo(lib / "trip" / f"IMG_{i}.jpg")
-    pf.add_folder(lib)
     pf.index_folder(lib, want_faces=False)
-    from homepix.ui.main_window import MainWindow
-
-    w = MainWindow(index=False)
-    w.resize(900, 600)
-    w.show()
-    wait_until(app, lambda: len(w.timeline.items) == 4)
+    w = open_window(app, lambda w: len(w.timeline.items) == 4, size=(900, 600))
     yield w
     w.close()
 
@@ -560,7 +527,7 @@ def test_export_smaller_jpegs(window, lib, tmp_path, app):
 
 
 def test_indexing_afterwards_has_nothing_to_do(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg", "c.jpg"])
     fo.run(db, "move", "m", fo.plan_into([lib / "a.jpg"], lib / "sub", "move"))
     fo.run(db, "copy", "c", fo.plan_into([lib / "b.jpg"], lib / "sub", "copy"))
@@ -571,7 +538,7 @@ def test_indexing_afterwards_has_nothing_to_do(home, lib):
 
 
 def test_restoring_after_the_person_in_it_was_deleted(home, lib):
-    pf, db, fo = home
+    pf, db = home
     make(pf, lib, ["a.jpg"])
     db.execute("INSERT INTO people (name) VALUES ('Ann')")
     pid = db.execute("SELECT id FROM photos").fetchone()[0]
