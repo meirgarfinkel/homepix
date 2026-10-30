@@ -1,5 +1,7 @@
 # Working on HomePix
 
+How the code fits together: **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
 ## One-time setup
 
 ```bash
