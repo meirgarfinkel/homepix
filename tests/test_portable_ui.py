@@ -1,31 +1,12 @@
 """The portable copy from the app: offered when a folder that has one is added, and kept up to date."""
 
-import os
 import shutil
 
 import pytest
-from test_faces_ui import wait_until
+from conftest import open_window, wait_until
 from test_portable import named, new_computer, setup_library
 
 from homepix.core import portable
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6 import QtWidgets  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def app():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def window(app):
-    from homepix.ui.main_window import MainWindow
-
-    w = MainWindow(index=False)
-    w.resize(1000, 700)
-    w.show()
-    wait_until(app, lambda: w.loaded)
-    return w
 
 
 @pytest.mark.parametrize("use", [True, False])
@@ -40,7 +21,7 @@ def test_adding_a_folder_with_a_library_offers_it(pf, lib, tmp_path, monkeypatch
     new_computer(monkeypatch, tmp_path)
     asked = []
     monkeypatch.setattr(portable_ui, "ask_use_copy", lambda parent, root, meta: asked.append(meta["photos"]) or use)
-    w = window(app)
+    w = open_window(app)
     try:
         w.add_library_folder(str(there))
         wait_until(app, lambda: asked)
@@ -60,7 +41,7 @@ def test_the_copy_is_kept_up_to_date(pf, lib, app, monkeypatch):
     from homepix.ui import portable as portable_ui
 
     setup_library(pf, lib)
-    w = window(app)
+    w = open_window(app)
     try:
         copies = portable_ui.PortableCopies(w)
         monkeypatch.setattr(portable_ui, "QUIET", 0)

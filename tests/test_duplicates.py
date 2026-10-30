@@ -8,9 +8,11 @@ import time
 
 import numpy as np
 import pytest
-from conftest import own_trash
+from conftest import wait_until
 from PIL import Image, ImageDraw
 
+from homepix.core import duplicates
+from homepix.core import fileops as fo
 from homepix.core.util import quick_hash
 
 
@@ -43,20 +45,9 @@ def save(img, path, taken=None, quality=92):
 
 
 @pytest.fixture
-def home(pf, lib, tmp_path, monkeypatch):
-    own_trash(monkeypatch, tmp_path)
-    from homepix.core import duplicates, fileops
-
-    pf.add_folder(lib)
-    db = pf.open_db()
-    yield pf, db, fileops, duplicates
-    db.close()
-
-
-@pytest.fixture
 def planted(home, lib):
     """{what: path}: originals, their copies, bursts, and others."""
-    pf, db, _, _ = home
+    pf, db = home
     p = {}
     p["a"] = save(scene(1), lib / "2020" / "2020_01_01_10_00_00.jpg", "2020:01:01 10:00:00")
     p["a exact"] = lib / "backup" / "IMG_0001.jpg"
@@ -95,7 +86,7 @@ def planted(home, lib):
 
 
 def groups_of(home, lib):
-    _, db, _, duplicates = home
+    _, db = home
     return duplicates.find(db)
 
 
@@ -147,7 +138,7 @@ def test_the_perceptual_hash_sees_through_resizing_and_saving_again():
 
 
 def test_extras_go_to_the_trash_and_undo_brings_them_back(home, lib, planted):
-    _, db, fo, duplicates = home
+    _, db = home
     fo.run(db, "trash", "Trash", duplicates.plan_extras(db, groups_of(home, lib)))
     assert groups_of(home, lib) == []  # nothing left to review
     assert all(planted[x].exists() for x in ("a", "b", "c", "d", "v"))
@@ -158,7 +149,7 @@ def test_extras_go_to_the_trash_and_undo_brings_them_back(home, lib, planted):
 
 
 def test_choosing_another_keeper(home, lib, planted):
-    _, db, fo, duplicates = home
+    _, db = home
     g = next(g for g in groups_of(home, lib) if planted_name(g, planted) == "b")
     small = next(c for c in g.copies if c.path == str(planted["b small"]))
     g.keep(small.id)
@@ -167,7 +158,7 @@ def test_choosing_another_keeper(home, lib, planted):
 
 
 def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
-    _, db, fo, duplicates = home
+    _, db = home
     g = next(g for g in groups_of(home, lib) if planted_name(g, planted) == "d")
     fo.run(db, "apart", "Not duplicates", [duplicates.plan_apart(db, [g])])
     assert ["d", "d png"] not in as_names(groups_of(home, lib), planted)
@@ -179,15 +170,11 @@ def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
 # --- in the app ----------------------------------------------------------------------------------
 
 
-def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
-    from test_faces_ui import app as _app
-    from test_faces_ui import wait_until
-
+def test_reviewing_in_the_window(home, lib, planted, monkeypatch, app):
     from homepix.ui.main_window import MainWindow
     from homepix.ui.views import changes_dialog
     from homepix.ui.views.sidebar import DUPES
 
-    app = _app.__wrapped__()
     shown = []
 
     def exec_(dlg):
@@ -237,12 +224,9 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
         w.close()
 
 
-def test_skipped_groups_are_remembered(home, lib, planted):
-    from test_faces_ui import app as _app
-
+def test_skipped_groups_are_remembered(home, lib, planted, app):
     from homepix.ui.views.duplicates import DuplicatesView
 
-    _app.__wrapped__()
     groups = groups_of(home, lib)
     v = DuplicatesView()
     v.set_groups(groups, [lib])
@@ -256,18 +240,15 @@ def test_skipped_groups_are_remembered(home, lib, planted):
     assert again.to_decide() == 4
 
 
-def test_comparing_a_groups_copies_large(home, lib, planted):
+def test_comparing_a_groups_copies_large(home, lib, planted, app):
     """Double-click a copy: the viewer shows that group's copies, the arrows go round them, K keeps
     the one shown, and the copies stay where they were on the page."""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeyEvent
-    from test_faces_ui import app as _app
-    from test_faces_ui import wait_until
 
     from homepix.ui.main_window import MainWindow
     from homepix.ui.views.sidebar import DUPES
 
-    app = _app.__wrapped__()
     w = MainWindow(index=False)
     w.show()
     wait_until(app, lambda: w.loaded)
@@ -326,7 +307,7 @@ def test_comparing_a_groups_copies_large(home, lib, planted):
 
 
 def test_a_raw_file_and_its_jpeg_are_not_duplicates(home, lib):
-    pf, db, _, duplicates = home
+    pf, db = home
     save(scene(40), lib / "2023" / "2023_01_02_03_04_05.jpg", "2023:01:02 03:04:05")
     dng = save(scene(40).resize((320, 240)), lib / "2023" / "x.jpg", "2023:01:02 03:04:05")
     os.rename(dng, lib / "2023" / "2023_01_02_03_04_05.dng")  # (its preview is what's read)
@@ -338,7 +319,7 @@ def test_a_raw_file_and_its_jpeg_are_not_duplicates(home, lib):
 def test_a_burst_in_one_second_with_smaller_copies_of_each_shot(home, lib):
     """A phone's burst (three frames in one second, each also saved smaller): each small copy goes
     with its own frame, and the frames stay apart."""
-    pf, db, _, duplicates = home
+    pf, db = home
     for i in range(3):
         big = scene(50, shift=12 * i, size=(1200, 900))
         save(
@@ -359,7 +340,7 @@ def test_a_burst_in_one_second_with_smaller_copies_of_each_shot(home, lib):
 
 def test_a_series_without_dates_is_not_duplicates(home, lib):
     """A shoot whose dates were lost: shots alike, the same size, nearly the same file size."""
-    pf, db, _, duplicates = home
+    pf, db = home
     for i in range(5):
         save(scene(60, shift=i), lib / "2024" / f"2024_01_01_00_00_00_{i}.jpg")
     pf.index_folder(lib, want_faces=False)

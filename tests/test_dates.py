@@ -11,19 +11,10 @@ from test_metadata import edit_and_run, index, make_photo, row
 
 from homepix.core import dates
 from homepix.core import exiftool as et_mod
+from homepix.core import fileops as fo
+from homepix.core import metadata as md
 
 needs_exiftool = pytest.mark.skipif(not et_mod.available(), reason="needs ExifTool")
-
-
-@pytest.fixture
-def home(pf, lib, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    from homepix.core import fileops, metadata
-
-    pf.add_folder(lib)
-    db = pf.open_db()
-    yield pf, db, fileops, metadata
-    db.close()
 
 
 def old_mtime(p):
@@ -103,7 +94,7 @@ def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(ho
     cv2 = pytest.importorskip("cv2")
     import numpy as np
 
-    pf, db, fo, md = home
+    pf, db = home
     photo = make_photo(lib / "IMG_7.jpg", exif={0x9003: "2021:03:04 10:00:00"})
     clip = lib / "IMG_7.mov"
     w = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 10, (32, 32))
@@ -128,7 +119,7 @@ def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(ho
 
 @needs_exiftool
 def test_moving_a_date_later_renames_a_file_named_by_it_and_undo_puts_both_back(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = old_mtime(make_photo(lib / "2022_04_01_07_32_31_2.jpg"))  # its name is all it has
     other = make_photo(lib / "2022_04_01_10_32_31.jpg")  # already has the name it'll want
     index(pf, lib)
@@ -152,7 +143,7 @@ def test_moving_a_date_later_renames_a_file_named_by_it_and_undo_puts_both_back(
 
 @needs_exiftool
 def test_setting_a_date_renames_too_but_other_names_stay(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     a = make_photo(lib / "2019_05_06_07_08_09.jpg", exif={0x9003: "2019:05:06 07:08:09"})
     b = make_photo(lib / "Holiday.jpg", exif={0x9003: "2019:05:06 07:08:09"})
     index(pf, lib)
@@ -165,7 +156,7 @@ def test_setting_a_date_renames_too_but_other_names_stay(home, lib):
 
 @needs_exiftool
 def test_a_photo_dated_by_its_name_only_can_be_moved_but_a_guess_cant(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     named = old_mtime(make_photo(lib / "IMG_20220401_073231.jpg"))
     guessed = old_mtime(make_photo(lib / "IMG_9.jpg"))
     index(pf, lib)
@@ -212,7 +203,7 @@ def test_a_phone_that_names_photos_in_utc_keeps_its_motion_clip(home, lib):
     cv2 = pytest.importorskip("cv2")
     import numpy as np
 
-    pf, db, fo, md = home
+    pf, db = home
     photo = make_photo(lib / "2023_10_01_06_09_18.jpg", exif={0x9003: "2023:10:01 09:09:18"})
     clip = lib / "2023_10_01_06_09_20.mp4"
     w = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 10, (32, 32))

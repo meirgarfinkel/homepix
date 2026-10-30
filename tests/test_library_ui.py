@@ -4,7 +4,7 @@ import os
 import shutil
 
 import pytest
-from conftest import photo, rows
+from conftest import open_window, photo, rows, wait_until
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -157,28 +157,9 @@ def test_indexing_status_text():
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 
-@pytest.fixture(scope="module")
-def app():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def wait_until(app, cond, timeout=20.0):
-    import time
-
-    end = time.time() + timeout
-    while not cond() and time.time() < end:
-        app.processEvents()
-        time.sleep(0.01)
-    assert cond()
-
-
 @pytest.fixture
 def window(pf, app):
-    from homepix.ui.main_window import MainWindow
-
-    w = MainWindow()
-    w.resize(900, 600)
-    w.show()
+    w = open_window(app, ready=None, index=True, size=(900, 600))
     yield w
     w.close()
 

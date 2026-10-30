@@ -9,10 +9,12 @@ import sys
 import textwrap
 
 import pytest
-from conftest import et_command
+from conftest import et_command, open_window, wait_until
 from PIL import Image
 
 from homepix.core import exiftool as et_mod
+from homepix.core import fileops as fo
+from homepix.core import metadata as md
 
 pytestmark = pytest.mark.skipif(not et_mod.available(), reason="needs ExifTool")
 
@@ -45,17 +47,6 @@ def make_photo(path, orientation=None, exif=None):
     else:
         im.save(path, exif=ex.tobytes())
     return path
-
-
-@pytest.fixture
-def home(pf, lib, tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
-    from homepix.core import fileops, metadata
-
-    pf.add_folder(lib)
-    db = pf.open_db()
-    yield pf, db, fileops, metadata
-    db.close()
 
 
 def index(pf, lib):
@@ -99,7 +90,7 @@ def test_turning_four_times_comes_back_and_boxes_follow():
 
 @pytest.mark.parametrize("ext", FORMATS)
 def test_details_round_trip(home, lib, ext):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / f"a.{ext}")
     index(pf, lib)
     mtime = os.stat(p).st_mtime
@@ -135,7 +126,7 @@ def test_details_round_trip(home, lib, ext):
 
 
 def test_names_survive_editing(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / "a.jpg")
     index(pf, lib)
     pid = row(db, p)["id"]
@@ -153,7 +144,7 @@ def test_names_survive_editing(home, lib):
 
 
 def test_undo_puts_back_exactly_what_was_there(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / "a.jpg", exif={270: "OLYMPUS DIGITAL CAMERA", 0x9003: "2010:01:02 03:04:05"})
     subprocess.run(
         [*et_command(), "-q", "-overwrite_original", "-IPTC:Keywords=old one", "-IPTC:Keywords=old two", str(p)],
@@ -178,7 +169,7 @@ def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
     cv2 = pytest.importorskip("cv2")
     import numpy as np
 
-    pf, db, fo, md = home
+    pf, db = home
     a = make_photo(lib / "IMG_1.jpg", exif={0x9003: "2021:03:04 10:00:00"})
     b = make_photo(lib / "IMG_2.jpg", exif={0x9003: "2021:03:05 18:30:00"})
     clip = lib / "IMG_1.mov"
@@ -202,7 +193,7 @@ def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
 
 
 def test_setting_a_date_on_a_photo_with_none(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / "a.png")
     index(pf, lib)
     assert row(db, p)["taken_source"] == "file-modified"
@@ -238,7 +229,7 @@ def red_side(path):
 
 @pytest.mark.parametrize("ext", ["jpg", "heic", "dng"])
 def test_turning_right_and_back(home, lib, ext):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / f"a.{ext}", orientation=1 if ext != "heic" else 6)
     index(pf, lib)
     start = red_side(p)
@@ -257,7 +248,7 @@ def test_turning_right_and_back(home, lib, ext):
 
 
 def test_a_heic_cant_be_flipped_and_says_why(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / "a.heic", orientation=6)
     index(pf, lib)
     steps, cant = fo.plan_details(db, [str(p)], md.Edit(turn="flip-h"))
@@ -265,7 +256,7 @@ def test_a_heic_cant_be_flipped_and_says_why(home, lib):
 
 
 def test_a_format_exiftool_cant_write_is_reported(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = lib / "a.gif"
     Image.new("RGB", (8, 8)).save(p)
     index(pf, lib)
@@ -278,7 +269,7 @@ def test_a_format_exiftool_cant_write_is_reported(home, lib):
 
 
 def test_indexing_reads_keywords_and_descriptions_written_elsewhere(home, lib):
-    pf, db, fo, md = home
+    pf, db = home
     p = make_photo(lib / "a.jpg")
     subprocess.run(
         [
@@ -325,7 +316,7 @@ KILLER = textwrap.dedent("""
 
 @pytest.mark.parametrize("after", [1, 2])
 def test_killed_while_writing_details(home, lib, tmp_path, after):
-    pf, db, fo, md = home
+    pf, db = home
     for i in range(3):
         make_photo(lib / f"{i}.jpg")
     index(pf, lib)
@@ -354,36 +345,13 @@ def test_killed_while_writing_details(home, lib, tmp_path, after):
 # --- in the app ----------------------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="module")
-def app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6 import QtWidgets
-
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def wait_until(app, cond, timeout=20.0):
-    import time
-
-    end = time.time() + timeout
-    while not cond() and time.time() < end:
-        app.processEvents()
-        time.sleep(0.01)
-    assert cond()
-
-
 @pytest.fixture
 def window(home, lib, app):
-    pf, db, fo, md = home
+    pf, db = home
     for i in range(3):
         make_photo(lib / f"IMG_{i}.jpg", exif={0x9003: f"2022:0{i + 1}:01 12:00:00"})
     index(pf, lib)
-    from homepix.ui.main_window import MainWindow
-
-    w = MainWindow(index=False)
-    w.resize(900, 600)
-    w.show()
-    wait_until(app, lambda: len(w.timeline.items) == 3)
+    w = open_window(app, lambda w: len(w.timeline.items) == 3, size=(900, 600))
     yield w
     w.close()
 

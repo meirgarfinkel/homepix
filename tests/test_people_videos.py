@@ -5,7 +5,7 @@ import os
 import struct
 
 import pytest
-from conftest import et_command, photo, rows
+from conftest import et_command, open_window, photo, rows, wait_until
 from PIL import Image
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -228,28 +228,9 @@ def test_face_crops_stay_inside_the_photo(pf, lib):
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 
-@pytest.fixture(scope="module")
-def app():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def wait_until(app, cond, timeout=20.0):
-    import time
-
-    end = time.time() + timeout
-    while not cond() and time.time() < end:
-        app.processEvents()
-        time.sleep(0.01)
-    assert cond()
-
-
 @pytest.fixture
 def window(pf, app):
-    from homepix.ui.main_window import MainWindow
-
-    w = MainWindow(index=False)
-    w.resize(900, 600)
-    w.show()
+    w = open_window(app, ready=None, size=(900, 600))
     yield w
     w.close()
 

@@ -8,28 +8,13 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
-from conftest import photo  # noqa: E402
+from conftest import photo, wait_until  # noqa: E402
 from PIL import Image  # noqa: E402
 from PySide6.QtCore import QObject, QPoint, QRect, Qt, Signal  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 
 from homepix.core.timeline import Item, group_by_month  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def app():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def wait_until(app, cond, timeout=10.0):
-    import time
-
-    end = time.time() + timeout
-    while not cond() and time.time() < end:
-        app.processEvents()
-        time.sleep(0.01)
-    assert cond()
 
 
 def test_qpainter_keeps_reference_counts(app):

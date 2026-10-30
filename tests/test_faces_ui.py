@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 import pytest
-from conftest import photo
+from conftest import open_window, photo, wait_until
 from test_faces import look
 
 from homepix.core.db import to_blob
@@ -13,21 +13,6 @@ from homepix.core.db import to_blob
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore, QtWidgets  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def app():
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def wait_until(app, cond, timeout=20.0):
-    import time
-
-    end = time.time() + timeout
-    while not cond() and time.time() < end:
-        app.processEvents()
-        time.sleep(0.01)
-    assert cond()
 
 
 @pytest.fixture
@@ -52,12 +37,7 @@ def library(pf, lib):
 
 @pytest.fixture
 def window(pf, app, library):
-    from homepix.ui.main_window import MainWindow
-
-    w = MainWindow(index=False)
-    w.resize(1000, 700)
-    w.show()
-    wait_until(app, lambda: w.loaded)
+    w = open_window(app)
     yield w
     w.close()
 
