@@ -13,16 +13,18 @@ from . import workers
 from .file_actions import count_of
 from .views.details_dialogs import AllDetailsDialog, DateDialog, DetailsDialog
 
-TURNS = {"right": ("Rotate right", "Rotate {} right", "Rotated {} right"),
-         "left": ("Rotate left", "Rotate {} left", "Rotated {} left"),
-         "flip-h": ("Flip horizontally", "Flip {} horizontally", "Flipped {} horizontally"),
-         "flip-v": ("Flip vertically", "Flip {} vertically", "Flipped {} vertically")}
+TURNS = {
+    "right": ("Rotate right", "Rotate {} right", "Rotated {} right"),
+    "left": ("Rotate left", "Rotate {} left", "Rotated {} left"),
+    "flip-h": ("Flip horizontally", "Flip {} horizontally", "Flipped {} horizontally"),
+    "flip-v": ("Flip vertically", "Flip {} vertically", "Flipped {} vertically"),
+}
 
 
 def _read_details(paths):
     found = {}
     for i in range(0, len(paths), 200):
-        found.update(metadata.read(paths[i:i + 200]))
+        found.update(metadata.read(paths[i : i + 200]))
     return found
 
 
@@ -33,8 +35,10 @@ class PhotoActions:
         self.details = a("Edit details...", self.edit_details, ["Ctrl+I"])
         self.date = a("Date and time...", self.edit_date, ["Ctrl+Shift+D"])
         self.all_details = a("All details...", self.show_all, ["Alt+Return"])
-        self.turns = {t: a(names[0], lambda _=False, t=t: self.turn(t), keys)
-                      for (t, names), keys in zip(TURNS.items(), (["Ctrl+R"], ["Ctrl+Shift+R"], [], []), strict=True)}
+        self.turns = {
+            t: a(names[0], lambda _=False, t=t: self.turn(t), keys)
+            for (t, names), keys in zip(TURNS.items(), (["Ctrl+R"], ["Ctrl+Shift+R"], [], []), strict=True)
+        }
         self.targeted = [self.details, self.date, self.all_details, *self.turns.values()]
 
     def menu(self, parent) -> QMenu:
@@ -56,8 +60,12 @@ class PhotoActions:
     def _items(self):
         items = self.w.files.targets()
         if items and not available():
-            QMessageBox.information(self.w, "HomePix", "Changing details needs ExifTool, which isn't installed. "
-                                    "On Debian or Ubuntu: sudo apt install libimage-exiftool-perl")
+            QMessageBox.information(
+                self.w,
+                "HomePix",
+                "Changing details needs ExifTool, which isn't installed. "
+                "On Debian or Ubuntu: sudo apt install libimage-exiftool-perl",
+            )
             return []
         return items
 

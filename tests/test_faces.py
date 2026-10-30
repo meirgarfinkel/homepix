@@ -35,10 +35,16 @@ def add_faces(db, who: list[int], seed=0) -> list[int]:
     rng = np.random.default_rng(seed)
     ids = []
     for i, n in enumerate(who):
-        pid = db.execute("INSERT INTO photos (path, qhash, taken) VALUES (?, ?, '2020-01-01 00:00:00')",
-                         (f"/p/{seed}-{i}.jpg", f"q{seed}-{i}")).lastrowid
-        ids.append(db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
-                              (pid, to_blob(look(n, rng)))).lastrowid)
+        pid = db.execute(
+            "INSERT INTO photos (path, qhash, taken) VALUES (?, ?, '2020-01-01 00:00:00')",
+            (f"/p/{seed}-{i}.jpg", f"q{seed}-{i}"),
+        ).lastrowid
+        ids.append(
+            db.execute(
+                "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
+                (pid, to_blob(look(n, rng))),
+            ).lastrowid
+        )
     db.commit()
     return ids
 
@@ -53,6 +59,7 @@ def names(db):
 
 
 # --- naming --------------------------------------------------------------------------------------
+
 
 def test_naming_a_group_recognizes_the_rest_and_undo_takes_it_all_back(db):
     ann = add_faces(db, [1] * 6, seed=1)
@@ -83,10 +90,13 @@ def test_look_alikes_in_a_group_sit_together(db):
 
     who = [1, 2] * 5
     for i, n in enumerate(who):
-        pid = db.execute("INSERT INTO photos (path, qhash, taken) VALUES (?, ?, '2020-01-01 00:00:00')",
-                         (f"/s/{i}.jpg", f"s{i}")).lastrowid
-        db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, ?, ?, .99, ?)",
-                   (pid, .3 - i * .01, .3 - i * .01, to_blob(sibling(n))))
+        pid = db.execute(
+            "INSERT INTO photos (path, qhash, taken) VALUES (?, ?, '2020-01-01 00:00:00')", (f"/s/{i}.jpg", f"s{i}")
+        ).lastrowid
+        db.execute(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, ?, ?, .99, ?)",
+            (pid, 0.3 - i * 0.01, 0.3 - i * 0.01, to_blob(sibling(n))),
+        )
     db.commit()
     (group,) = people.who_groups(db)
     first = [who[f["photo_id"] - 1] for f in group]
@@ -102,17 +112,21 @@ def test_look_alikes_in_a_group_sit_together(db):
 def test_recognizing_compares_with_named_faces_only_and_never_small_ones(db):
     """A face recognized by itself is never a reason to recognize another (one wrong match used to
     pull in more, each a bit further off); and a face too small to tell isn't recognized at all."""
+
     def face(v, px=None):
         pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/r/{face.n}.jpg", f"r{face.n}")).lastrowid
         face.n += 1
-        return db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, .2, .2, .99, ?, ?)",
-                          (pid, to_blob(unit(v)), px)).lastrowid
+        return db.execute(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, .2, .2, .99, ?, ?)",
+            (pid, to_blob(unit(v)), px),
+        ).lastrowid
+
     face.n = 0
     e = np.eye(128, dtype=np.float32)
-    named = [face(e[1] + .05 * e[k]) for k in (3, 4, 5)]
-    near = face(e[1] + .9 * e[2], px=120)    # like the named ones: recognized
-    further = face(e[2] + .5 * e[1], px=120)  # like `near`, not like the named ones
-    small = face(e[1], px=40)                 # just like them, but a blur
+    named = [face(e[1] + 0.05 * e[k]) for k in (3, 4, 5)]
+    near = face(e[1] + 0.9 * e[2], px=120)  # like the named ones: recognized
+    further = face(e[2] + 0.5 * e[1], px=120)  # like `near`, not like the named ones
+    small = face(e[1], px=40)  # just like them, but a blur
     db.commit()
     do(db, people.plan_name(db, named, "Ann"))
     got = names(db)
@@ -166,6 +180,7 @@ def test_small_faces_are_read_from_a_bigger_decode(lib):
 
     f = object.__new__(Faces)
     import cv2
+
     f.cv2, f.det, f.rec = cv2, Det(), Rec()
     img = Image.new("RGB", (1024, 768))
     found = f.find(img, lib / "big.jpg")
@@ -211,15 +226,22 @@ def test_that_isnt_them_teaches_who_they_arent(db):
     def faces(direction, n):
         out = []
         for _ in range(n):
-            pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/n/{faces.n}.jpg", f"n{faces.n}")).lastrowid
+            pid = db.execute(
+                "INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/n/{faces.n}.jpg", f"n{faces.n}")
+            ).lastrowid
             faces.n += 1
-            v = unit(direction + rng.normal(0, .053, 128))
-            out.append(db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
-                                  (pid, to_blob(v))).lastrowid)
+            v = unit(direction + rng.normal(0, 0.053, 128))
+            out.append(
+                db.execute(
+                    "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
+                    (pid, to_blob(v)),
+                ).lastrowid
+            )
         db.commit()
         return out
+
     faces.n = 0
-    ann_look, sister_look = e[0] + .6 * e[1], e[0] + .6 * e[2]  # each alike as 0.8, and to each other 0.58
+    ann_look, sister_look = e[0] + 0.6 * e[1], e[0] + 0.6 * e[2]  # each alike as 0.8, and to each other 0.58
     ann, sister = faces(ann_look, 8), faces(sister_look, 8)
     do(db, people.plan_name(db, ann[:3], "Ann"))
     got = names(db)
@@ -258,8 +280,10 @@ def _face(db, v, px=None):
     """A face with this embedding, in a photo of its own."""
     n = db.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
     pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/w/{n}.jpg", f"w{n}")).lastrowid
-    return db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, .2, .2, .99, ?, ?)",
-                      (pid, to_blob(unit(v)), px)).lastrowid
+    return db.execute(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, .2, .2, .99, ?, ?)",
+        (pid, to_blob(unit(v)), px),
+    ).lastrowid
 
 
 def _people_and_others(db):
@@ -269,7 +293,8 @@ def _people_and_others(db):
     e = np.eye(128, dtype=np.float32)
 
     def some(v, n, px=None):
-        return [_face(db, v + rng.normal(0, .02, 128), px) for _ in range(n)]
+        return [_face(db, v + rng.normal(0, 0.02, 128), px) for _ in range(n)]
+
     ann, bob = some(e[1], 3), some(e[2], 3)
     new, maybe_bob, small_ann = some(e[3], 4), some(e[2] + 1.6 * e[5], 6), some(e[1], 3, px=40)
     db.commit()
@@ -283,7 +308,10 @@ def test_who_is_this_asks_about_new_faces_first(db):
     groups = people.who_groups(db)
     assert [{f["id"] for f in g} for g in groups] == [set(new), set(maybe_bob), set(small_ann)]
     assert [(g[0]["tier"], g[0]["like"]) for g in groups] == [
-        (people.NEW, None), (people.MAYBE, "Bob"), (people.KNOWN, "Ann")]
+        (people.NEW, None),
+        (people.MAYBE, "Bob"),
+        (people.KNOWN, "Ann"),
+    ]
 
 
 def test_the_faces_that_might_be_someone_just_named(db):
@@ -321,6 +349,7 @@ def test_moving_wrong_faces_to_someone_else(db):
 
 # --- people -------------------------------------------------------------------------------------
 
+
 def test_rename_merge_and_forget(db):
     a = add_faces(db, [1, 1], seed=1)
     b = add_faces(db, [2, 2], seed=2)
@@ -347,8 +376,10 @@ def test_a_crash_before_a_change_was_committed_leaves_nothing_half_done(db, pf):
     step = people.plan_name(db, a, "Ann")
     db.execute("INSERT INTO ops (kind, summary, started, state) VALUES ('people', 't', 'now', 'running')")
     op = db.execute("SELECT MAX(id) FROM ops").fetchone()[0]
-    db.execute("INSERT INTO op_steps (op_id, seq, action, before) VALUES (?, 0, 'people', ?)",
-               (op, __import__("json").dumps(step["before"])))
+    db.execute(
+        "INSERT INTO op_steps (op_id, seq, action, before) VALUES (?, 0, 'people', ?)",
+        (op, __import__("json").dumps(step["before"])),
+    )
     db.commit()  # planned, and then the power went
     fileops.recover(db)
     assert set(names(db).values()) == {None}
@@ -358,14 +389,17 @@ def test_a_crash_before_a_change_was_committed_leaves_nothing_half_done(db, pf):
 
 # --- at the size of a real library ------------------------------------------------------------
 
+
 def test_forty_thousand_faces(db):
     rng = np.random.default_rng(7)
     who = list(rng.integers(0, 120, 42_000))
     photo_rows = [(f"/p/{i}.jpg", f"q{i}") for i in range(len(who))]
     db.executemany("INSERT INTO photos (path, qhash, taken) VALUES (?, ?, '2020-01-01 00:00:00')", photo_rows)
     ids = [r[0] for r in db.execute("SELECT id FROM photos ORDER BY id")]
-    db.executemany("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
-                   [(pid, to_blob(look(int(n), rng))) for pid, n in zip(ids, who, strict=True)])
+    db.executemany(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .1, .1, .2, .2, .99, ?)",
+        [(pid, to_blob(look(int(n), rng))) for pid, n in zip(ids, who, strict=True)],
+    )
     db.commit()
     faces = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY id")]
     # most of them already named, as in a real library

@@ -137,7 +137,8 @@ def migrate(db: sqlite3.Connection, path):
     if version > VERSION:
         raise DatabaseVersionError(
             f"{path} was upgraded by a newer HomePix (database version {version}; this one knows up to "
-            f"{VERSION}). Use the newer version, or restore a copy from {path.parent / 'backups'}.")
+            f"{VERSION}). Use the newer version, or restore a copy from {path.parent / 'backups'}."
+        )
     if db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]:
         backup(db, version)
     upgrade(db)
@@ -158,7 +159,8 @@ def upgrade(db: sqlite3.Connection):
             if version not in UPGRADES:
                 raise DatabaseVersionError(
                     f"This library was made by a HomePix from before 1.0 (database version {version}), "
-                    "which this one can't bring up to date.")
+                    "which this one can't bring up to date."
+                )
             while version < VERSION:
                 UPGRADES[version](db)
                 version += 1

@@ -50,6 +50,7 @@ def copy_path(root) -> Path:
 
 def stamp() -> str:
     """When the database last changed (its file and its write-ahead log), to tell if a copy is current."""
+
     def st(p):
         try:
             s = p.stat()
@@ -171,8 +172,11 @@ def _write_copy(root: Path) -> int | None:
         if library is None:
             library = uuid.uuid4().hex
             _own(root, library)
-        excluded = [os.path.relpath(f, root).replace(os.sep, "/") for f in load_settings().get("excluded", [])
-                    if f.startswith(prefix)]
+        excluded = [
+            os.path.relpath(f, root).replace(os.sep, "/")
+            for f in load_settings().get("excluded", [])
+            if f.startswith(prefix)
+        ]
         meta = {
             "library": library,
             "written": dt.datetime.now().isoformat(timespec="seconds"),
@@ -249,8 +253,10 @@ def read_copy(root) -> dict:
     try:
         version = cp.execute("PRAGMA user_version").fetchone()[0]
         if version > VERSION:
-            raise DatabaseVersionError(f"This folder's library was saved by a newer HomePix (database "
-                                       f"version {version}; this one knows up to {VERSION}). Update HomePix first.")
+            raise DatabaseVersionError(
+                f"This folder's library was saved by a newer HomePix (database "
+                f"version {version}; this one knows up to {VERSION}). Update HomePix first."
+            )
         upgrade(cp)
         meta = dict(cp.execute("SELECT key, value FROM portable").fetchall())
         rows = cp.execute("SELECT * FROM photos").fetchall()
@@ -279,15 +285,19 @@ def _find(db, rows, on_disk: dict, prefix: str) -> dict:
     """Where the copy's photos are now: {its photo id: (path, modified time)}. Each is found where it was
     (if that file hasn't changed) or else by its content, anywhere in the folder; none where the
     database already has a photo."""
-    claimed = {r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path, 1, ?) = ?",
-                                        (len(prefix), prefix))}
+    claimed = {r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))}
     found = {}
     waiting = {}  # quick hash: the copy's photos not where they were
     for r in rows:
         p = prefix + r["path"].replace("/", os.sep)
         st = on_disk.get(p)
-        if p not in claimed and st is not None and st.st_size == r["size"] \
-                and r["mtime"] is not None and abs(st.st_mtime - r["mtime"]) < 1:
+        if (
+            p not in claimed
+            and st is not None
+            and st.st_size == r["size"]
+            and r["mtime"] is not None
+            and abs(st.st_mtime - r["mtime"]) < 1
+        ):
             found[r["id"]] = (p, st.st_mtime)
             claimed.add(p)
         elif r["qhash"]:

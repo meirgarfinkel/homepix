@@ -36,13 +36,13 @@ def test_empty_root_like_an_unmounted_drive_keeps_everything(pf, lib):
 def test_unmounted_drive_inside_the_library_keeps_its_photos(pf, lib):
     for i in range(200):
         photo(lib / "home" / f"{i}.jpg")
-    for year in range(2020, 2023):      # 60 photos, but no single year folder reaches the threshold
+    for year in range(2020, 2023):  # 60 photos, but no single year folder reaches the threshold
         for i in range(20):
             photo(lib / "drive" / str(year) / f"{i}.jpg")
     pf.index_folder(lib)
     for sub in (lib / "drive").iterdir():  # unmounted: only the empty mount point is left
         shutil.rmtree(sub)
-    (lib / "home" / "0.jpg").unlink()      # ...while a real deletion elsewhere still counts
+    (lib / "home" / "0.jpg").unlink()  # ...while a real deletion elsewhere still counts
     info = pf.index_folder(lib)
     assert info["missing"] == 60 and info["removed"] == 1
     assert len(rows(pf, lib)) == 259
@@ -143,7 +143,7 @@ def test_vanished_copy_leaves_no_ghost_row(pf, lib):
     pf.index_folder(lib)
     (lib / "c").mkdir()
     (lib / "a" / "1.jpg").rename(lib / "c" / "1.jpg")  # one copy moved...
-    (lib / "b" / "1.jpg").unlink()                     # ...the other deleted
+    (lib / "b" / "1.jpg").unlink()  # ...the other deleted
     pf.index_folder(lib)
     assert sorted(rows(pf, lib)) == ["c/1.jpg"]
 
@@ -155,9 +155,9 @@ def test_unreadable_photo_is_retried_only_when_reading_improves(pf, lib, monkeyp
     (lib / "broken.jpg").write_bytes(b"this is not a photo")
     info = pf.index_folder(lib)
     assert info["errors"] == 1 and rows(pf, lib)["broken.jpg"]["error"]
-    assert pf.index_folder(lib)["todo"] == 0      # nothing changed: not tried again
+    assert pf.index_folder(lib)["todo"] == 0  # nothing changed: not tried again
     monkeypatch.setattr(library, "READER", "99")
-    assert pf.index_folder(lib)["todo"] == 1      # better reader: tried again
+    assert pf.index_folder(lib)["todo"] == 1  # better reader: tried again
     assert rows(pf, lib)["broken.jpg"]["error_reader"] == "99"
 
 

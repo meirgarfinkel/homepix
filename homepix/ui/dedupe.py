@@ -57,23 +57,35 @@ class Dedupe:
         if not steps:
             return
         keeper = {c.path: g.keeper.path for g in groups for c in g.extras}
-        rows = [(relative(s["src"], library), "Trash",
-                 f"A copy of {relative(keeper[s['src']], library)}" if s["src"] in keeper else "Goes with its photo",
-                 s["src"]) for s in steps]
+        rows = [
+            (
+                relative(s["src"], library),
+                "Trash",
+                f"A copy of {relative(keeper[s['src']], library)}" if s["src"] in keeper else "Goes with its photo",
+                s["src"],
+            )
+            for s in steps
+        ]
         n = len(steps)
         head = f"<b>{plural(n, 'file')}</b> will move to the Trash, from {plural(len(groups), 'group')} of duplicates."
-        note = ("Each group keeps the copy marked Keep. They can be restored from the Trash, and Undo takes it "
-                "all back.")
+        note = "Each group keeps the copy marked Keep. They can be restored from the Trash, and Undo takes it all back."
         if not self._confirm("Duplicates", head, note, rows, f"Move {plural(n, 'file')} to Trash"):
             return
-        self.w.ops.run("trash", f"Move {plural(n, 'duplicate')} to Trash",
-                       f"Moved {plural(n, 'duplicate')} to Trash", lambda db: steps)
+        self.w.ops.run(
+            "trash",
+            f"Move {plural(n, 'duplicate')} to Trash",
+            f"Moved {plural(n, 'duplicate')} to Trash",
+            lambda db: steps,
+        )
 
     def apart(self, groups):
         n = len(groups)
-        self.w.ops.run("apart", f"Not duplicates ({plural(n, 'group')})", f"Marked {plural(n, 'group')} as not duplicates",
-                       lambda db: [s] if (s := duplicates.plan_apart(db, groups)) is not None else [])
+        self.w.ops.run(
+            "apart",
+            f"Not duplicates ({plural(n, 'group')})",
+            f"Marked {plural(n, 'group')} as not duplicates",
+            lambda db: [s] if (s := duplicates.plan_apart(db, groups)) is not None else [],
+        )
 
     def open(self, photo_id: int):
         self.w.open_photo(photo_id)
-

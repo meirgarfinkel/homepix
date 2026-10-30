@@ -60,8 +60,9 @@ def _inside(path: str, folders: set) -> bool:
     return False
 
 
-def index_folder(root, want_faces=True, on_progress=None, should_stop=None, deadline=None,
-                 forget_missing=False) -> dict:
+def index_folder(
+    root, want_faces=True, on_progress=None, should_stop=None, deadline=None, forget_missing=False
+) -> dict:
     """Index (or update) one folder. Safe to stop and resume any time.
 
     on_progress(info) is called with a dict:
@@ -76,8 +77,23 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"Folder not found: {root}")
-    info = dict(phase="scanning", root=str(root), found=0, todo=0, done=0, faces=0, errors=0, moved=0,
-                removed=0, unreachable=0, missing=0, rate=0.0, eta=None, stopped=False, tagged=0)
+    info = dict(
+        phase="scanning",
+        root=str(root),
+        found=0,
+        todo=0,
+        done=0,
+        faces=0,
+        errors=0,
+        moved=0,
+        removed=0,
+        unreachable=0,
+        missing=0,
+        rate=0.0,
+        eta=None,
+        stopped=False,
+        tagged=0,
+    )
     report = on_progress or (lambda i: None)
     stop = should_stop or (lambda: False)
     report(info)
@@ -102,9 +118,9 @@ def index_folder(root, want_faces=True, on_progress=None, should_stop=None, dead
         if p in on_disk:
             continue
         if _inside(p, ignored):
-            excluded.append(r)          # its folder is now marked to be ignored: drop it
+            excluded.append(r)  # its folder is now marked to be ignored: drop it
         elif _inside(p, unreadable):
-            info["unreachable"] += 1    # its folder couldn't be read right now: keep it
+            info["unreachable"] += 1  # its folder couldn't be read right now: keep it
         else:
             vanished.append(r)
     todo, vanished = _find_moved(db, todo, known, vanished, want_faces, info)
@@ -174,6 +190,7 @@ def _not_missing(vanished, known: int, on_disk, seen, empty, prefix, info) -> li
     forget them: a whole folder of MISSING_MIN or more that emptied or disappeared, more than
     MISSING_SHARE of everything, or every photo in the folder. Smaller deletions, even of a whole small
     folder, are simply removed."""
+
     def gone_folder(path):  # the outermost folder (below root) that has emptied or disappeared
         top, d = None, os.path.dirname(path)
         while len(d) > len(prefix) - 1 and (d not in seen or d in empty):
@@ -248,8 +265,12 @@ def _follow_up(db, prefix, want_faces, info, report, stop, deadline, changed: bo
 
         def sharpened(done, todo):
             rate = done / max(time.time() - began, 1e-6)
-            info.update(phase="sharpening", sharpen_done=done, sharpen_todo=todo,
-                        sharpen_eta=(todo - done) / rate if done else None)
+            info.update(
+                phase="sharpening",
+                sharpen_done=done,
+                sharpen_todo=todo,
+                sharpen_eta=(todo - done) / rate if done else None,
+            )
             report(info)
 
         sharpen_thumbs(db, prefix, lambda: stop() or bool(deadline and time.time() > deadline), sharpened)
@@ -269,26 +290,36 @@ def read_details(db, prefix: str, should_stop=lambda: False) -> int:
 
     if not available():
         return 0
-    rows = {r[0]: r for r in db.execute(
-        "SELECT path, mtime, taken, moment FROM photos WHERE details_done=0 AND error IS NULL AND substr(path, 1, ?) = ?",
-        (len(prefix), prefix))}
+    rows = {
+        r[0]: r
+        for r in db.execute(
+            "SELECT path, mtime, taken, moment FROM photos WHERE details_done=0 AND error IS NULL AND substr(path, 1, ?) = ?",
+            (len(prefix), prefix),
+        )
+    }
     paths, redated = list(rows), 0
     for i in range(0, len(paths), 200):
         if should_stop():
             break
-        batch = paths[i:i + 200]
+        batch = paths[i : i + 200]
         found = metadata.read(batch)
         updates = []
         for p, d in found.items():
             taken, source, moment = dates.from_tags(p, d.tags, rows[p]["mtime"] or 0)
             redated += (taken, moment) != (rows[p]["taken"], rows[p]["moment"])
-            updates.append((json.dumps(d.keywords) if d.keywords else None, d.description or None,
-                            taken, source, moment, p))
-        db.executemany("UPDATE photos SET keywords=?, description=?, taken=?, taken_source=?, moment=?, "
-                       "details_done=1 WHERE path=?", updates)
+            updates.append(
+                (json.dumps(d.keywords) if d.keywords else None, d.description or None, taken, source, moment, p)
+            )
+        db.executemany(
+            "UPDATE photos SET keywords=?, description=?, taken=?, taken_source=?, moment=?, "
+            "details_done=1 WHERE path=?",
+            updates,
+        )
         # nothing readable: nothing to show, and the date stays as indexing found it
-        db.executemany("UPDATE photos SET keywords=NULL, description=NULL, details_done=1 WHERE path=?",
-                       [(p,) for p in batch if p not in found])
+        db.executemany(
+            "UPDATE photos SET keywords=NULL, description=NULL, details_done=1 WHERE path=?",
+            [(p,) for p in batch if p not in found],
+        )
         db.commit()
     return redated
 
@@ -385,14 +416,19 @@ def link_motion(db) -> int:
 
     # Local times on both sides (see dates.py), and only ones the files recorded: a time from a name
     # (a whole import batch can share one) is too weak to call two files one Live Photo.
-    photos = sorted(ts(r[0]) for r in db.execute(
-        "SELECT COALESCE(moment, taken) FROM photos WHERE kind='photo' AND taken IS NOT NULL AND error IS NULL "
-        "AND (moment IS NOT NULL OR taken_source = 'exif')"))
+    photos = sorted(
+        ts(r[0])
+        for r in db.execute(
+            "SELECT COALESCE(moment, taken) FROM photos WHERE kind='photo' AND taken IS NOT NULL AND error IS NULL "
+            "AND (moment IS NOT NULL OR taken_source = 'exif')"
+        )
+    )
     motion, video = [], []
     for vid, taken in db.execute(
-            "SELECT id, COALESCE(moment, taken) FROM photos WHERE kind IN ('video', 'motion') AND duration <= ? "
-            "AND taken IS NOT NULL AND (moment IS NOT NULL OR taken_source = 'video')",
-            (MOTION_MAX,)).fetchall():
+        "SELECT id, COALESCE(moment, taken) FROM photos WHERE kind IN ('video', 'motion') AND duration <= ? "
+        "AND taken IS NOT NULL AND (moment IS NOT NULL OR taken_source = 'video')",
+        (MOTION_MAX,),
+    ).fetchall():
         t = ts(taken)
         i = bisect.bisect_left(photos, t - 2)
         (motion if i < len(photos) and photos[i] <= t + 2 else video).append((vid,))

@@ -73,8 +73,14 @@ class ThumbLoader(QObject):
         with self._lock:
             seen = set()
             sharper = {q for q, _ in items if q in self._soft and thumb_file(q).exists()}  # (kept till then)
-            self._queue = [(q, p) for q, p in items if (q not in self._cache or q in sharper) and q not in self._busy
-                           and q not in self._failed and not (q in seen or seen.add(q))]
+            self._queue = [
+                (q, p)
+                for q, p in items
+                if (q not in self._cache or q in sharper)
+                and q not in self._busy
+                and q not in self._failed
+                and not (q in seen or seen.add(q))
+            ]
             self._queue.reverse()  # pop() from the end takes the most wanted
             if self._queue:
                 self._wake.notify_all()

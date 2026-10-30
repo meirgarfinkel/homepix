@@ -35,6 +35,7 @@ def old_mtime(p):
 
 # --- the rule --------------------------------------------------------------------------------------
 
+
 def test_the_rule():
     pick = dates.pick
     mtime = dt.datetime(2025, 11, 30, 9, 52).timestamp()
@@ -73,8 +74,12 @@ def test_indexing_and_the_timeline_go_by_it(pf, lib):
 
     db = pf.open_db()
     got = [(os.path.basename(it.path), it.taken) for it in load_items(db)]
-    assert got == [("IMG_1.jpg", "2023-06-01 10:00:00"), ("2023_05_28_23_07_00.jpg", "2023-05-28 23:07:00"),
-                   ("2022_04_01_07_32_31.jpg", "2022-04-01 07:32:31"), ("IMG_2.jpg", "2020-01-05 00:00:00")]
+    assert got == [
+        ("IMG_1.jpg", "2023-06-01 10:00:00"),
+        ("2023_05_28_23_07_00.jpg", "2023-05-28 23:07:00"),
+        ("2022_04_01_07_32_31.jpg", "2022-04-01 07:32:31"),
+        ("IMG_2.jpg", "2020-01-05 00:00:00"),
+    ]
     sources = dict(db.execute("SELECT path, taken_source FROM photos"))
     assert sources[str(named)] == "filename" and sources[str(stamped)] == "filename"
     assert sources[str(exif)] == "exif" and sources[str(nothing)] == "file-modified"
@@ -92,6 +97,7 @@ def test_both_ways_of_reading_agree(lib, name):
 
 # --- videos ----------------------------------------------------------------------------------------
 
+
 @needs_exiftool
 def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(home, lib):
     cv2 = pytest.importorskip("cv2")
@@ -106,8 +112,10 @@ def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(ho
     w.release()
     local = dt.datetime(2021, 3, 4, 10, 0, 1)
     utc = local.astimezone(dt.UTC).replace(tzinfo=None)
-    subprocess.run([*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
-                    str(clip)], check=True)
+    subprocess.run(
+        [*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}", str(clip)],
+        check=True,
+    )
     index(pf, lib)
     r = row(db, clip)
     assert r["taken"] == str(utc) and r["taken_source"] == "video"  # its clock, as its name would be
@@ -116,6 +124,7 @@ def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(ho
 
 
 # --- changing a date ------------------------------------------------------------------------------
+
 
 @needs_exiftool
 def test_moving_a_date_later_renames_a_file_named_by_it_and_undo_puts_both_back(home, lib):
@@ -183,6 +192,7 @@ def test_renaming_a_file_away_from_its_date(pf, lib):
 
 # --- an index from before ---------------------------------------------------------------------------
 
+
 @needs_exiftool
 def test_dates_read_again_are_fixed_on_the_next_pass(pf, lib):
     p = old_mtime(make_photo(lib / "2022_04_01_07_32_31.jpg"))
@@ -209,8 +219,17 @@ def test_a_phone_that_names_photos_in_utc_keeps_its_motion_clip(home, lib):
     for _ in range(10):
         w.write(np.zeros((32, 32, 3), np.uint8))
     w.release()
-    subprocess.run([*et_command(), "-q", "-overwrite_original", "-QuickTime:CreateDate=2023:10:01 06:09:20",
-                    "-Keys:CreationDate=2023:10:01 09:09:20+03:00", str(clip)], check=True)
+    subprocess.run(
+        [
+            *et_command(),
+            "-q",
+            "-overwrite_original",
+            "-QuickTime:CreateDate=2023:10:01 06:09:20",
+            "-Keys:CreationDate=2023:10:01 09:09:20+03:00",
+            str(clip),
+        ],
+        check=True,
+    )
     index(pf, lib)
     assert row(db, photo)["taken"] == "2023-10-01 06:09:18"  # as its name says
     assert row(db, photo)["moment"] == "2023-10-01 09:09:18"

@@ -22,7 +22,8 @@ class ExifToolMissing(RuntimeError):
 def bundled() -> Path | None:
     """The app's own ExifTool and Perl (see packaging/bundle_exiftool.sh and .ps1), if there is one."""
     here = os.environ.get("HOMEPIX_EXIFTOOL_DIR") or (
-        str(Path(sys._MEIPASS) / "exiftool") if getattr(sys, "frozen", False) else "")
+        str(Path(sys._MEIPASS) / "exiftool") if getattr(sys, "frozen", False) else ""
+    )
     if not here:
         return None
     here = Path(here)
@@ -73,9 +74,12 @@ class ExifTool:
                 env.pop(var, None)
             env["LD_LIBRARY_PATH"] = str(b / "perl" / "so")
         self._proc = subprocess.Popen(
-            command() + ["-stay_open", "True", "-@", "-", "-common_args", "-charset", "filename=UTF8",
-                         "-charset", "UTF8"],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+            command()
+            + ["-stay_open", "True", "-@", "-", "-common_args", "-charset", "filename=UTF8", "-charset", "UTF8"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         threading.Thread(target=self._read_errors, args=(self._proc,), daemon=True, name="exiftool-err").start()

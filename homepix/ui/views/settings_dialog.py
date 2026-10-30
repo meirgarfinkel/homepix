@@ -33,8 +33,10 @@ class SettingsDialog(QDialog):
         self.resize(600, 460)
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("<b>Library folders</b>"))
-        note = QLabel("HomePix shows and searches the photos in these folders and the folders inside "
-                      "them. It changes files only when you ask (and Edit > Undo takes a change back).")
+        note = QLabel(
+            "HomePix shows and searches the photos in these folders and the folders inside "
+            "them. It changes files only when you ask (and Edit > Undo takes a change back)."
+        )
         note.setWordWrap(True)
         lay.addWidget(note)
         self.list = QListWidget()
@@ -56,8 +58,10 @@ class SettingsDialog(QDialog):
         lay.addWidget(QLabel("<b>Editing photos</b>"))
         self.editor = QLineEdit(load_settings().get("editor", ""))
         self.editor.setPlaceholderText("The usual app for each kind of file")
-        self.editor.setToolTip("The app that Open in... uses, e.g. gimp or darktable (the photo is added at "
-                               "the end, or where %f is). Leave it empty for the usual app.")
+        self.editor.setToolTip(
+            "The app that Open in... uses, e.g. gimp or darktable (the photo is added at "
+            "the end, or where %f is). Leave it empty for the usual app."
+        )
         self.editor.editingFinished.connect(self._save_editor)
         form = QHBoxLayout()
         form.addWidget(QLabel("Open photos in:"))
@@ -111,7 +115,8 @@ class SettingsDialog(QDialog):
             return
         folder = items[0].data(Qt.ItemDataRole.UserRole)
         answer = QMessageBox.question(
-            self, "Remove folder",
+            self,
+            "Remove folder",
             f"Take {folder} out of the library?\n\nIts photos will no longer show in HomePix, and what it "
             "learned about them (for search, and who is in them) is forgotten. The files themselves "
             "aren't touched.",

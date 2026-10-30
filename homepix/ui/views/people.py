@@ -89,8 +89,12 @@ class PeopleView(QListWidget):
         gen = self._generation
         for row, person in enumerate(people, first):  # each face shows as soon as it's ready
             if person["face"] is not None:
-                workers.run(face_thumb, lambda f, err, row=row: gen == self._generation and self._face_ready(row, f, err),
-                            person["face"], CROP)
+                workers.run(
+                    face_thumb,
+                    lambda f, err, row=row: gen == self._generation and self._face_ready(row, f, err),
+                    person["face"],
+                    CROP,
+                )
 
     def set_who(self, who):
         """How many groups there are to ask about now (None: none at all)."""
@@ -186,7 +190,9 @@ class PeopleView(QListWidget):
         if self.count() == 0:
             p = QPainter(self.viewport())
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
-            p.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter,
-                       "No one has been named yet.\nFaces appear here once photos with people are found.")
+            p.drawText(
+                self.viewport().rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "No one has been named yet.\nFaces appear here once photos with people are found.",
+            )
             p.end()
-

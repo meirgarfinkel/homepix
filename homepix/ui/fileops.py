@@ -99,6 +99,7 @@ class FileOps(QObject):
     def run(self, kind: str, summary: str, past: str, plan):
         """plan(db) -> steps (from core.fileops), worked out with the library to ourselves. summary is
         what Undo names it ("Move 3 photos to Trash"); past says it's done ("Moved 3 photos to Trash")."""
+
         def work(progress, should_stop):
             db = open_db()
             try:
@@ -113,20 +114,27 @@ class FileOps(QObject):
             finally:
                 db.close()
 
-        self._go(f"{summary}...", work, lambda res, err: self._report(past, res, err), files=kind not in ("people", "apart"))
+        self._go(
+            f"{summary}...", work, lambda res, err: self._report(past, res, err), files=kind not in ("people", "apart")
+        )
 
     def undo(self):
-        self._go("Undoing...", lambda p, s: self._history(fileops.can_undo, fileops.undo, p),
-                 lambda res, err: self._report(f"Undid: {res[0]}" if res else "", res and res[1], err))
+        self._go(
+            "Undoing...",
+            lambda p, s: self._history(fileops.can_undo, fileops.undo, p),
+            lambda res, err: self._report(f"Undid: {res[0]}" if res else "", res and res[1], err),
+        )
 
     def redo(self):
-        self._go("Redoing...", lambda p, s: self._history(fileops.can_redo, fileops.redo, p),
-                 lambda res, err: self._report(f"Redid: {self._redo_name(res[0])}" if res else "",
-                                               res and res[1], err))
+        self._go(
+            "Redoing...",
+            lambda p, s: self._history(fileops.can_redo, fileops.redo, p),
+            lambda res, err: self._report(f"Redid: {self._redo_name(res[0])}" if res else "", res and res[1], err),
+        )
 
     @staticmethod
     def _redo_name(summary: str) -> str:
-        return summary[len("Undo: "):] if summary.startswith("Undo: ") else summary
+        return summary[len("Undo: ") :] if summary.startswith("Undo: ") else summary
 
     @staticmethod
     def _history(which, do, progress):
@@ -141,6 +149,7 @@ class FileOps(QObject):
 
     def recover(self):
         """At startup: finish what a crash or power cut interrupted last time."""
+
         def work(progress, should_stop):
             db = open_db()
             try:
@@ -150,8 +159,9 @@ class FileOps(QObject):
 
         def done(notes, err):
             if err is not None:
-                QMessageBox.warning(self.window, "HomePix",
-                                    f"Couldn't finish what was being done to your files last time:\n{err}")
+                QMessageBox.warning(
+                    self.window, "HomePix", f"Couldn't finish what was being done to your files last time:\n{err}"
+                )
             elif notes:
                 self.finished.emit("Finished what was interrupted last time: " + "; ".join(notes))
 
@@ -195,8 +205,9 @@ class FileOps(QObject):
         lines = [f"{os.path.basename(p)}: {why}" for p, why in skipped[:12]]
         if len(skipped) > 12:
             lines.append(f"...and {len(skipped) - 12:,} more")
-        QMessageBox.information(self.window, title, f"{text}\n\n{plural(len(skipped), 'file')} left as "
-                                "they were:\n" + "\n".join(lines))
+        QMessageBox.information(
+            self.window, title, f"{text}\n\n{plural(len(skipped), 'file')} left as they were:\n" + "\n".join(lines)
+        )
 
     @staticmethod
     def history() -> tuple[str | None, str | None]:

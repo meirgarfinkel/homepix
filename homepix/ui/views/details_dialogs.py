@@ -27,7 +27,7 @@ from ...core.metadata import Edit
 
 
 def parse_place(text: str):
-    """"31.778, 35.235" (or with spaces, or a map link holding them) -> (lat, lon); "" -> (); None if
+    """ "31.778, 35.235" (or with spaces, or a map link holding them) -> (lat, lon); "" -> (); None if
     it can't be read."""
     text = text.strip()
     if not text:
@@ -69,8 +69,9 @@ class DetailsDialog(QDialog):
         self.description.textChanged.connect(lambda: self._touched.add("description"))
         form.addRow("Description:", self.description)
 
-        self.common_words = [w for w in ds[0].keywords if all(w.casefold() in {x.casefold() for x in d.keywords}
-                                                                for d in ds)]
+        self.common_words = [
+            w for w in ds[0].keywords if all(w.casefold() in {x.casefold() for x in d.keywords} for d in ds)
+        ]
         self.keywords = QLineEdit(", ".join(self.common_words))
         self.keywords.setPlaceholderText("e.g. holiday, beach (separated by commas)")
         if n > 1 and any(d.keywords for d in ds):
@@ -80,8 +81,11 @@ class DetailsDialog(QDialog):
 
         place = _common(d.gps for d in ds)
         self.place = QLineEdit("" if not place else f"{place[0]:.6f}, {place[1]:.6f}")
-        self.place.setPlaceholderText("Different in each" if place is None and n > 1 else
-                                      "latitude, longitude (e.g. 31.778, 35.235); empty for none")
+        self.place.setPlaceholderText(
+            "Different in each"
+            if place is None and n > 1
+            else "latitude, longitude (e.g. 31.778, 35.235); empty for none"
+        )
         self.place.textEdited.connect(lambda: self._touched.add("place"))
         form.addRow("Location:", self.place)
 
@@ -182,8 +186,11 @@ class DateDialog(QDialog):
             old = self._taken(it)
             new = self.when.dateTime().toPython() if self.set_to.isChecked() else (old + self.delta() if old else None)
             shown = old.strftime("%Y-%m-%d %H:%M") if old else "no date"
-            lines.append(f"{os.path.basename(it.path)}: {shown} → {new:%Y-%m-%d %H:%M}" if new else
-                         f"{os.path.basename(it.path)}: {shown} (left as it is)")
+            lines.append(
+                f"{os.path.basename(it.path)}: {shown} → {new:%Y-%m-%d %H:%M}"
+                if new
+                else f"{os.path.basename(it.path)}: {shown} (left as it is)"
+            )
         if len(self.items) > 3:
             lines.append("...")
         self.preview.setText("\n".join(lines))
@@ -199,8 +206,11 @@ class DateDialog(QDialog):
         """For Undo: "Set the date of 3 photos" or "Move 3 photos by -3 h"."""
         if self.set_to.isChecked():
             return f"{self.when.dateTime().toPython():%Y-%m-%d %H:%M}"
-        parts = [f"{v:+d}{u}" for v, u in ((self.days.value(), " days"), (self.hours.value(), " h"),
-                                           (self.minutes.value(), " min")) if v]
+        parts = [
+            f"{v:+d}{u}"
+            for v, u in ((self.days.value(), " days"), (self.hours.value(), " h"), (self.minutes.value(), " min"))
+            if v
+        ]
         return " ".join(parts)
 
 

@@ -42,12 +42,24 @@ def pf(tmp_path, monkeypatch):
     from homepix.core import config, db, indexer, media, people, search, settings, thumbs
 
     return SimpleNamespace(
-        data_dir=config.data_dir, open_db=db.open_db, to_blob=db.to_blob, from_blob=db.from_blob,
-        DatabaseVersionError=db.DatabaseVersionError, Indexer=indexer.Indexer, HEIF=media.HEIF,
-        index_folder=library.index_folder, scan_folder=library.scan_folder, IGNORE_MARKER=library.IGNORE_MARKER,
-        named_people=people.named_people, SearchIndex=search.SearchIndex, face_thumb=thumbs.face_thumb,
-        add_folder=settings.add_folder, remove_folder=settings.remove_folder, set_excluded=settings.set_excluded,
-        excluded_folders=settings.excluded_folders, library_folders=settings.library_folders,
+        data_dir=config.data_dir,
+        open_db=db.open_db,
+        to_blob=db.to_blob,
+        from_blob=db.from_blob,
+        DatabaseVersionError=db.DatabaseVersionError,
+        Indexer=indexer.Indexer,
+        HEIF=media.HEIF,
+        index_folder=library.index_folder,
+        scan_folder=library.scan_folder,
+        IGNORE_MARKER=library.IGNORE_MARKER,
+        named_people=people.named_people,
+        SearchIndex=search.SearchIndex,
+        face_thumb=thumbs.face_thumb,
+        add_folder=settings.add_folder,
+        remove_folder=settings.remove_folder,
+        set_excluded=settings.set_excluded,
+        excluded_folders=settings.excluded_folders,
+        library_folders=settings.library_folders,
     )
 
 
@@ -103,6 +115,7 @@ def rows(pf, lib):
 
 # --- the Trash: the freedesktop one, or on Windows the Recycle Bin --------------------------------------
 
+
 def own_trash(monkeypatch, tmp_path):
     """A Trash (or Recycle Bin) of the test's own, in tmp_path."""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
@@ -122,7 +135,7 @@ def recycled_from(info) -> str:
     """Where a Recycle Bin item ($I file) came from."""
     data = Path(info).read_bytes()
     n = struct.unpack_from("<i", data, 24)[0]
-    return data[28:28 + 2 * n].decode("utf-16-le").rstrip("\0")
+    return data[28 : 28 + 2 * n].decode("utf-16-le").rstrip("\0")
 
 
 def trash_records(tmp_path) -> list[str]:

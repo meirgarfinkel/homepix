@@ -62,8 +62,16 @@ class SearchIndex:
                 rows = self.db.execute(
                     "SELECT id, path, taken, qhash, kind, clip FROM photos WHERE clip IS NOT NULL AND error IS NULL"
                 ).fetchall()
-                self.rows = [{"id": r["id"], "path": r["path"], "taken": r["taken"], "qhash": r["qhash"],
-                              "kind": r["kind"] or "photo"} for r in rows]
+                self.rows = [
+                    {
+                        "id": r["id"],
+                        "path": r["path"],
+                        "taken": r["taken"],
+                        "qhash": r["qhash"],
+                        "kind": r["kind"] or "photo",
+                    }
+                    for r in rows
+                ]
                 self.ids = np.array([r["id"] for r in rows], np.int64)
                 self._hidden_for = None
                 if rows:
@@ -106,8 +114,9 @@ class SearchIndex:
             db = db or open_db()
             try:
                 if person_id is not None:
-                    theirs = [r[0] for r in db.execute(
-                        "SELECT DISTINCT photo_id FROM faces WHERE person_id=?", (person_id,))]
+                    theirs = [
+                        r[0] for r in db.execute("SELECT DISTINCT photo_id FROM faces WHERE person_id=?", (person_id,))
+                    ]
                     keep &= np.isin(ids, theirs)
                 if folder is not None:
                     prefix = folder_prefix(folder)

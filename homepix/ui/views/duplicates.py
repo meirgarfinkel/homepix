@@ -44,7 +44,9 @@ class _Groups(QAbstractListModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.ToolTipRole:
             g = self.groups[index.row()]
-            return ("The same file" if g.how == "exact" else "They look the same") + ". Click a copy to keep it instead."
+            return (
+                "The same file" if g.how == "exact" else "They look the same"
+            ) + ". Click a copy to keep it instead."
         return None
 
     def set_groups(self, groups):
@@ -77,8 +79,9 @@ class _Row(QStyledItemDelegate):
         return self.view.fontMetrics().height()
 
     def sizeHint(self, option, index):
-        return QSize(0, PAD * 2 + RING + TILE + 10 + self.lines() * 3
-                     + (HEADER if index.row() == self.view.first_skipped else 0))
+        return QSize(
+            0, PAD * 2 + RING + TILE + 10 + self.lines() * 3 + (HEADER if index.row() == self.view.first_skipped else 0)
+        )
 
     def body(self, rect: QRect, row: int) -> QRect:
         """The row without the "Skipped for now" heading the first skipped group has above it."""
@@ -115,8 +118,11 @@ class _Row(QStyledItemDelegate):
             p.setFont(theme.font(16, QFont.Weight.Bold))
             p.setPen(c_("text"))
             head = QRect(option.rect.left() + PAD, option.rect.top() + 14, option.rect.width() - 2 * PAD, HEADER - 14)
-            p.drawText(head, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                       f"Skipped for now ({len(self.view.model().groups) - row:,})")
+            p.drawText(
+                head,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                f"Skipped for now ({len(self.view.model().groups) - row:,})",
+            )
             p.setPen(QPen(c_("border")))
             p.drawLine(option.rect.left(), option.rect.top() + 6, option.rect.right(), option.rect.top() + 6)
         if option.state & QStyle.StateFlag.State_Selected:
@@ -166,17 +172,24 @@ class _Row(QStyledItemDelegate):
                 mark = "Same file" if g.how == "exact" else "Extra copy"
                 _pill(p, r.left() + 10, r.top() + 10, mark, QColor(0, 0, 0, 140), QColor(255, 255, 255))
                 if over:
-                    _pill(p, r.center().x(), r.center().y(), "Keep this one", c_("accent"), c_("accentInk"),
-                          centre=True)
+                    _pill(
+                        p, r.center().x(), r.center().y(), "Keep this one", c_("accent"), c_("accentInk"), centre=True
+                    )
             y = r.bottom() + 10
             p.setFont(self.view.font())
             p.setPen(c_("text"))
             size = f"{c.width:,} × {c.height:,} · " if c.width else ""
-            p.drawText(QRect(r.left(), y, TILE, lh), Qt.AlignmentFlag.AlignLeft,
-                       fm.elidedText(size + human_size(c.size), Qt.TextElideMode.ElideRight, TILE))
+            p.drawText(
+                QRect(r.left(), y, TILE, lh),
+                Qt.AlignmentFlag.AlignLeft,
+                fm.elidedText(size + human_size(c.size), Qt.TextElideMode.ElideRight, TILE),
+            )
             p.setPen(c_("muted"))
-            p.drawText(QRect(r.left(), y + lh, TILE, lh * 2),
-                       Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWrapAnywhere, relative(c.path, self.view.library))
+            p.drawText(
+                QRect(r.left(), y + lh, TILE, lh * 2),
+                Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWrapAnywhere,
+                relative(c.path, self.view.library),
+            )
         p.restore()
 
 
@@ -221,7 +234,8 @@ class _List(QListView):
     def mousePressEvent(self, e):
         row, i = self._hit(e.position().toPoint())
         plain = e.button() == Qt.MouseButton.LeftButton and not e.modifiers() & (
-            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+        )
         if i == SKIP:
             if plain:
                 self.skip.emit(row)
@@ -330,8 +344,11 @@ class DuplicatesView(QWidget):
         return [g for g in groups if not self.is_skipped(g)] + [g for g in groups if self.is_skipped(g)]
 
     def _show(self):
-        self.list.empty_text = ("No duplicates found yet." if self.pending else
-                                "No duplicates. Every photo and video here is the only one of its kind.")
+        self.list.empty_text = (
+            "No duplicates found yet."
+            if self.pending
+            else "No duplicates. Every photo and video here is the only one of its kind."
+        )
         self.list.first_skipped = next((i for i, g in enumerate(self.groups) if self.is_skipped(g)), None)
         self.list.model().set_groups(self.groups)
         self.list.viewport().update()
@@ -400,9 +417,11 @@ class DuplicatesView(QWidget):
             kept = "Same file" if g.how == "exact" else "Extra copy"
         size = f"{c.width:,} × {c.height:,} · " if c.width else ""
         n = self.groups.index(g)
-        return (f"Copy {i + 1} of {len(shown)} · {kept}",
-                f"Duplicates {n + 1} of {len(self.groups)} · {size}{human_size(c.size)} · "
-                f"{relative(c.path, self.list.library)}")
+        return (
+            f"Copy {i + 1} of {len(shown)} · {kept}",
+            f"Duplicates {n + 1} of {len(self.groups)} · {size}{human_size(c.size)} · "
+            f"{relative(c.path, self.list.library)}",
+        )
 
     def other_group(self, photo_id, step: int):
         """The group step after (or before) this photo's: its copies' ids as shown, or None at either end.
@@ -431,24 +450,29 @@ class DuplicatesView(QWidget):
         if not self.groups:
             self.title.setText("Duplicates")
         else:
-            self.title.setText(f"{len(deciding):,} group{'s' if len(deciding) != 1 else ''} of duplicates, "
-                               f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}"
-                               + (f", {skipped:,} skipped" if skipped else ""))
-        hint = ("The copy with the ring is kept (the one with the most pixels, then the biggest file); the "
-                "dimmed ones are the extras. Click a copy to keep it instead. Not sure yet? Skip for now puts "
-                "the group at the end, to decide later. Double-click to compare them large "
-                "(← → to switch, ↑ ↓ for other duplicates, K to keep). "
-                "Select groups (Ctrl-click the space beside them) to act on just those.")
+            self.title.setText(
+                f"{len(deciding):,} group{'s' if len(deciding) != 1 else ''} of duplicates, "
+                f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}" + (f", {skipped:,} skipped" if skipped else "")
+            )
+        hint = (
+            "The copy with the ring is kept (the one with the most pixels, then the biggest file); the "
+            "dimmed ones are the extras. Click a copy to keep it instead. Not sure yet? Skip for now puts "
+            "the group at the end, to decide later. Double-click to compare them large "
+            "(← → to switch, ↑ ↓ for other duplicates, K to keep). "
+            "Select groups (Ctrl-click the space beside them) to act on just those."
+        )
         if self.pending:
-            hint = (f"Still looking at {self.pending:,} photos (after indexing): more may turn up. " + hint)
+            hint = f"Still looking at {self.pending:,} photos (after indexing): more may turn up. " + hint
         self.hint.setText(hint)
         which = f" ({len(chosen):,} selected)" if chosen else ""
         self.trash_button.setText(f"Move extras to Trash{which}...")
         self.trash_button.setEnabled(bool(chosen or deciding))
         self.apart_button.setEnabled(bool(chosen))
-        self.apart_button.setToolTip("Never offer the selected groups as duplicates again" if chosen
-                                     else "Select the groups that aren't duplicates first")
+        self.apart_button.setToolTip(
+            "Never offer the selected groups as duplicates again"
+            if chosen
+            else "Select the groups that aren't duplicates first"
+        )
 
     def stop(self):
         self.loader.stop()
-

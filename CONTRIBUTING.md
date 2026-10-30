@@ -4,12 +4,17 @@
 
 ```bash
 pipx install pre-commit   # or: pip install --user pre-commit
-pre-commit install        # adds the pre-push hook to this clone
+pre-commit install        # adds the commit and push hooks to this clone
 ```
 
-From then on, every `git push` first runs the linter (`ruff`) and a few file checks. A push with problems
-is stopped before it leaves your computer. Run the same checks any time with
-`pre-commit run --all-files --hook-stage pre-push`.
+From then on:
+
+- **every `git commit`** runs `ruff` on what's being committed: it formats the code and fixes what it safely can.
+  If it changed anything the commit stops; `git add` the changes and commit again.
+- **every `git push`** checks everything (lint, formatting, line length, a few file checks) without changing
+  anything. A push with problems is stopped before it leaves your computer. CI runs the same checks.
+
+Run the push checks any time with `pre-commit run --all-files --hook-stage pre-push`.
 
 ## Running and testing
 

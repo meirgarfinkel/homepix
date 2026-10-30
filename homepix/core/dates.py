@@ -90,6 +90,7 @@ def pick(path, found, mtime: float) -> tuple[str, str]:
 
 # --- reading it from a file ------------------------------------------------------------------------
 
+
 def _photo_moment(taken: str, found) -> str | None:
     """A photo's local time: the earliest real date written in it, when its date is another."""
     real = [d for d, _ in found if d is not None and not is_placeholder(d)]

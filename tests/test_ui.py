@@ -207,7 +207,7 @@ def test_tiles_keep_the_thumbnails_fine_detail(pf, lib, app):
     tile, soft = ThumbLoader._decode("stripes", "", 80)  # the middle 240 px square -> 80
     assert (tile.width(), tile.height()) == (80, 80) and not soft
     src = [255 if (x // 3) % 2 else 0 for x in range(320)]
-    want = [sum(src[40 + 3 * x:43 + 3 * x]) / 3 for x in range(80)]  # (the square starts at x=40)
+    want = [sum(src[40 + 3 * x : 43 + 3 * x]) / 3 for x in range(80)]  # (the square starts at x=40)
     off = [abs(tile.pixelColor(x, 40).red() - want[x]) for x in range(4, 76)]
     assert sum(off) / len(off) < 8
 

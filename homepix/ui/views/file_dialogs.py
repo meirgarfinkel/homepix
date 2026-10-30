@@ -74,8 +74,10 @@ class RenameDialog(_Dialog):
 class BatchRenameDialog(_Dialog):
     """Many photos: a pattern, with a preview of the names it makes."""
 
-    HELP = ("<b>{name}</b> the current name &nbsp; <b>{n}</b> a number: 1, 2, 3... &nbsp; "
-            "<b>{date}</b> the day it was taken")
+    HELP = (
+        "<b>{name}</b> the current name &nbsp; <b>{n}</b> a number: 1, 2, 3... &nbsp; "
+        "<b>{date}</b> the day it was taken"
+    )
 
     def __init__(self, items, parent=None, pattern="{date} {name}"):
         super().__init__(f"Rename {len(items):,} photos", parent)

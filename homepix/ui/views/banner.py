@@ -33,6 +33,7 @@ class Banner(QFrame):
         elif missing:
             self.label.setText(
                 f"{missing:,} photo{'s' if missing != 1 else ''} HomePix knew about can't be found right "
-                "now. They're kept in case a drive is unplugged or a folder is out of reach.")
+                "now. They're kept in case a drive is unplugged or a folder is out of reach."
+            )
             self.button.show()
         self.setVisible(bool(error or missing))

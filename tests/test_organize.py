@@ -60,13 +60,17 @@ def files(lib):
 
 # --- the rules -----------------------------------------------------------------------------------
 
+
 def test_a_folder_of_new_photos_is_named_and_sorted(home, lib):
     shot(lib / "new" / "IMG_1.JPG", "2021:08:01 19:09:04")
     shot(lib / "new" / "IMG_2.jpg", "2019:05:06 07:08:09")
     shot(lib / "new" / "sub" / "DSC_3.jpg", "2021:08:01 19:09:04")  # same second as IMG_1
     p = apply(home, lib, lib / "new")
-    assert files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg",
-                          "2021/2021_08_01_19_09_04_1.jpg"]
+    assert files(lib) == [
+        "2019/2019_05_06_07_08_09.jpg",
+        "2021/2021_08_01_19_09_04.jpg",
+        "2021/2021_08_01_19_09_04_1.jpg",
+    ]
     assert {c.why for c in p.changes} == {"to 2019", "to 2021"}
     index_matches_disk(home[1], lib)
     no_leftovers(lib)
@@ -83,8 +87,12 @@ def test_the_tricky_dates_from_the_old_pipeline(home, lib):
     # only when the file was last changed: no real date, so Unsorted, keeping its name
     shot(lib / "scan.JPG")
     apply(home, lib)
-    assert files(lib) == ["2015/2015_07_08_09_10_11.jpg", "2016/2016_01_01_00_00_00.jpg",
-                          "2017/2017_03_04_05_06_07.jpg", "Unsorted/scan.jpg"]
+    assert files(lib) == [
+        "2015/2015_07_08_09_10_11.jpg",
+        "2016/2016_01_01_00_00_00.jpg",
+        "2017/2017_03_04_05_06_07.jpg",
+        "Unsorted/scan.jpg",
+    ]
 
 
 def test_only_the_extension_changes_case(home, lib):
@@ -113,8 +121,11 @@ def test_wrong_names_and_wrong_years_are_put_right(home, lib):
     shot(lib / "2020" / "2020_01_02_03_04_06.JPG", "2020:01:02 03:04:01")  # misnamed, and .JPG
     shot(lib / "Unsorted" / "found.jpg", "2019:09:09 09:09:09")  # a date was found after all
     p = apply(home, lib)
-    assert files(lib) == ["2019/2019_09_09_09_09_09.jpg", "2020/2020_01_02_03_04_01.jpg",
-                          "2021/2021_01_02_03_04_05.jpg"]
+    assert files(lib) == [
+        "2019/2019_09_09_09_09_09.jpg",
+        "2020/2020_01_02_03_04_01.jpg",
+        "2021/2021_01_02_03_04_05.jpg",
+    ]
     assert sorted(c.why for c in p.changes) == ["renamed", "to 2019", "to 2021"]
 
 
@@ -138,14 +149,17 @@ def test_a_chain_each_taking_the_name_the_next_one_leaves(home, lib):
 
 # --- what goes with a photo ------------------------------------------------------------------------
 
+
 def with_clip(home, lib, photo, clip, clip_taken):
     """photo indexed, and clip beside it as its Live Photo's motion (dated as its own clock says)."""
     pf, db, _, _ = home
     pf.index_folder(lib, want_faces=False)
     clip.write_bytes(b"clip")
-    db.execute("INSERT INTO photos (path, qhash, kind, taken, taken_source, moment, duration) "
-               "SELECT ?, 'q', 'motion', ?, 'video', taken, 2 FROM photos WHERE path=?",
-               (str(clip), clip_taken, str(photo)))
+    db.execute(
+        "INSERT INTO photos (path, qhash, kind, taken, taken_source, moment, duration) "
+        "SELECT ?, 'q', 'motion', ?, 'video', taken, 2 FROM photos WHERE path=?",
+        (str(clip), clip_taken, str(photo)),
+    )
     db.commit()
 
 
@@ -159,9 +173,13 @@ def test_a_live_photo_clip_and_sidecars_go_with_their_photo_and_undo_brings_all_
     before = contents(lib)
     p = organize.plan(db, [lib])
     fo.run(db, "organize", "Organize", p.steps())
-    assert files(lib) == ["2022/2022_04_01_07_32_31.aae", "2022/2022_04_01_07_32_31.jpg",
-                          "2022/2022_04_01_07_32_31.jpg.json", "2022/2022_04_01_07_32_31.mov",
-                          "new/IMG_2.AAE"]
+    assert files(lib) == [
+        "2022/2022_04_01_07_32_31.aae",
+        "2022/2022_04_01_07_32_31.jpg",
+        "2022/2022_04_01_07_32_31.jpg.json",
+        "2022/2022_04_01_07_32_31.mov",
+        "new/IMG_2.AAE",
+    ]
     assert sorted(c.why for c in p.changes) == ["to 2022"] + ["with its photo"] * 3
     assert organize.plan(db, [lib]).changes == []
     fo.undo(db)
@@ -188,14 +206,18 @@ def test_a_burst_of_live_photos_keeps_each_clip_with_its_own_photo(home, lib):
     with_clip(home, lib, b, lib / "2022" / "2022_12_14_18_56_56.mov", "2022-12-14 18:56:56")
     clip = lib / "2022" / "2022_12_14_18_56_58.mov"  # (with_clip again would index the first one afresh)
     clip.write_bytes(b"clip")
-    db.execute("INSERT INTO photos (path, qhash, kind, taken, taken_source, moment, duration) "
-               "SELECT ?, 'q2', 'motion', '2022-12-14 18:56:58', 'video', taken, 2 FROM photos WHERE path=?",
-               (str(clip), str(c)))
+    db.execute(
+        "INSERT INTO photos (path, qhash, kind, taken, taken_source, moment, duration) "
+        "SELECT ?, 'q2', 'motion', '2022-12-14 18:56:58', 'video', taken, 2 FROM photos WHERE path=?",
+        (str(clip), str(c)),
+    )
     db.commit()
     p = organize.plan(db, [lib])
     clips = {os.path.basename(ch.src): os.path.basename(ch.dst) for ch in p.changes if ch.why == "with its photo"}
-    assert clips == {"2022_12_14_18_56_56.mov": "2022_12_14_13_51_42.mov",
-                     "2022_12_14_18_56_58.mov": "2022_12_14_13_51_43.mov"}
+    assert clips == {
+        "2022_12_14_18_56_56.mov": "2022_12_14_13_51_42.mov",
+        "2022_12_14_18_56_58.mov": "2022_12_14_13_51_43.mov",
+    }
     assert a.exists()
 
 
@@ -213,6 +235,7 @@ def test_a_clip_stays_with_the_copy_left_behind(home, lib):
 
 
 # --- at the size of a real library ------------------------------------------------------------
+
 
 def test_thirty_thousand_files(home, lib):
     _, db, _, organize = home
@@ -238,6 +261,7 @@ def test_only_a_folder_in_the_library(home, lib, tmp_path):
 
 
 # --- in the app ----------------------------------------------------------------------------------
+
 
 def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(pf, lib, monkeypatch):
     from test_faces_ui import app as _app
@@ -265,10 +289,13 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     try:
         w.organizer.tidy()
         # (the files are only read once it's done: Windows won't open one that's being moved)
-        wait_until(app, lambda: not w.ops.busy
-                   and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"])
-        assert shown == [[os.path.normpath("new/IMG_1.jpg"), os.path.normpath("2021/2021_08_01_19_09_04.jpg"),
-                          "Into 2021/"]]
+        wait_until(
+            app,
+            lambda: not w.ops.busy and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "2021/2021_08_01_19_09_04.jpg"],
+        )
+        assert shown == [
+            [os.path.normpath("new/IMG_1.jpg"), os.path.normpath("2021/2021_08_01_19_09_04.jpg"), "Into 2021/"]
+        ]
         w.ops.undo()
         wait_until(app, lambda: not w.ops.busy and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"])
     finally:
