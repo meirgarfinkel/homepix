@@ -23,16 +23,34 @@ MODES = {"dark": "Dark", "light": "Light", "system": "Match the system"}
 
 TOKENS = {
     "light": {
-        "bg": "#FFFFFF", "side": "#F5F6F8", "raised": "#FFFFFF", "field": "#EEF0F3", "border": "#E4E7EB",
-        "text": "#161A1F", "muted": "#5B6470", "accent": "#0A7DAD", "accentInk": "#FFFFFF",
-        "accentSoft": "rgba(10,125,173,0.11)", "accentText": "#086A93", "hover": "rgba(22,26,31,0.06)",
+        "bg": "#FFFFFF",
+        "side": "#F5F6F8",
+        "raised": "#FFFFFF",
+        "field": "#EEF0F3",
+        "border": "#E4E7EB",
+        "text": "#161A1F",
+        "muted": "#5B6470",
+        "accent": "#0A7DAD",
+        "accentInk": "#FFFFFF",
+        "accentSoft": "rgba(10,125,173,0.11)",
+        "accentText": "#086A93",
+        "hover": "rgba(22,26,31,0.06)",
         "hoverStrong": "rgba(22,26,31,0.10)",
         "danger": "#C0392B",
     },
     "dark": {
-        "bg": "#0E1014", "side": "#15181D", "raised": "#1D2127", "field": "#1D2127", "border": "#262B32",
-        "text": "#E7EAEE", "muted": "#9AA3AE", "accent": "#3AA9DB", "accentInk": "#04202C",
-        "accentSoft": "rgba(58,169,219,0.16)", "accentText": "#7FCBEA", "hover": "rgba(231,234,238,0.06)",
+        "bg": "#0E1014",
+        "side": "#15181D",
+        "raised": "#1D2127",
+        "field": "#1D2127",
+        "border": "#262B32",
+        "text": "#E7EAEE",
+        "muted": "#9AA3AE",
+        "accent": "#3AA9DB",
+        "accentInk": "#04202C",
+        "accentSoft": "rgba(58,169,219,0.16)",
+        "accentText": "#7FCBEA",
+        "hover": "rgba(231,234,238,0.06)",
         "hoverStrong": "rgba(231,234,238,0.12)",
         "danger": "#F0776A",
     },
@@ -144,12 +162,28 @@ def palette() -> QPalette:
     c = color
     pal = QPalette()
     R = QPalette.ColorRole
-    for role, name in ((R.Window, "bg"), (R.Base, "bg"), (R.AlternateBase, "field"), (R.Button, "raised"),
-                       (R.WindowText, "text"), (R.Text, "text"), (R.ButtonText, "text"), (R.BrightText, "accentInk"),
-                       (R.PlaceholderText, "muted"), (R.Highlight, "accent"), (R.HighlightedText, "accentInk"),
-                       (R.ToolTipBase, "raised"), (R.ToolTipText, "text"), (R.Link, "accentText"),
-                       (R.LinkVisited, "accentText"), (R.Mid, "border"), (R.Dark, "border"), (R.Midlight, "field"),
-                       (R.Light, "raised"), (R.Shadow, "bg")):
+    for role, name in (
+        (R.Window, "bg"),
+        (R.Base, "bg"),
+        (R.AlternateBase, "field"),
+        (R.Button, "raised"),
+        (R.WindowText, "text"),
+        (R.Text, "text"),
+        (R.ButtonText, "text"),
+        (R.BrightText, "accentInk"),
+        (R.PlaceholderText, "muted"),
+        (R.Highlight, "accent"),
+        (R.HighlightedText, "accentInk"),
+        (R.ToolTipBase, "raised"),
+        (R.ToolTipText, "text"),
+        (R.Link, "accentText"),
+        (R.LinkVisited, "accentText"),
+        (R.Mid, "border"),
+        (R.Dark, "border"),
+        (R.Midlight, "field"),
+        (R.Light, "raised"),
+        (R.Shadow, "bg"),
+    ):
         pal.setColor(role, c(name))
     pal.setColor(QPalette.ColorGroup.Disabled, R.Text, c("muted"))
     pal.setColor(QPalette.ColorGroup.Disabled, R.WindowText, c("muted"))
@@ -253,6 +287,7 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 
 
 # --- icons -------------------------------------------------------------------------------------------
+
 
 def _draw(name: str, p: QPainter):
     """On a 24 × 24 grid, in the pen already set."""

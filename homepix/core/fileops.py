@@ -53,6 +53,7 @@ def _hidden(path: str, op_id: int, seq: int, what: str) -> str:
 
 # --- the index side ---------------------------------------------------------------------------------
 
+
 def snapshot(db, path: str):
     """Everything the index knows about a photo (its row and its faces, names included), to put back
     after restoring it. None if it isn't indexed."""
@@ -66,8 +67,11 @@ def snapshot(db, path: str):
     face_cols = [c for c in columns(db, "faces") if c not in ("id", "photo_id")]
     faces = db.execute("SELECT * FROM faces WHERE photo_id=?", (row["id"],)).fetchall()
     photo_cols = [c for c in columns(db, "photos") if c != "id"]
-    return {"photo": plain(row, photo_cols), "faces": [plain(f, face_cols) for f in faces],
-            "blobs": [c for c in photo_cols + face_cols if c in ("clip", "emb")]}
+    return {
+        "photo": plain(row, photo_cols),
+        "faces": [plain(f, face_cols) for f in faces],
+        "blobs": [c for c in photo_cols + face_cols if c in ("clip", "emb")],
+    }
 
 
 def _insert_snapshot(db, snap, path: str) -> int:
@@ -76,8 +80,9 @@ def _insert_snapshot(db, snap, path: str) -> int:
 
     photo = unplain(snap["photo"]) | {"path": path}
     cols = list(photo)
-    cur = db.execute(f"INSERT INTO photos ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
-                     [photo[c] for c in cols])
+    cur = db.execute(
+        f"INSERT INTO photos ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [photo[c] for c in cols]
+    )
     pid = cur.lastrowid
     known = {r[0] for r in db.execute("SELECT id FROM people")} if snap["faces"] else set()
     for face in snap["faces"]:
@@ -126,8 +131,9 @@ def _renamed(db, path, old_name: str):
     row = db.execute("SELECT id, kind, taken, taken_source, mtime FROM photos WHERE path=?", (path,)).fetchone()
     if row is None or row["taken"] is None:
         return
-    if row["taken_source"] in ("exif", "video") and (new is None or dates.is_placeholder(new)
-                                                     or new.isoformat(sep=" ") >= row["taken"]):
+    if row["taken_source"] in ("exif", "video") and (
+        new is None or dates.is_placeholder(new) or new.isoformat(sep=" ") >= row["taken"]
+    ):
         return
     taken, source, moment = dates.of_file(path, row["kind"] or "photo", row["mtime"] or 0)
     db.execute("UPDATE photos SET taken=?, taken_source=?, moment=? WHERE id=?", (taken, source, moment, row["id"]))
@@ -146,19 +152,27 @@ def _apply_meta(db, path, change) -> dict:
     fields = {"size": st.st_size, "mtime": st.st_mtime, "qhash": qh, "sha256": None}  # (its bytes changed)
     if d is not None:
         taken, source, moment = dates.from_tags(path, d.tags, st.st_mtime)
-        fields.update(taken=taken, taken_source=source, moment=moment, details_done=1,
-                      keywords=json.dumps(d.keywords) if d.keywords else None, description=d.description or None)
+        fields.update(
+            taken=taken,
+            taken_source=source,
+            moment=moment,
+            details_done=1,
+            keywords=json.dumps(d.keywords) if d.keywords else None,
+            description=d.description or None,
+        )
     db.execute(f"UPDATE photos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), row["id"]))
     turn = change.get("orientation")
     if turn and turn[0] != turn[1]:
         db.execute("UPDATE photos SET phash=NULL WHERE id=?", (row["id"],))  # it looks different now
         for f in db.execute("SELECT id, x, y, w, h FROM faces WHERE photo_id=?", (row["id"],)).fetchall():
-            db.execute("UPDATE faces SET x=?, y=?, w=?, h=? WHERE id=?",
-                       (*metadata.move_box((f["x"], f["y"], f["w"], f["h"]), *turn), f["id"]))
+            db.execute(
+                "UPDATE faces SET x=?, y=?, w=?, h=? WHERE id=?",
+                (*metadata.move_box((f["x"], f["y"], f["w"], f["h"]), *turn), f["id"]),
+            )
     elif row["qhash"] and row["qhash"] != qh:  # the picture is the same: so are its thumbnails
         for kind in ("photos", "faces"):
             for old in thumbs_dir(kind).glob(f"{row['qhash']}*.jpg"):
-                new = old.with_name(qh + old.name[len(row["qhash"]):])
+                new = old.with_name(qh + old.name[len(row["qhash"]) :])
                 if not new.exists():
                     try:
                         shutil.copyfile(old, new)  # (a copy, not a rename: an exact copy elsewhere shares them)
@@ -172,14 +186,16 @@ def _apply_meta(db, path, change) -> dict:
 # committed before going on: the plan, the end of the first phase of moves, the names chosen in the
 # Trash, and a destination changed because its name was taken meanwhile.
 
+
 def _finish(db, step, dst=None):
     """The step's file is where it should be: update the index and mark it finished, together."""
     step = dict(step)
     if dst is not None:
         step["dst"] = dst
     after = _apply(db, step)
-    db.execute("UPDATE op_steps SET done=?, dst=?, after=? WHERE id=?",
-               (FINISHED, step["dst"], json.dumps(after), step["id"]))
+    db.execute(
+        "UPDATE op_steps SET done=?, dst=?, after=? WHERE id=?", (FINISHED, step["dst"], json.dumps(after), step["id"])
+    )
 
 
 def _skip(db, step, why: str):
@@ -191,6 +207,7 @@ def _set(db, step, **fields):
 
 
 # --- planning ---------------------------------------------------------------------------------------
+
 
 def plan_moves(pairs, freed=()) -> list[dict]:
     """[(src, wanted dst)] -> move steps. A wanted name that's taken (and not being vacated by another
@@ -244,11 +261,13 @@ def companions(db, paths) -> dict[str, str]:
     folders = {os.path.dirname(p) for p in wanted}
     photos, clips = {}, {}
     for path, kind, when in db.execute(  # a clip's local time, as its photo's date is
-            "SELECT path, kind, COALESCE(moment, taken) FROM photos WHERE kind IN ('photo', 'motion') "
-            "AND taken IS NOT NULL"):
+        "SELECT path, kind, COALESCE(moment, taken) FROM photos WHERE kind IN ('photo', 'motion') AND taken IS NOT NULL"
+    ):
         folder = os.path.dirname(path)
         if folder in folders:
-            (photos if kind == "photo" else clips).setdefault(folder, []).append((path, dt.datetime.fromisoformat(when)))
+            (photos if kind == "photo" else clips).setdefault(folder, []).append(
+                (path, dt.datetime.fromisoformat(when))
+            )
 
     def stem(path):
         return os.path.splitext(os.path.basename(path))[0].lower()
@@ -257,7 +276,10 @@ def companions(db, paths) -> dict[str, str]:
     for folder, its_clips in clips.items():
         pairs = sorted(
             (stem(p) != stem(c), abs((pt - ct).total_seconds()), p in wanted, p, c)
-            for c, ct in its_clips for p, pt in photos.get(folder, []) if abs((pt - ct).total_seconds()) <= 2)
+            for c, ct in its_clips
+            for p, pt in photos.get(folder, [])
+            if abs((pt - ct).total_seconds()) <= 2
+        )
         has, taken = set(), set()
         for _, _, asked, p, c in pairs:  # the best match first, all through the folder
             if p in has or c in taken:
@@ -306,7 +328,7 @@ def plan_details(db, paths, edit: "metadata.Edit"):
     paths = with_companions(db, paths) if edit.touches_date() else [os.path.abspath(p) for p in paths]
     found, steps, cant = {}, [], []
     for i in range(0, len(paths), 200):
-        found.update(metadata.read(paths[i:i + 200]))
+        found.update(metadata.read(paths[i : i + 200]))
     for p in paths:
         d = found.get(p)
         if d is None:
@@ -345,15 +367,20 @@ def pattern_names(pattern: str, items) -> list[str]:
     width = len(str(len(items)))
     out = []
     for i, (path, taken) in enumerate(items, 1):
-        out.append(pattern.format_map({
-            "name": os.path.splitext(os.path.basename(path))[0],
-            "n": str(i).zfill(width),
-            "date": taken.strftime("%Y-%m-%d") if taken else "undated",
-        }).strip())
+        out.append(
+            pattern.format_map(
+                {
+                    "name": os.path.splitext(os.path.basename(path))[0],
+                    "n": str(i).zfill(width),
+                    "date": taken.strftime("%Y-%m-%d") if taken else "undated",
+                }
+            ).strip()
+        )
     return out
 
 
 # --- running ----------------------------------------------------------------------------------------
+
 
 class Result:
     def __init__(self, op_id, finished=0, skipped=None, stopped=False):
@@ -378,15 +405,19 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
 
 def _journal(db, kind, summary, steps, undoes) -> int:
     """The whole plan, on disk before any file is touched. Returns the operation's id."""
-    cur = db.execute("INSERT INTO ops (kind, summary, started, state, undoes) VALUES (?,?,?,?,?)",
-                     (kind, summary, _now(), "running", undoes))
+    cur = db.execute(
+        "INSERT INTO ops (kind, summary, started, state, undoes) VALUES (?,?,?,?,?)",
+        (kind, summary, _now(), "running", undoes),
+    )
     op_id = cur.lastrowid
     for seq, s in enumerate(steps):
         before = s.get("before")
         if s["action"] == "trash" and before is None:
             before = {"snapshot": snapshot(db, s["src"])}
-        db.execute("INSERT INTO op_steps (op_id, seq, action, src, dst, before) VALUES (?,?,?,?,?,?)",
-                   (op_id, seq, s["action"], s["src"], s["dst"], json.dumps(before) if before else None))
+        db.execute(
+            "INSERT INTO op_steps (op_id, seq, action, src, dst, before) VALUES (?,?,?,?,?,?)",
+            (op_id, seq, s["action"], s["src"], s["dst"], json.dumps(before) if before else None),
+        )
     db.commit()
     return op_id
 
@@ -593,6 +624,7 @@ def _free(db, step, dst: str) -> str:
 
 # --- after a crash ----------------------------------------------------------------------------------
 
+
 def recover(db) -> list[str]:
     """Finish what a crash interrupted: every step whose file reached its destination is marked
     finished (and the index updated); every move caught at its hidden name is completed; leftover
@@ -600,8 +632,9 @@ def recover(db) -> list[str]:
     notes = []
     for op in db.execute("SELECT * FROM ops WHERE state='running' ORDER BY id").fetchall():
         fixed, started = 0, _second_phase_started(db, op["id"])
-        for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done IN (?, ?) ORDER BY seq",
-                            (op["id"], PLANNED, UNDER_WAY)).fetchall():
+        for r in db.execute(
+            "SELECT * FROM op_steps WHERE op_id=? AND done IN (?, ?) ORDER BY seq", (op["id"], PLANNED, UNDER_WAY)
+        ).fetchall():
             src, dst, action = r["src"], r["dst"], r["action"]
             if dst:
                 Path(_hidden(dst, op["id"], r["seq"], "partial")).unlink(missing_ok=True)
@@ -687,6 +720,7 @@ def _recover_move(db, op_id, r, started: bool) -> int:
 
 # --- undo and redo ----------------------------------------------------------------------------------
 
+
 def inverse(db, op_id: int) -> list[dict]:
     """The steps that take an operation's finished steps back, last first."""
     out = []
@@ -707,8 +741,10 @@ def inverse(db, op_id: int) -> list[dict]:
         elif r["action"] in INDEX_ONLY:
             c = json.loads(r["before"])
             out.append((r["action"], None, None, {"old": c["new"], "new": c["old"]}))
-    moves = plan_moves([(s, d) for a, s, d, _ in out if a == "move"],  # (trash making room goes first)
-                       freed=[s for a, s, _, _ in out if a == "trash"])
+    moves = plan_moves(
+        [(s, d) for a, s, d, _ in out if a == "move"],  # (trash making room goes first)
+        freed=[s for a, s, _, _ in out if a == "trash"],
+    )
     # a place a move empties first (restores come after moves) is free for a restore
     vacated = {os.path.normcase(m["src"]) for m in moves} - {os.path.normcase(m["dst"]) for m in moves}
     others = []
@@ -732,15 +768,18 @@ def inverse(db, op_id: int) -> list[dict]:
 
 def can_undo(db):
     """The operation Ctrl+Z would take back, or None."""
-    return db.execute("SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' "
-                      "ORDER BY id DESC LIMIT 1").fetchone()
+    return db.execute(
+        "SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
 
 
 def can_redo(db):
     """The undo that Ctrl+Shift+Z would take back, or None. Doing anything new clears it."""
     newest = db.execute("SELECT MAX(id) FROM ops WHERE kind NOT IN ('undo', 'redo')").fetchone()[0] or 0
-    return db.execute("SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? "
-                      "ORDER BY id DESC LIMIT 1", (newest,)).fetchone()
+    return db.execute(
+        "SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? ORDER BY id DESC LIMIT 1",
+        (newest,),
+    ).fetchone()
 
 
 def undo(db, progress=None) -> Result | None:
@@ -758,8 +797,9 @@ def redo(db, progress=None) -> Result | None:
     if u is None:
         return None
     original = db.execute("SELECT * FROM ops WHERE id=?", (u["undoes"],)).fetchone()
-    result = run(db, "redo", original["summary"] if original else "Redo", inverse(db, u["id"]), progress,
-                 undoes=u["id"])
+    result = run(
+        db, "redo", original["summary"] if original else "Redo", inverse(db, u["id"]), progress, undoes=u["id"]
+    )
     db.execute("UPDATE ops SET state='undone' WHERE id=?", (u["id"],))
     db.commit()
     return result

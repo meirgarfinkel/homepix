@@ -75,8 +75,10 @@ def human_size(n: int) -> str:
 
 def photo_info(db, photo_id: int) -> dict | None:
     """None if the photo isn't in the index. 'offline' is set when the file can't be reached right now."""
-    r = db.execute("SELECT id, path, size, taken, taken_source, kind, duration, keywords, description "
-                   "FROM photos WHERE id=?", (photo_id,)).fetchone()
+    r = db.execute(
+        "SELECT id, path, size, taken, taken_source, kind, duration, keywords, description FROM photos WHERE id=?",
+        (photo_id,),
+    ).fetchone()
     if r is None:
         return None
     path = Path(r["path"])
@@ -88,9 +90,14 @@ def photo_info(db, photo_id: int) -> dict | None:
         "taken": r["taken"],
         "kind": r["kind"],
         "date_source": DATE_SOURCES.get(r["taken_source"], r["taken_source"]),
-        "people": [x[0] for x in db.execute(
-            "SELECT DISTINCT pe.name FROM faces f JOIN people pe ON pe.id = f.person_id WHERE f.photo_id=? "
-            "ORDER BY pe.name", (photo_id,))],
+        "people": [
+            x[0]
+            for x in db.execute(
+                "SELECT DISTINCT pe.name FROM faces f JOIN people pe ON pe.id = f.person_id WHERE f.photo_id=? "
+                "ORDER BY pe.name",
+                (photo_id,),
+            )
+        ],
     }
     if r["duration"]:
         info["duration"] = r["duration"]

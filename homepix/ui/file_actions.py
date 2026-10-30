@@ -40,8 +40,18 @@ class FileActions:
         self.export = a("Export...", self.export_them, ["Ctrl+E"])
         self.open_app = a("Open in another app", self.open_in_app, ["Ctrl+Return"])
         self.show = a("Show in folder", self.show_in_folder)
-        self.targeted = [self.cut, self.copy, self.rename, self.move, self.new_folder, self.copy_to, self.trash,
-                         self.export, self.open_app, self.show]
+        self.targeted = [
+            self.cut,
+            self.copy,
+            self.rename,
+            self.move,
+            self.new_folder,
+            self.copy_to,
+            self.trash,
+            self.export,
+            self.open_app,
+            self.show,
+        ]
 
     def menu(self, parent) -> QMenu:
         m = QMenu("&Edit", parent)
@@ -127,8 +137,10 @@ class FileActions:
         finally:
             db.close()
         desktop.copy_files(paths, cut)
-        self._status(f"{'Cut' if cut else 'Copied'} {count_of(items)}. Paste them into a folder here or in your "
-                     "file manager.", 6000)
+        self._status(
+            f"{'Cut' if cut else 'Copied'} {count_of(items)}. Paste them into a folder here or in your file manager.",
+            6000,
+        )
 
     def paste_into(self, folder):
         if not folder:
@@ -144,8 +156,12 @@ class FileActions:
         name, n = os.path.basename(folder) or folder, plural(len(paths), "file")
         kind = "move" if cut else "copy"
         verb, past = ("Move", "Moved") if cut else ("Copy", "Copied")
-        self.w.ops.run(kind, f"{verb} {n} to {name}", f"{past} {n} to {name}",
-                       lambda db: files.plan_into(files.with_companions(db, paths), folder, kind))
+        self.w.ops.run(
+            kind,
+            f"{verb} {n} to {name}",
+            f"{past} {n} to {name}",
+            lambda db: files.plan_into(files.with_companions(db, paths), folder, kind),
+        )
         if cut:
             QGuiApplication.clipboard().clear()  # they're moved: there's nothing left to paste
 
@@ -155,8 +171,12 @@ class FileActions:
             return
         paths, n = [it.path for it in items], count_of(items)
         self._remember_place(items)
-        self.w.ops.run("trash", f"Move {n} to Trash", f"Moved {n} to Trash",
-                       lambda db: files.plan_trash(files.with_companions(db, paths)))
+        self.w.ops.run(
+            "trash",
+            f"Move {n} to Trash",
+            f"Moved {n} to Trash",
+            lambda db: files.plan_trash(files.with_companions(db, paths)),
+        )
 
     def rename_them(self):
         w = self.w
@@ -189,16 +209,22 @@ class FileActions:
     def into(self, kind, items, folder):
         if not within(folder, library_folders()):
             QMessageBox.information(
-                self.w, "HomePix",
+                self.w,
+                "HomePix",
                 f"{folder} isn't in your library.\n\nHomePix moves and copies photos only within your "
-                "library folders (see Settings). To put copies somewhere else, use Export.")
+                "library folders (see Settings). To put copies somewhere else, use Export.",
+            )
             return
         paths, n, name = [it.path for it in items], count_of(items), os.path.basename(folder) or folder
         verb, past = ("Move", "Moved") if kind == "move" else ("Copy", "Copied")
         if kind == "move":
             self._remember_place(items)
-        self.w.ops.run(kind, f"{verb} {n} to {name}", f"{past} {n} to {name}",
-                       lambda db: files.plan_into(files.with_companions(db, paths), folder, kind))
+        self.w.ops.run(
+            kind,
+            f"{verb} {n} to {name}",
+            f"{past} {n} to {name}",
+            lambda db: files.plan_into(files.with_companions(db, paths), folder, kind),
+        )
 
     def into_chosen(self, kind):
         items = self.targets()
@@ -232,8 +258,9 @@ class FileActions:
         dlg = ExportDialog(len(items), settings, self.w)
         if not dlg.exec():
             return
-        folder = QFileDialog.getExistingDirectory(self.w, "Export to",
-                                                  settings.value("export/folder", str(pictures_folder())))
+        folder = QFileDialog.getExistingDirectory(
+            self.w, "Export to", settings.value("export/folder", str(pictures_folder()))
+        )
         if not folder:
             return
         settings.setValue("export/folder", folder)
@@ -245,8 +272,12 @@ class FileActions:
         for it in self.targets()[:20]:
             ok = desktop.open_with(editor, it.path) if editor else desktop.open_file(it.path)
             if not ok:
-                QMessageBox.warning(self.w, "HomePix", f"Couldn't open {it.path}"
-                                    + (f" with “{editor}”. Check the editor in Settings." if editor else "."))
+                QMessageBox.warning(
+                    self.w,
+                    "HomePix",
+                    f"Couldn't open {it.path}"
+                    + (f" with “{editor}”. Check the editor in Settings." if editor else "."),
+                )
                 return
 
     def show_in_folder(self):

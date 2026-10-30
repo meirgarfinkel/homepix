@@ -24,22 +24,34 @@ def _why(why: str) -> str:
 
 
 def summary(plan) -> str:
-    """"940 go with their photo, 3 into Unsorted/ ..." for the files that change."""
+    """ "940 go with their photo, 3 into Unsorted/ ..." for the files that change."""
     counts = Counter("year" if c.why.startswith("to ") and c.why != "to Unsorted" else c.why for c in plan.changes)
-    parts = [(counts["renamed"], "named by their date"), (counts["year"], "into their year's folder"),
-             (counts["to Unsorted"], "into Unsorted/ (no date)"), (counts["with its photo"], "go with their photo")]
+    parts = [
+        (counts["renamed"], "named by their date"),
+        (counts["year"], "into their year's folder"),
+        (counts["to Unsorted"], "into Unsorted/ (no date)"),
+        (counts["with its photo"], "go with their photo"),
+    ]
     return ", ".join(f"{n:,} {text}" for n, text in parts if n)
 
 
 def preview(plan, folders, title, parent):
     n = len(plan.changes)
-    note = ("Each is named by when it was taken, in its year's folder. Nothing changes until you "
-            "choose Organize, and Undo takes it all back.")
+    note = (
+        "Each is named by when it was taken, in its year's folder. Nothing changes until you "
+        "choose Organize, and Undo takes it all back."
+    )
     if plan.not_ready:
         note += f" {plan.not_ready:,} files are still being indexed and are left for now."
     rows = [(relative(c.src, folders), relative(c.dst, folders), _why(c.why), c.src) for c in plan.changes]
-    return ChangesDialog(title, f"<b>{n:,} of {plan.looked_at:,} files</b> will be renamed or moved: "
-                         f"{summary(plan)}.", note, rows, f"Organize {n:,} files", parent)
+    return ChangesDialog(
+        title,
+        f"<b>{n:,} of {plan.looked_at:,} files</b> will be renamed or moved: {summary(plan)}.",
+        note,
+        rows,
+        f"Organize {n:,} files",
+        parent,
+    )
 
 
 def _plan(scope):
@@ -75,8 +87,11 @@ class Organizer:
         if not library_folders():
             return
         if scope and organize.root_of(scope, library_folders()) is None:
-            QMessageBox.information(self.w, "Organize", f"{scope} isn't in the library. Only the library's "
-                                    "folders are organized; add it in Settings first.")
+            QMessageBox.information(
+                self.w,
+                "Organize",
+                f"{scope} isn't in the library. Only the library's folders are organized; add it in Settings first.",
+            )
             return
         self._looking = True
         name = "the library" if scope is None else os.path.basename(scope) or scope
@@ -101,5 +116,4 @@ class Organizer:
         if not dlg.exec():
             return
         steps, n = plan.steps(), len(plan.changes)
-        self.w.ops.run("organize", f"Organize {plural(n, 'file')}", f"Organized {plural(n, 'file')}",
-                       lambda db: steps)
+        self.w.ops.run("organize", f"Organize {plural(n, 'file')}", f"Organized {plural(n, 'file')}", lambda db: steps)

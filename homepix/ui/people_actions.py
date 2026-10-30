@@ -25,15 +25,21 @@ class PeopleActions:
     # --- faces --------------------------------------------------------------------------------------
 
     def name(self, face_ids, name: str):
-        self._run(f"Name {plural(len(face_ids), 'face')} {name}", f"Named {plural(len(face_ids), 'face')} {name}",
-                  lambda db: people.plan_name(db, face_ids, name))
+        self._run(
+            f"Name {plural(len(face_ids), 'face')} {name}",
+            f"Named {plural(len(face_ids), 'face')} {name}",
+            lambda db: people.plan_name(db, face_ids, name),
+        )
 
     def confirm(self, yes, no, name: str):
         """Of the faces that might be name: yes are them, the rest (no) aren't."""
-        self._run(f"Name {plural(len(yes), 'face')} {name}, not {plural(len(no), 'face')}",
-                  f"Named {plural(len(yes), 'face')} {name}; {plural(len(no), 'face')} aren't {name}" if yes
-                  else f"{plural(len(no), 'face')} aren't {name}",
-                  lambda db: people.plan_confirm(db, yes, no, name))
+        self._run(
+            f"Name {plural(len(yes), 'face')} {name}, not {plural(len(no), 'face')}",
+            f"Named {plural(len(yes), 'face')} {name}; {plural(len(no), 'face')} aren't {name}"
+            if yes
+            else f"{plural(len(no), 'face')} aren't {name}",
+            lambda db: people.plan_confirm(db, yes, no, name),
+        )
 
     def ask_and_name(self, face_ids, title="Who is this?", current=""):
         name = ask_name(self.w, title, "Their name: someone already named, or someone new.", self._names(), current)
@@ -42,19 +48,30 @@ class PeopleActions:
 
     def not_them(self, face_ids, pid=None):
         who = self._name_of(pid) if pid is not None else "them"
-        self._run(f"Unname {plural(len(face_ids), 'face')} (not {who})", f"Took {plural(len(face_ids), 'face')} away from {who}",
-                  lambda db: people.plan_not(db, face_ids))
+        self._run(
+            f"Unname {plural(len(face_ids), 'face')} (not {who})",
+            f"Took {plural(len(face_ids), 'face')} away from {who}",
+            lambda db: people.plan_not(db, face_ids),
+        )
 
     def hide(self, face_ids):
-        self._run(f"Ignore {plural(len(face_ids), 'face')}", f"Won't ask about {plural(len(face_ids), 'face')} again",
-                  lambda db: people.plan_hide(db, face_ids))
+        self._run(
+            f"Ignore {plural(len(face_ids), 'face')}",
+            f"Won't ask about {plural(len(face_ids), 'face')} again",
+            lambda db: people.plan_hide(db, face_ids),
+        )
 
     # --- people -------------------------------------------------------------------------------------
 
     def rename(self, pid):
         old = self._name_of(pid)
-        name = ask_name(self.w, "Rename", f"A new name for {old}. If it's someone else's name, they become one "
-                        "person.", [n for n in self._names() if n != old], old)
+        name = ask_name(
+            self.w,
+            "Rename",
+            f"A new name for {old}. If it's someone else's name, they become one person.",
+            [n for n in self._names() if n != old],
+            old,
+        )
         if not name or name == old:
             return
         self._run(f"Rename {old} to {name}", f"Renamed {old} to {name}", lambda db: people.plan_rename(db, pid, name))
@@ -68,15 +85,22 @@ class PeopleActions:
         if not ok:
             return
         target = next(p for p, n in self.w.people_names.items() if n == into)
-        self._run(f"Merge {old} into {into}", f"{old} and {into} are one person now",
-                  lambda db: people.plan_merge(db, [pid], target))
+        self._run(
+            f"Merge {old} into {into}",
+            f"{old} and {into} are one person now",
+            lambda db: people.plan_merge(db, [pid], target),
+        )
 
     def forget(self, pid):
         name = self._name_of(pid)
         answer = QMessageBox.question(
-            self.w, "Forget", f"Forget {name}?\n\nTheir faces become unnamed again. The photos aren't touched, "
-            "and Undo brings them back.", QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
-            QMessageBox.StandardButton.Cancel)
+            self.w,
+            "Forget",
+            f"Forget {name}?\n\nTheir faces become unnamed again. The photos aren't touched, "
+            "and Undo brings them back.",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Cancel,
+        )
         if answer == QMessageBox.StandardButton.Yes:
             self._run(f"Forget {name}", f"Forgot {name}", lambda db: people.plan_forget(db, pid))
 
@@ -85,19 +109,22 @@ class PeopleActions:
     def start_over(self):
         """Forget every face and name, and look for the faces again (with what's learned since)."""
         answer = QMessageBox.warning(
-            self.w, "Start faces over",
+            self.w,
+            "Start faces over",
             "Forget every face found and everyone you named, and look through your photos for faces again?"
             "\n\nThe photos aren't touched, and search, dates and everything else stay. This can't be undone "
             "(a copy of the database is kept in the backups folder first). Finding the faces again takes a "
             "while, in the background; then name people on Who is this?.",
-            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Reset, QMessageBox.StandardButton.Cancel)
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Reset,
+            QMessageBox.StandardButton.Cancel,
+        )
         if answer != QMessageBox.StandardButton.Reset:
             return
 
         def work(progress, should_stop):
             db = open_db()
             try:
-                return people.resetplural(db, 'face')
+                return people.resetplural(db, "face")
             finally:
                 db.close()
 
@@ -110,4 +137,3 @@ class PeopleActions:
             self.w.ops.finished.emit(f"Forgot {plural(n, 'face')}. Looking for faces again, in the background")
 
         self.w.ops._go("Forgetting the faces...", work, done)
-

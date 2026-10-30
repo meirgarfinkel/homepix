@@ -42,13 +42,17 @@ def phash(img: Image.Image) -> int:
 
 # --- filled in after indexing ------------------------------------------------------------------------
 
+
 def fill_looks(db, prefix: str, should_stop=lambda: False) -> int:
     """Work out the perceptual hash (from the thumbnail, so it's quick) and the size in pixels of the
     photos under prefix that don't have them yet. Returns how many."""
     from .thumbs import old_thumb_file, photo_thumb, thumb_file
 
-    rows = db.execute("SELECT id, path, qhash FROM photos WHERE phash IS NULL AND kind='photo' AND error IS NULL "
-                      "AND qhash IS NOT NULL AND substr(path, 1, ?) = ?", (len(prefix), prefix)).fetchall()
+    rows = db.execute(
+        "SELECT id, path, qhash FROM photos WHERE phash IS NULL AND kind='photo' AND error IS NULL "
+        "AND qhash IS NOT NULL AND substr(path, 1, ?) = ?",
+        (len(prefix), prefix),
+    ).fetchall()
     done, updates = 0, []
     for r in rows:
         if should_stop():
@@ -98,6 +102,7 @@ def _sha256(db, rows) -> dict[int, str]:
 
 # --- finding them ------------------------------------------------------------------------------------
 
+
 @dataclass
 class Copy:
     id: int
@@ -142,13 +147,15 @@ _COLS = "id, path, kind, qhash, size, width, height, taken, taken_source, sha256
 
 
 def _rows(db):
-    return db.execute(f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL "
-                      "AND kind != 'motion'").fetchall()
+    return db.execute(
+        f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL AND kind != 'motion'"
+    ).fetchall()
 
 
 def _copy(r) -> Copy:
-    return Copy(r["id"], r["path"], r["kind"] or "photo", r["qhash"], r["size"] or 0, r["width"], r["height"],
-                r["taken"])
+    return Copy(
+        r["id"], r["path"], r["kind"] or "photo", r["qhash"], r["size"] or 0, r["width"], r["height"], r["taken"]
+    )
 
 
 def _exact_pairs(db, rows) -> list[tuple[int, int]]:
@@ -200,7 +207,7 @@ def _near_pairs(rows) -> list[tuple[int, int, int, float]]:
     clip = np.frombuffer(b"".join(r["clip"] for r in photos), np.float16).reshape(len(photos), -1).astype(np.float32)
     pairs = []
     for i in range(0, len(photos), 1024):
-        d = np.bitwise_count(h[i:i + 1024, None] ^ h[None, :])
+        d = np.bitwise_count(h[i : i + 1024, None] ^ h[None, :])
         a, b = np.nonzero(d <= NEAR_BITS)
         a += i
         keep = b > a
@@ -230,8 +237,12 @@ def find(db) -> list[Group]:
     # Each file is a copy of the best of the files ranked above it that it matches (the same bytes
     # first, then the closest look), or else a keeper. No chains: two shots of a burst that each
     # match the other's smaller copy stay apart, each with its own.
-    rank = {i: n for n, i in enumerate(sorted({x for p in exact + near for x in p[:2]},
-                                               key=lambda i: _keeper_order(_copy(by_id[i]))))}
+    rank = {
+        i: n
+        for n, i in enumerate(
+            sorted({x for p in exact + near for x in p[:2]}, key=lambda i: _keeper_order(_copy(by_id[i])))
+        )
+    }
     best = {}
     for a, b, dist, sim in exact + near:
         lo, hi = (a, b) if rank[a] > rank[b] else (b, a)  # lo is the copy: ranked below hi
@@ -258,11 +269,13 @@ def find(db) -> list[Group]:
 def pending(db) -> int:
     """Photos whose look isn't worked out yet (they're done after indexing): duplicates among them
     aren't found until then."""
-    return db.execute("SELECT COUNT(*) FROM photos WHERE phash IS NULL AND kind='photo' AND error IS NULL "
-                      "AND qhash IS NOT NULL").fetchone()[0]
+    return db.execute(
+        "SELECT COUNT(*) FROM photos WHERE phash IS NULL AND kind='photo' AND error IS NULL AND qhash IS NOT NULL"
+    ).fetchone()[0]
 
 
 # --- doing something about them ----------------------------------------------------------------------
+
 
 def plan_extras(db, groups) -> list[dict]:
     """Steps that move every group's extras to the Trash (a Live Photo's clip goes with its photo,
@@ -275,25 +288,34 @@ def plan_extras(db, groups) -> list[dict]:
 def plan_apart(db, groups) -> dict | None:
     """A step saying each group's files aren't duplicates of each other (never offered again)."""
     have = _apart(db)
-    pairs = sorted({tuple(sorted((a.id, b.id))) for g in groups for a in g.copies for b in g.copies
-                    if a.id != b.id} - have)
+    pairs = sorted(
+        {tuple(sorted((a.id, b.id))) for g in groups for a in g.copies for b in g.copies if a.id != b.id} - have
+    )
     if not pairs:
         return None
-    return {"action": "apart", "src": None, "dst": None,
-            "before": {"old": {"pairs": pairs, "apart": False}, "new": {"pairs": pairs, "apart": True}}}
+    return {
+        "action": "apart",
+        "src": None,
+        "dst": None,
+        "before": {"old": {"pairs": pairs, "apart": False}, "new": {"pairs": pairs, "apart": True}},
+    }
 
 
 def apply(db, state: dict):
     """Set the state a "not duplicates" change (or its undoing) leaves."""
     pairs = [tuple(p) for p in state["pairs"]]
     if state["apart"]:
-        db.executemany("INSERT OR IGNORE INTO apart (a, b) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM photos WHERE id=?) "
-                       "AND EXISTS (SELECT 1 FROM photos WHERE id=?)", [(a, b, a, b) for a, b in pairs])
+        db.executemany(
+            "INSERT OR IGNORE INTO apart (a, b) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM photos WHERE id=?) "
+            "AND EXISTS (SELECT 1 FROM photos WHERE id=?)",
+            [(a, b, a, b) for a, b in pairs],
+        )
     else:
         db.executemany("DELETE FROM apart WHERE a=? AND b=?", pairs)
 
 
 def summary(groups) -> str:
     extras = sum(len(g.extras) for g in groups)
-    return f"{len(groups):,} group{'s' if len(groups) != 1 else ''}, {extras:,} extra cop{'ies' if extras != 1 else 'y'}"
-
+    return (
+        f"{len(groups):,} group{'s' if len(groups) != 1 else ''}, {extras:,} extra cop{'ies' if extras != 1 else 'y'}"
+    )

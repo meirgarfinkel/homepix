@@ -89,9 +89,11 @@ def reserve(path) -> str:
             name = f"{path.stem}.{n}{path.suffix}"
     shown = os.path.relpath(path, top) if top else str(path)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write("[Trash Info]\n"
-                f"Path={urllib.parse.quote(shown)}\n"
-                f"DeletionDate={dt.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}\n")
+        f.write(
+            "[Trash Info]\n"
+            f"Path={urllib.parse.quote(shown)}\n"
+            f"DeletionDate={dt.datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}\n"
+        )
     return str(folder / "files" / name)
 
 
@@ -128,8 +130,13 @@ def _sid() -> str:
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.LocalFree.argtypes = [ctypes.c_void_p]
     advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
-    advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
-                                             ctypes.POINTER(wintypes.DWORD)]
+    advapi32.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
     advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
 
     def check(ok):
@@ -193,4 +200,3 @@ def _reserve_recycled(path: Path) -> str:
     with os.fdopen(fd, "wb") as f:  # version 2 (Windows 10 and later): size, date, then the path
         f.write(struct.pack("<qqqi", 2, path.stat().st_size, when, len(original)) + original.encode("utf-16-le"))
     return str(folder / f"$R{tag}{ext}")
-

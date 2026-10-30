@@ -22,7 +22,7 @@ def _lookup(photo_id):
 
 
 def nice_date(taken: str) -> str:
-    """"Friday, April 1, 2022 at 07:32:31"."""
+    """ "Friday, April 1, 2022 at 07:32:31"."""
     try:
         d = dt.datetime.fromisoformat(taken)
     except (TypeError, ValueError):
@@ -85,8 +85,9 @@ class InfoPanel(QScrollArea):
         if err is not None or info is None:
             self._info = None
             self.head.hide()
-            self.label.setText(f"<p style='color:{muted}'>No details: "
-                               f"{html.escape(str(err or 'not in the index'))}</p>")
+            self.label.setText(
+                f"<p style='color:{muted}'>No details: {html.escape(str(err or 'not in the index'))}</p>"
+            )
             return
         self._info = info
         e = html.escape
@@ -95,16 +96,20 @@ class InfoPanel(QScrollArea):
         def row(name, value, note=None):
             if value:
                 extra = f"<br><span style='color:{muted}'>{e(note)}</span>" if note else ""
-                rows.append(f"<tr><td width='84' style='color:{muted}; padding: 0 8px 10px 0'>{e(name)}</td>"
-                            f"<td style='padding-bottom: 10px'>{value}{extra}</td></tr>")
+                rows.append(
+                    f"<tr><td width='84' style='color:{muted}; padding: 0 8px 10px 0'>{e(name)}</td>"
+                    f"<td style='padding-bottom: 10px'>{value}{extra}</td></tr>"
+                )
 
         video = info.get("kind") == "video"
         self.head.setText(f"<p style='font-size:14px; font-weight:700; margin:0'>{e(info['name'])}</p>")
         self.head.show()
         head = ""
         if self._count > 1:
-            head += (f"<p style='color:{muted}; margin:0 0 14px 0'>{self._count:,} photos selected; "
-                     "this is the last one clicked.</p>")
+            head += (
+                f"<p style='color:{muted}; margin:0 0 14px 0'>{self._count:,} photos selected; "
+                "this is the last one clicked.</p>"
+            )
         if info.get("offline"):
             head += f"<p style='color:{danger}'>The file can't be reached right now (is its drive connected?).</p>"
         if info.get("error"):

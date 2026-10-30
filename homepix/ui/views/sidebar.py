@@ -55,11 +55,15 @@ def folder_tree(roots: list[str], counts: dict) -> dict:
                 continue
             node["total"] += n
             cur = node
-            for part in folder[len(prefix):].split(os.sep):
+            for part in folder[len(prefix) :].split(os.sep):
                 child = cur["children"].get(part)
                 if child is None:
-                    child = cur["children"][part] = {"path": os.path.join(cur["path"], part), "name": part,
-                                                     "total": 0, "children": {}}
+                    child = cur["children"][part] = {
+                        "path": os.path.join(cur["path"], part),
+                        "name": part,
+                        "total": 0,
+                        "children": {},
+                    }
                 child["total"] += n
                 cur = child
         tree[root] = node
@@ -94,8 +98,11 @@ class CountDelegate(QStyledItemDelegate):
         arrow = QRectF(option.rect.right() - RIGHT - CHEVRON, option.rect.top(), CHEVRON, option.rect.height())
         if text:
             p.setPen(muted)
-            p.drawText(option.rect.adjusted(0, 0, -RIGHT - CHEVRON, 0),
-                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, text)
+            p.drawText(
+                option.rect.adjusted(0, 0, -RIGHT - CHEVRON, 0),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                text,
+            )
         first = index.siblingAtColumn(0)
         if index.model().hasChildren(first):
             tree = self.parent()
@@ -181,8 +188,9 @@ class Sidebar(QTreeWidget):
             item.setToolTip(0, root)
             if not Path(root).is_dir():
                 item.setText(0, f"{node['name']} (not connected)")
-                item.setToolTip(0, f"{root}\nCan't be reached right now: is its drive plugged in? "
-                                   "Its photos are still shown.")
+                item.setToolTip(
+                    0, f"{root}\nCan't be reached right now: is its drive plugged in? Its photos are still shown."
+                )
                 italic = QFont(self.font())
                 italic.setItalic(True)
                 item.setFont(0, italic)
@@ -190,13 +198,15 @@ class Sidebar(QTreeWidget):
             path = it.data(0, PATH_ROLE)
             if path in opened:
                 it.setExpanded(True)
-            if path and os.path.isabs(path) and any(path == f or path.startswith(os.path.join(f, ""))
-                                                    for f in excluded):
+            if (
+                path
+                and os.path.isabs(path)
+                and any(path == f or path.startswith(os.path.join(f, "")) for f in excluded)
+            ):
                 it.setForeground(0, theme.color("muted"))  # (and the folders inside it)
             if path in excluded:
                 it.setText(0, f"{it.text(0)} (excluded)")
-                it.setToolTip(0, f"{path}\nLeft out of All photos, people and search. "
-                                 "Right-click to include it again.")
+                it.setToolTip(0, f"{path}\nLeft out of All photos, people and search. Right-click to include it again.")
         self.select(chosen or ALL)
         self._quiet = False
 

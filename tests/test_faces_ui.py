@@ -41,8 +41,10 @@ def library(pf, lib):
     rng = np.random.default_rng(3)
     ids = [r[0] for r in db.execute("SELECT id FROM photos ORDER BY path")]
     for i, pid in enumerate(ids):
-        db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .3, .3, .4, .4, .99, ?)",
-                   (pid, to_blob(look(1 if i < 5 else 2, rng))))
+        db.execute(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb) VALUES (?, .3, .3, .4, .4, .99, ?)",
+            (pid, to_blob(look(1 if i < 5 else 2, rng))),
+        )
     db.commit()
     db.close()
     return ids
@@ -63,8 +65,12 @@ def window(pf, app, library):
 def names(pf):
     db = pf.open_db()
     try:
-        return [r[0] for r in db.execute(
-            "SELECT pe.name FROM faces f LEFT JOIN people pe ON pe.id = f.person_id ORDER BY f.photo_id")]
+        return [
+            r[0]
+            for r in db.execute(
+                "SELECT pe.name FROM faces f LEFT JOIN people pe ON pe.id = f.person_id ORDER BY f.photo_id"
+            )
+        ]
     finally:
         db.close()
 
@@ -106,8 +112,11 @@ def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
     rng = np.random.default_rng(2)
 
     def faces(start, n, tier=NEW, like=None):
-        return [{"id": i, "path": f"/x/{i}.jpg", "emb": look(1, rng), "tier": tier, "like": like}
-                for i in range(start, start + n)]
+        return [
+            {"id": i, "path": f"/x/{i}.jpg", "emb": look(1, rng), "tier": tier, "like": like}
+            for i in range(start, start + n)
+        ]
+
     new, known = faces(0, 3), faces(10, 3, KNOWN, "Ann")
     real, workers.run = workers.run, lambda *a, **k: None  # (no pictures to make)
     try:
@@ -209,7 +218,9 @@ def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
     assert grid.selected_faces() == [] and not window.person_faces.not_button.isEnabled()
 
     def click(row):  # a click ticks or unticks, as on Who is this?
-        QTest.mouseClick(grid.viewport(), QtCore.Qt.MouseButton.LeftButton, pos=grid.visualItemRect(grid.item(row)).center())
+        QTest.mouseClick(
+            grid.viewport(), QtCore.Qt.MouseButton.LeftButton, pos=grid.visualItemRect(grid.item(row)).center()
+        )
 
     click(0)
     click(1)
@@ -248,8 +259,9 @@ def test_rename_and_forget_from_the_people_page(window, pf, app, monkeypatch):
     window.naming.rename(pid)
     settle(app, window)
     wait_until(app, lambda: len(named()) == 1 and named()[0].text().startswith("Anna"))
-    monkeypatch.setattr(QtWidgets.QMessageBox, "question",
-                        staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "question", staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
+    )
     window.naming.forget(pid)
     settle(app, window)
     assert names(pf) == [None] * 8

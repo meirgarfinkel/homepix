@@ -25,8 +25,10 @@ def setup_library(pf, lib):
     ann = db.execute("INSERT INTO people (name) VALUES ('Ann')").lastrowid
     rng = np.random.default_rng(1)
     for name in ("a.jpg", "2024/c.jpg", "Old/e.jpg"):
-        db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?, .3, .3, .4, .4, .99, ?, ?)",
-                   (ids[name], to_blob(rng.normal(size=128)), ann))
+        db.execute(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?, .3, .3, .4, .4, .99, ?, ?)",
+            (ids[name], to_blob(rng.normal(size=128)), ann),
+        )
     db.execute("INSERT INTO apart (a, b) VALUES (?, ?)", sorted((ids["a.jpg"], ids["b.jpg"])))
     db.commit()
     db.close()
@@ -38,8 +40,10 @@ def named(pf, root):
     db = pf.open_db()
     try:
         out = {}
-        for path, name in db.execute("SELECT p.path, pe.name FROM faces f JOIN photos p ON p.id = f.photo_id "
-                                     "LEFT JOIN people pe ON pe.id = f.person_id"):
+        for path, name in db.execute(
+            "SELECT p.path, pe.name FROM faces f JOIN photos p ON p.id = f.photo_id "
+            "LEFT JOIN people pe ON pe.id = f.person_id"
+        ):
             out.setdefault(os.path.relpath(path, root).replace(os.sep, "/"), []).append(name)
         return out
     finally:
@@ -49,9 +53,12 @@ def named(pf, root):
 def apart_pairs(pf, root):
     db = pf.open_db()
     try:
-        return {tuple(sorted(os.path.relpath(p, root).replace(os.sep, "/") for p in (pa, pb)))
-                for pa, pb in db.execute("SELECT x.path, y.path FROM apart JOIN photos x ON x.id = a "
-                                         "JOIN photos y ON y.id = b")}
+        return {
+            tuple(sorted(os.path.relpath(p, root).replace(os.sep, "/") for p in (pa, pb)))
+            for pa, pb in db.execute(
+                "SELECT x.path, y.path FROM apart JOIN photos x ON x.id = a JOIN photos y ON y.id = b"
+            )
+        }
     finally:
         db.close()
 
@@ -68,15 +75,21 @@ def test_the_copy_holds_the_folders_photos_with_relative_paths(pf, lib):
     con = sqlite3.connect(path)
     try:
         assert sorted(r[0] for r in con.execute("SELECT path FROM photos")) == [
-            "2024/c.jpg", "2024/d.jpg", "Old/e.jpg", "a.jpg", "b.jpg"]
+            "2024/c.jpg",
+            "2024/d.jpg",
+            "Old/e.jpg",
+            "a.jpg",
+            "b.jpg",
+        ]
         assert con.execute("SELECT COUNT(*) FROM ops").fetchone()[0] == 0  # no undo history
         assert con.execute("PRAGMA journal_mode").fetchone()[0] == "delete"  # readable from a read-only drive
     finally:
         con.close()
     meta = portable.info(lib)
     assert (meta["photos"], meta["people"]) == (5, 1)
-    assert pf.scan_folder(lib)[0].keys() == {str(lib / n) for n in ("a.jpg", "b.jpg", "2024/c.jpg", "2024/d.jpg",
-                                                                    "Old/e.jpg")}  # the copy isn't a photo
+    assert pf.scan_folder(lib)[0].keys() == {
+        str(lib / n) for n in ("a.jpg", "b.jpg", "2024/c.jpg", "2024/d.jpg", "Old/e.jpg")
+    }  # the copy isn't a photo
 
 
 def test_another_computer_picks_up_where_it_left_off(pf, lib, tmp_path, monkeypatch):
@@ -164,8 +177,10 @@ def test_who_a_face_isnt_comes_along_too(pf, lib, tmp_path, monkeypatch):
     db = pf.open_db()
     bob = db.execute("INSERT INTO people (name) VALUES ('Bob')").lastrowid
     b = db.execute("SELECT id FROM photos WHERE path = ?", (str(lib / "b.jpg"),)).fetchone()[0]
-    db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?, .3, .3, .4, .4, .99, ?, ?)",
-               (b, to_blob(np.ones(128)), bob))
+    db.execute(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?, .3, .3, .4, .4, .99, ?, ?)",
+        (b, to_blob(np.ones(128)), bob),
+    )
     db.execute("UPDATE faces SET not_person = ? WHERE person_id != ?", (bob, bob))  # Ann's faces aren't Bob
     db.commit()
     db.close()

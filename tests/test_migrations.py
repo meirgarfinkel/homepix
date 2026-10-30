@@ -159,9 +159,11 @@ def test_index_records_where_the_date_came_from(pf, lib):
 def test_real_database_upgrades_without_loss(pf):
     path = pf.data_dir() / "homepix.db"
     shutil.copy(os.environ["HOMEPIX_REAL_DB"], path)
-    counts = "SELECT (SELECT COUNT(*) FROM photos), (SELECT COUNT(*) FROM faces), " \
-             "(SELECT COUNT(*) FROM faces WHERE person_id IS NOT NULL), (SELECT COUNT(*) FROM people), " \
-             "(SELECT COUNT(*) FROM ops), (SELECT COUNT(*) FROM op_steps), (SELECT COUNT(*) FROM apart)"
+    counts = (
+        "SELECT (SELECT COUNT(*) FROM photos), (SELECT COUNT(*) FROM faces), "
+        "(SELECT COUNT(*) FROM faces WHERE person_id IS NOT NULL), (SELECT COUNT(*) FROM people), "
+        "(SELECT COUNT(*) FROM ops), (SELECT COUNT(*) FROM op_steps), (SELECT COUNT(*) FROM apart)"
+    )
     with sqlite3.connect(path) as db:
         before = db.execute(counts).fetchone()
     db = pf.open_db()

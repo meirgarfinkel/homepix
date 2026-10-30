@@ -63,6 +63,7 @@ def main(argv=None):
 
 # --- one at a time -----------------------------------------------------------------------------------
 
+
 def _server_name() -> str:
     where = hashlib.sha1(str(data_dir()).encode()).hexdigest()[:10]  # one per data folder
     return f"homepix-{getpass.getuser()}-{where}"
@@ -102,10 +103,12 @@ def add_menu_entry():
         icon = data_dir() / "homepix-icon.png"
         icon.write_bytes(ICON.read_bytes())
         entry = share / "applications" / "homepix.desktop"
-        text = ("[Desktop Entry]\nType=Application\nName=HomePix\n"
-                "Comment=Browse, search and organize your photos\n"
-                f'Exec="{appimage}"\nIcon={icon}\nTerminal=false\n'
-                "Categories=Graphics;Photography;\nKeywords=photos;pictures;search;faces;\n")
+        text = (
+            "[Desktop Entry]\nType=Application\nName=HomePix\n"
+            "Comment=Browse, search and organize your photos\n"
+            f'Exec="{appimage}"\nIcon={icon}\nTerminal=false\n'
+            "Categories=Graphics;Photography;\nKeywords=photos;pictures;search;faces;\n"
+        )
         if not entry.exists() or entry.read_text() != text:
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text(text)
@@ -114,6 +117,7 @@ def add_menu_entry():
 
 
 # --- self-test ---------------------------------------------------------------------------------------
+
 
 def run_self_test(app) -> int:
     def ok(what):

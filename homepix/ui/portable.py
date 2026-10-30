@@ -82,10 +82,12 @@ def ask_use_copy(parent, root: str, meta: dict) -> bool:
     box.setText(f"<b>{root} has a HomePix library in it.</b>")
     box.setInformativeText(
         f"It was saved on {when}, with {meta['photos']:,} photos"
-        + (f" and {people:,} {'person' if people == 1 else 'people'} named" if people else "") + ".\n\n"
+        + (f" and {people:,} {'person' if people == 1 else 'people'} named" if people else "")
+        + ".\n\n"
         "Use it to bring back the faces and names, search and duplicate choices, without looking through "
         "every photo again.\n\nStart fresh instead and HomePix looks through the photos from the "
-        "beginning (the library found is kept in the folder).")
+        "beginning (the library found is kept in the folder)."
+    )
     use = box.addButton("Use it", QMessageBox.ButtonRole.AcceptRole)
     box.addButton("Start fresh", QMessageBox.ButtonRole.RejectRole)
     box.setDefaultButton(use)
@@ -132,7 +134,10 @@ def offer(window, roots, then=None):
                 window.statusBar().showMessage(
                     f"Brought in {photos:,} photos"
                     + (f" and {people:,} {'person' if people == 1 else 'people'}" if people else "")
-                    + (f" ({missing:,} weren't in the folder any more)" if missing else "") + ".", 10000)
+                    + (f" ({missing:,} weren't in the folder any more)" if missing else "")
+                    + ".",
+                    10000,
+                )
             window.library_brought_in()
             finish()
 

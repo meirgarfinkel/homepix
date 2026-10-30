@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 # --- core ------------------------------------------------------------------------------------------
 
+
 def test_adding_folders_nests_and_refuses_repeats(pf, lib, tmp_path):
     (lib / "2023").mkdir()
     pf.add_folder(lib / "2023")
@@ -144,8 +145,10 @@ def test_indexing_status_text():
     from homepix.ui.indexing import describe
 
     assert describe({"running": False, "phase": "idle"}) == ""
-    assert describe({"running": True, "phase": "indexing", "done": 30, "todo": 200, "eta": 150}) \
+    assert (
+        describe({"running": True, "phase": "indexing", "done": 30, "todo": 200, "eta": 150})
         == "Adding photos: 30 of 200, about 2 minutes left"
+    )
     assert "Another" in describe({"running": False, "phase": "elsewhere"})
 
 
@@ -230,8 +233,9 @@ def test_missing_photos_banner_and_removing_them(window, pf, lib, app, monkeypat
     window.watcher.start()
     wait_until(app, lambda: window.banner.isVisibleTo(window) and window.banner.missing == 60)
     assert "60 photos" in window.banner.label.text()
-    monkeypatch.setattr(QtWidgets.QMessageBox, "question",
-                        staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes))
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox, "question", staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
+    )
     window.banner.button.click()
     wait_until(app, lambda: not window.banner.isVisibleTo(window))
     wait_until(app, lambda: len(window.timeline.items) == 5)
@@ -266,4 +270,3 @@ def test_toggling_the_scrubber_lays_the_grid_out_again(app):
     v.set_scrubber(True)
     assert (v.cols, v._cell) == before
     v.close()
-

@@ -69,22 +69,27 @@ def planted(home, lib):
     p["d"] = save(scene(4), lib / "2023" / "2023_04_04_10_00_00.jpg", "2023:04:04 10:00:00")
     p["d png"] = save(scene(4), lib / "2023" / "2023_04_04_10_00_00.png")
     for i in range(3):  # a burst: a second apart
-        p[f"burst {i}"] = save(scene(5, shift=3 * i), lib / "2024" / f"2024_05_05_10_00_0{i}.jpg",
-                               f"2024:05:05 10:00:0{i}")
+        p[f"burst {i}"] = save(
+            scene(5, shift=3 * i), lib / "2024" / f"2024_05_05_10_00_0{i}.jpg", f"2024:05:05 10:00:0{i}"
+        )
     for i in range(2):  # a burst within one second
-        p[f"fast {i}"] = save(scene(6, shift=2 * i), lib / "2024" / f"2024_06_06_10_00_00{'_1' * i}.jpg",
-                              "2024:06:06 10:00:00")
+        p[f"fast {i}"] = save(
+            scene(6, shift=2 * i), lib / "2024" / f"2024_06_06_10_00_00{'_1' * i}.jpg", "2024:06:06 10:00:00"
+        )
     for i in range(6):
-        p[f"other {i}"] = save(scene(20 + i), lib / "2019" / f"2019_07_0{i + 1}_10_00_00.jpg",
-                               f"2019:07:0{i + 1} 10:00:00")
+        p[f"other {i}"] = save(
+            scene(20 + i), lib / "2019" / f"2019_07_0{i + 1}_10_00_00.jpg", f"2019:07:0{i + 1} 10:00:00"
+        )
     pf.index_folder(lib, want_faces=False)
     for name in ("v", "v copy"):  # a video and its copy (videos are only ever exact copies)
         path = lib / ("2020" if name == "v" else "backup") / f"{name}.mp4"
         path.write_bytes(b"\0\0\0\x18ftypmp42" + b"movie" * 5000)
         p[name] = path
-        db.execute("INSERT INTO photos (path, size, mtime, qhash, kind, taken, taken_source) "
-                   "VALUES (?, ?, 0, ?, 'video', '2020-01-01 12:00:00', 'video')",
-                   (str(path), path.stat().st_size, quick_hash(path, path.stat().st_size)))
+        db.execute(
+            "INSERT INTO photos (path, size, mtime, qhash, kind, taken, taken_source) "
+            "VALUES (?, ?, 0, ?, 'video', '2020-01-01 12:00:00', 'video')",
+            (str(path), path.stat().st_size, quick_hash(path, path.stat().st_size)),
+        )
     db.commit()
     return p
 
@@ -101,10 +106,16 @@ def as_names(groups, planted):
 
 # --- finding them ----------------------------------------------------------------------------------
 
+
 def test_every_planted_copy_is_found_and_no_burst(home, lib, planted):
     groups = groups_of(home, lib)
-    assert as_names(groups, planted) == [["a", "a exact"], ["b", "b small"], ["c", "c again"], ["d", "d png"],
-                                         ["v", "v copy"]]
+    assert as_names(groups, planted) == [
+        ["a", "a exact"],
+        ["b", "b small"],
+        ["c", "c again"],
+        ["d", "d png"],
+        ["v", "v copy"],
+    ]
     how = {planted_name(g, planted): g.how for g in groups}
     assert how["a"] == "exact" and how["v"] == "exact" and how["b"] == "near"
 
@@ -133,6 +144,7 @@ def test_the_perceptual_hash_sees_through_resizing_and_saving_again():
 
 
 # --- doing something about them ----------------------------------------------------------------------
+
 
 def test_extras_go_to_the_trash_and_undo_brings_them_back(home, lib, planted):
     _, db, fo, duplicates = home
@@ -166,6 +178,7 @@ def test_not_duplicates_is_never_offered_again_until_undone(home, lib, planted):
 
 # --- in the app ----------------------------------------------------------------------------------
 
+
 def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
     from test_faces_ui import app as _app
     from test_faces_ui import wait_until
@@ -195,12 +208,14 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch):
         w.dupes._keep(row, 1)
         assert w.dupes.groups[row].keeper.path == str(planted["b small"])
         d = next(i for i, g in enumerate(w.dupes.groups) if planted_name(g, planted) == "d")
-        w.dupes.list.selectionModel().select(w.dupes.list.model().index(d, 0),
-                                             w.dupes.list.selectionModel().SelectionFlag.Select)
+        w.dupes.list.selectionModel().select(
+            w.dupes.list.model().index(d, 0), w.dupes.list.selectionModel().SelectionFlag.Select
+        )
         w.dupes.apart_button.click()
         wait_until(app, lambda: len(w.dupes.groups) == 4 and not w.ops.busy)
-        assert w.dupes.groups[[planted_name(g, planted) for g in w.dupes.groups].index("b")].keeper.path \
-            == str(planted["b small"])  # still the one chosen
+        assert w.dupes.groups[[planted_name(g, planted) for g in w.dupes.groups].index("b")].keeper.path == str(
+            planted["b small"]
+        )  # still the one chosen
         # not sure about c yet: skipped, it goes to the end and is left alone
         c = [planted_name(g, planted) for g in w.dupes.groups].index("c")
         w.dupes.skip(c)
@@ -235,7 +250,9 @@ def test_skipped_groups_are_remembered(home, lib, planted):
     first = v.groups[-1]
     again = DuplicatesView()  # as after closing the app
     again.set_groups(groups_of(home, lib), [lib])
-    assert again.is_skipped(again.groups[-1]) and {c.id for c in again.groups[-1].copies} == {c.id for c in first.copies}
+    assert again.is_skipped(again.groups[-1]) and {c.id for c in again.groups[-1].copies} == {
+        c.id for c in first.copies
+    }
     assert again.to_decide() == 4
 
 
@@ -324,8 +341,12 @@ def test_a_burst_in_one_second_with_smaller_copies_of_each_shot(home, lib):
     pf, db, _, duplicates = home
     for i in range(3):
         big = scene(50, shift=12 * i, size=(1200, 900))
-        save(big, lib / "2023" / f"2023_02_26_15_35_26{'_' + str(i) if i else ''}.jpg", "2023:02:26 15:35:26",
-             quality=95 - 3 * i)
+        save(
+            big,
+            lib / "2023" / f"2023_02_26_15_35_26{'_' + str(i) if i else ''}.jpg",
+            "2023:02:26 15:35:26",
+            quality=95 - 3 * i,
+        )
         save(big.resize((400, 300)), lib / "2023" / f"small_{i}.jpg", "2023:02:26 15:35:26")
     pf.index_folder(lib, want_faces=False)
     groups = duplicates.find(db)

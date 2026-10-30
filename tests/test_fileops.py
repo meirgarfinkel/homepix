@@ -44,7 +44,7 @@ def index_matches_disk(db, lib):
     from homepix.core.util import quick_hash
 
     for p, q in indexed.items():
-        if q != 'q':  # (a made-up row)
+        if q != "q":  # (a made-up row)
             assert quick_hash(p, os.path.getsize(p)) == q, p
 
 
@@ -60,12 +60,17 @@ def make(pf, lib, names):
 
 # --- never overwriting: the cases that once lost 511 photos --------------------------------------
 
+
 def test_a_name_wanted_by_one_file_and_held_by_another_that_moves_on(home, lib):
     pf, db, fo = home
     p = make(pf, lib, ["clean-10.jpg", "clean.jpg"])
     a, b = digest(p["clean-10.jpg"]), digest(p["clean.jpg"])
-    fo.run(db, "rename", "test", fo.plan_moves([(lib / "clean-10.jpg", lib / "clean.jpg"),
-                                                (lib / "clean.jpg", lib / "clean_65.jpg")]))
+    fo.run(
+        db,
+        "rename",
+        "test",
+        fo.plan_moves([(lib / "clean-10.jpg", lib / "clean.jpg"), (lib / "clean.jpg", lib / "clean_65.jpg")]),
+    )
     assert contents(lib) == {"clean.jpg": a, "clean_65.jpg": b}
     index_matches_disk(db, lib)
 
@@ -123,14 +128,18 @@ def test_safefs_never_replaces(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     a.write_text("a")
     b.write_text("b")
-    for do in (lambda: rename_noreplace(a, b), lambda: move_file(a, b, tmp_path / ".p"),
-               lambda: copy_file(a, b, tmp_path / ".p")):
+    for do in (
+        lambda: rename_noreplace(a, b),
+        lambda: move_file(a, b, tmp_path / ".p"),
+        lambda: copy_file(a, b, tmp_path / ".p"),
+    ):
         with pytest.raises(FileExistsError):
             do()
     assert a.read_text() == "a" and b.read_text() == "b" and not (tmp_path / ".p").exists()
 
 
 # --- copy, Trash, undo, redo -------------------------------------------------------------------------
+
 
 def test_copy_keeps_the_original_and_indexes_the_copy(home, lib):
     pf, db, fo = home
@@ -147,8 +156,9 @@ def test_trash_goes_to_the_desktop_trash_and_restores_with_everything(home, lib,
     make(pf, lib, ["a.jpg", "b.jpg"])
     db.execute("INSERT INTO people (name) VALUES ('Ann')")
     pid = db.execute("SELECT id FROM photos WHERE path=?", (str(lib / "a.jpg"),)).fetchone()[0]
-    db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,0,0,.1,.1,1,?,1)",
-               (pid, b"\x01\x02"))
+    db.execute(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,0,0,.1,.1,1,?,1)", (pid, b"\x01\x02")
+    )
     db.commit()
     before = contents(lib)
     fo.run(db, "trash", "test", fo.plan_trash([lib / "a.jpg"]))
@@ -204,9 +214,16 @@ def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monke
     os.rename(f, dest)
     assert not f.exists() and os.path.dirname(dest).lower().endswith(trash._sid().lower())
     listed = subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
-         "(New-Object -ComObject Shell.Application).NameSpace(10).Items() | ForEach-Object { $_.Name }"],
-        capture_output=True, text=True, timeout=60).stdout
+        [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "(New-Object -ComObject Shell.Application).NameSpace(10).Items() | ForEach-Object { $_.Name }",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    ).stdout
     assert "homepix-recycle-test" in listed  # Windows sees it in the Recycle Bin, under its own name
     trash.restore(dest, f)
     assert f.read_bytes() == data and not os.path.exists(dest)
@@ -258,8 +275,11 @@ def test_rename_keeps_the_extension_and_takes_the_live_photo_clip(home, lib):
     pf, db, fo = home
     make(pf, lib, ["IMG_1.jpg", "IMG_2.jpg"])
     (lib / "IMG_1.mov").write_bytes(b"clip")
-    db.execute("INSERT INTO photos (path, qhash, kind, taken, duration) "
-               "SELECT ?, 'q', 'motion', taken, 2 FROM photos WHERE path=?", (str(lib / "IMG_1.mov"), str(lib / "IMG_1.jpg")))
+    db.execute(
+        "INSERT INTO photos (path, qhash, kind, taken, duration) "
+        "SELECT ?, 'q', 'motion', taken, 2 FROM photos WHERE path=?",
+        (str(lib / "IMG_1.mov"), str(lib / "IMG_1.jpg")),
+    )
     db.commit()
     fo.run(db, "rename", "test", fo.plan_rename(db, [(lib / "IMG_1.jpg", "Beach")]))
     assert sorted(os.listdir(lib)) == ["Beach.jpg", "Beach.mov", "IMG_2.jpg"]
@@ -282,8 +302,14 @@ def test_stopping_partway_keeps_what_was_done_and_undo_takes_it_back(home, lib):
     make(pf, lib, [f"{i}.jpg" for i in range(6)])
     before = contents(lib)
     calls = []
-    result = fo.run(db, "copy", "test", fo.plan_into([lib / f"{i}.jpg" for i in range(6)], lib / "c", "copy"),
-                    should_stop=lambda: len(calls) >= 3, progress=lambda d, t: calls.append(d))
+    result = fo.run(
+        db,
+        "copy",
+        "test",
+        fo.plan_into([lib / f"{i}.jpg" for i in range(6)], lib / "c", "copy"),
+        should_stop=lambda: len(calls) >= 3,
+        progress=lambda d, t: calls.append(d),
+    )
     assert result.stopped and result.finished == 3
     assert len(os.listdir(lib / "c")) == 3
     index_matches_disk(db, lib)
@@ -326,8 +352,13 @@ KILLER = textwrap.dedent("""
 """)
 
 
-@pytest.mark.parametrize("action,after", [("shift", n) for n in range(1, 8)] + [("move", n) for n in range(1, 8)]
-                         + [("copy", n) for n in range(1, 4)] + [("trash", n) for n in range(1, 4)])
+@pytest.mark.parametrize(
+    "action,after",
+    [("shift", n) for n in range(1, 8)]
+    + [("move", n) for n in range(1, 8)]
+    + [("copy", n) for n in range(1, 4)]
+    + [("trash", n) for n in range(1, 4)],
+)
 def test_killed_partway_loses_nothing(home, lib, tmp_path, action, after):
     pf, db, fo = home
     make(pf, lib, [f"{i}.jpg" for i in range(4)])
@@ -378,6 +409,7 @@ def test_a_move_to_another_drive_copies_checks_and_removes(home, lib, monkeypatc
 
 # --- in the app ----------------------------------------------------------------------------------------
 
+
 def test_the_clipboard_speaks_the_file_managers_formats(app):
     from PySide6.QtCore import QMimeData, QUrl
 
@@ -407,8 +439,11 @@ def test_commands_to_open_with_keep_their_paths():
     from homepix.ui import desktop
 
     if os.name == "nt":
-        assert desktop.split_command(r'"C:\Program Files\GIMP 3\bin\gimp.exe" --new %f') == \
-            [r"C:\Program Files\GIMP 3\bin\gimp.exe", "--new", "%f"]
+        assert desktop.split_command(r'"C:\Program Files\GIMP 3\bin\gimp.exe" --new %f') == [
+            r"C:\Program Files\GIMP 3\bin\gimp.exe",
+            "--new",
+            "%f",
+        ]
         assert desktop.split_command(r"C:\Tools\edit.exe") == [r"C:\Tools\edit.exe"]
     else:
         assert desktop.split_command("darktable --some-option '%f'") == ["darktable", "--some-option", "%f"]
@@ -505,8 +540,10 @@ def test_renaming_many_with_a_pattern(window, lib, app, monkeypatch):
     monkeypatch.setattr(file_dialogs.BatchRenameDialog, "exec", fake_exec)
     w.files.rename.trigger()
     wait_until(app, lambda: sorted(os.listdir(lib / "trip")) == [f"Trip {i}.jpg" for i in range(1, 5)])
-    wait_until(app, lambda: sorted(os.path.basename(it.path) for it in w.timeline.items)
-               == [f"Trip {i}.jpg" for i in range(1, 5)])
+    wait_until(
+        app,
+        lambda: sorted(os.path.basename(it.path) for it in w.timeline.items) == [f"Trip {i}.jpg" for i in range(1, 5)],
+    )
 
 
 def test_export_smaller_jpegs(window, lib, tmp_path, app):
@@ -538,8 +575,9 @@ def test_restoring_after_the_person_in_it_was_deleted(home, lib):
     make(pf, lib, ["a.jpg"])
     db.execute("INSERT INTO people (name) VALUES ('Ann')")
     pid = db.execute("SELECT id FROM photos").fetchone()[0]
-    db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,0,0,.1,.1,1,?,1)",
-               (pid, b"\x01\x02"))
+    db.execute(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,0,0,.1,.1,1,?,1)", (pid, b"\x01\x02")
+    )
     db.commit()
     fo.run(db, "trash", "t", fo.plan_trash([lib / "a.jpg"]))
     db.execute("DELETE FROM people")

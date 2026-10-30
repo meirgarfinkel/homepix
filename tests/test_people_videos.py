@@ -14,6 +14,7 @@ cv2 = pytest.importorskip("cv2")
 
 # --- reading videos --------------------------------------------------------------------------------
 
+
 def box(kind: bytes, payload: bytes) -> bytes:
     return struct.pack(">I", 8 + len(payload)) + kind + payload
 
@@ -50,8 +51,9 @@ def test_apples_local_date_wins(tmp_path):
     from homepix.core.video import video_meta
 
     f = tmp_path / "a.mov"
-    f.write_bytes(tiny_mp4(since_1904(dt.datetime(2024, 7, 1, 6, 30, tzinfo=dt.UTC)),
-                           apple_date="2024-07-01T09:30:05+0300"))
+    f.write_bytes(
+        tiny_mp4(since_1904(dt.datetime(2024, 7, 1, 6, 30, tzinfo=dt.UTC)), apple_date="2024-07-01T09:30:05+0300")
+    )
     assert video_meta(f)["taken"] == dt.datetime(2024, 7, 1, 9, 30, 5)
 
 
@@ -95,6 +97,7 @@ def photo_taken(path, when: str):
 
 # --- indexing videos -------------------------------------------------------------------------------
 
+
 def test_videos_are_indexed_without_ai_and_get_a_thumbnail(pf, lib, monkeypatch):
     import homepix.core.library as library
 
@@ -126,8 +129,10 @@ def recorded(path, local: str):
     if not available():
         pytest.skip("needs ExifTool")
     utc = dt.datetime.fromisoformat(local).astimezone(dt.UTC)
-    subprocess.run([*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}",
-                    str(path)], check=True)
+    subprocess.run(
+        [*et_command(), "-q", "-overwrite_original", f"-QuickTime:CreateDate={utc:%Y:%m:%d %H:%M:%S}", str(path)],
+        check=True,
+    )
     return path
 
 
@@ -140,8 +145,12 @@ def test_a_short_clip_taken_with_a_photo_is_its_motion(pf, lib):
     recorded(make_video(lib / "2024_06_01_09_00_00.mp4", 2), "2024-06-01 09:00:00")  # short, but no photo with it
     pf.index_folder(lib, want_faces=False)
     kinds = {name: r["kind"] for name, r in rows(pf, lib).items()}
-    assert kinds == {"live.jpg": "photo", "2024_05_01_12_00_00.mp4": "motion",
-                     "2024_05_01_12_00_02.mp4": "video", "2024_06_01_09_00_00.mp4": "video"}
+    assert kinds == {
+        "live.jpg": "photo",
+        "2024_05_01_12_00_00.mp4": "motion",
+        "2024_05_01_12_00_02.mp4": "video",
+        "2024_06_01_09_00_00.mp4": "video",
+    }
     db = pf.open_db()
     shown = sorted(os.path.basename(it.path) for it in load_items(db))
     assert shown == ["2024_05_01_12_00_02.mp4", "2024_06_01_09_00_00.mp4", "live.jpg"]
@@ -166,13 +175,16 @@ def test_video_info(pf, lib):
 
 # --- people ----------------------------------------------------------------------------------------
 
+
 def add_person(pf, name, photo_ids, w=0.2):
     db = pf.open_db()
     db.execute("INSERT INTO people (name) VALUES (?)", (name,))
     pid = db.execute("SELECT id FROM people WHERE name=?", (name,)).fetchone()[0]
     for i, photo_id in enumerate(photo_ids):
-        db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,?,?,?,?,?,?,?)",
-                   (photo_id, 0.3, 0.3, w, w, 0.99, pf.to_blob([1.0] + [0.01 * i] * 127), pid))
+        db.execute(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,?,?,?,?,?,?,?)",
+            (photo_id, 0.3, 0.3, w, w, 0.99, pf.to_blob([1.0] + [0.01 * i] * 127), pid),
+        )
     db.commit()
     db.close()
     return pid

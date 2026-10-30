@@ -40,8 +40,11 @@ class Plan:
 def root_of(path, folders) -> str | None:
     """The library folder path is in (the innermost, if one holds another)."""
     path = os.path.abspath(path)
-    inside = [os.path.abspath(f) for f in folders
-              if path == os.path.abspath(f) or path.startswith(os.path.join(os.path.abspath(f), ""))]
+    inside = [
+        os.path.abspath(f)
+        for f in folders
+        if path == os.path.abspath(f) or path.startswith(os.path.join(os.path.abspath(f), ""))
+    ]
     return max(inside, key=len) if inside else None
 
 
@@ -80,6 +83,7 @@ class _Sidecars:
 @dataclass
 class _Group:
     """A file and the ones that go with it, moved and named together."""
+
     lead: str
     taken: dt.datetime | None
     folder: str  # where they belong
@@ -105,7 +109,7 @@ def _place(root: str, path: str, taken: dt.datetime | None) -> tuple[str, str, s
     year = os.path.join(root, str(taken.year))
     in_place = within(folder, [year])
     named = taken.strftime(dates.FORMAT)
-    if in_place and dates.ORGANIZED.match(stem) and stem[:len(named)] == named:
+    if in_place and dates.ORGANIZED.match(stem) and stem[: len(named)] == named:
         named = stem  # already named so, maybe with its _1: kept
     return (folder if in_place else year), named, ("renamed" if in_place else f"to {taken.year}")
 
@@ -127,8 +131,10 @@ def _files(db, roots, scope):
     where, params = "", ()
     if scope:
         where, params = " AND (path LIKE ? ESCAPE '\\')", (_like(os.path.join(scope, "")),)
-    rows = db.execute("SELECT path, kind, taken, taken_source, qhash, error FROM photos WHERE 1" + where
-                      + " ORDER BY taken, path", params).fetchall()
+    rows = db.execute(
+        "SELECT path, kind, taken, taken_source, qhash, error FROM photos WHERE 1" + where + " ORDER BY taken, path",
+        params,
+    ).fetchall()
     files, not_ready = [], 0
     for r in rows:
         root = root_of(r["path"], roots)
@@ -172,14 +178,15 @@ def _named(moving) -> list:
             stem = g.base if n == 0 else f"{_numbered_base(g.base)}_{n}"
             targets = g.paths(stem)
             keys = [os.path.normcase(t) for t in targets]
-            free = all(k not in planned and (k in leaving or not os.path.lexists(t))
-                       for k, t in zip(keys, targets, strict=True))
+            free = all(
+                k not in planned and (k in leaving or not os.path.lexists(t))
+                for k, t in zip(keys, targets, strict=True)
+            )
             if free:
                 break
             n += 1
         planned.update(keys)
-        changes += [Change(src, dst, why) for (src, _, why), dst in zip(g.members, targets, strict=True)
-                    if src != dst]
+        changes += [Change(src, dst, why) for (src, _, why), dst in zip(g.members, targets, strict=True) if src != dst]
     return changes
 
 

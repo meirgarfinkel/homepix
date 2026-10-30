@@ -74,6 +74,7 @@ def row(db, path):
 
 # --- orientation arithmetic -----------------------------------------------------------------------
 
+
 def test_turning_four_times_comes_back_and_boxes_follow():
     from homepix.core.metadata import move_box, turned
 
@@ -95,6 +96,7 @@ def test_turning_four_times_comes_back_and_boxes_follow():
 
 # --- round trips ----------------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("ext", FORMATS)
 def test_details_round_trip(home, lib, ext):
     pf, db, fo, md = home
@@ -102,8 +104,12 @@ def test_details_round_trip(home, lib, ext):
     index(pf, lib)
     mtime = os.stat(p).st_mtime
     when = dt.datetime(2019, 5, 6, 7, 8, 9)
-    edit = md.Edit(description="Grandma's 90th\nin the garden, ünïcode ✓", keywords=["family", "garden, back"],
-                   date=when, gps=(31.778, -35.235))
+    edit = md.Edit(
+        description="Grandma's 90th\nin the garden, ünïcode ✓",
+        keywords=["family", "garden, back"],
+        date=when,
+        gps=(31.778, -35.235),
+    )
     result, cant = edit_and_run(db, fo, [p], edit)
     assert cant == [] and result.finished == 1, (cant, result)
     d = md.read([p])[str(p)]
@@ -120,7 +126,10 @@ def test_details_round_trip(home, lib, ext):
     r = row(db, p)
     assert r["qhash"] == quick_hash(p, os.path.getsize(p)) and r["size"] == os.path.getsize(p)
     assert (r["taken"], json.loads(r["keywords"]), r["description"]) == (
-        "2019-05-06 07:08:09", ["family", "garden, back"], edit.description)
+        "2019-05-06 07:08:09",
+        ["family", "garden, back"],
+        edit.description,
+    )
     info = index(pf, lib)
     assert (info["done"], info["moved"], info["removed"]) == (0, 0, 0)  # nothing to index again
 
@@ -131,8 +140,10 @@ def test_names_survive_editing(home, lib):
     index(pf, lib)
     pid = row(db, p)["id"]
     db.execute("INSERT INTO people (name) VALUES ('Ann')")
-    db.execute("INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,.1,.2,.3,.1,1,?,1)",
-               (pid, b"\x01\x02"))
+    db.execute(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?,.1,.2,.3,.1,1,?,1)",
+        (pid, b"\x01\x02"),
+    )
     db.execute("UPDATE photos SET faces_done=1")  # as if its faces had been found when indexed
     db.commit()
     edit_and_run(db, fo, [p], md.Edit(keywords=["party"], description="Ann"))
@@ -144,13 +155,14 @@ def test_names_survive_editing(home, lib):
 def test_undo_puts_back_exactly_what_was_there(home, lib):
     pf, db, fo, md = home
     p = make_photo(lib / "a.jpg", exif={270: "OLYMPUS DIGITAL CAMERA", 0x9003: "2010:01:02 03:04:05"})
-    subprocess.run([*et_command(), "-q", "-overwrite_original", "-IPTC:Keywords=old one", "-IPTC:Keywords=old two",
-                    str(p)], check=True)
+    subprocess.run(
+        [*et_command(), "-q", "-overwrite_original", "-IPTC:Keywords=old one", "-IPTC:Keywords=old two", str(p)],
+        check=True,
+    )
     index(pf, lib)
     original = md.read([p])[str(p)].tags
     assert md.read([p])[str(p)].description == ""  # the camera's words aren't a description
-    edit_and_run(db, fo, [p], md.Edit(description="New", keywords=["x"], date=dt.datetime(2020, 1, 1),
-                                      gps=(1.5, 2.5)))
+    edit_and_run(db, fo, [p], md.Edit(description="New", keywords=["x"], date=dt.datetime(2020, 1, 1), gps=(1.5, 2.5)))
     changed = md.read([p])[str(p)]
     assert changed.tags["IPTC:Keywords"] == "x"  # the older tags are kept in step
     assert changed.tags["IFD0:ImageDescription"] == "New"
@@ -202,6 +214,7 @@ def test_setting_a_date_on_a_photo_with_none(home, lib):
 
 # --- turning ----------------------------------------------------------------------------------------
 
+
 def red_side(path):
     import pillow_heif
     from PIL import ImageOps
@@ -209,8 +222,12 @@ def red_side(path):
     pillow_heif.register_heif_opener()
     img = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     w, h = img.size
-    strips = {"left": (0, 0, w // 4, h), "right": (w - w // 4, 0, w, h), "top": (0, 0, w, h // 4),
-              "bottom": (0, h - h // 4, w, h)}
+    strips = {
+        "left": (0, 0, w // 4, h),
+        "right": (w - w // 4, 0, w, h),
+        "top": (0, 0, w, h // 4),
+        "bottom": (0, h - h // 4, w, h),
+    }
 
     def red(box):  # every pixel of the strip red
         r, g, b = (img.crop(box).getextrema()[c] for c in range(3))
@@ -259,11 +276,21 @@ def test_a_format_exiftool_cant_write_is_reported(home, lib):
 
 # --- reading what other apps wrote ------------------------------------------------------------------
 
+
 def test_indexing_reads_keywords_and_descriptions_written_elsewhere(home, lib):
     pf, db, fo, md = home
     p = make_photo(lib / "a.jpg")
-    subprocess.run([*et_command(), "-q", "-overwrite_original", "-XMP-dc:Subject=trip",
-                    "-XMP-dc:Description=From digiKam", str(p)], check=True)
+    subprocess.run(
+        [
+            *et_command(),
+            "-q",
+            "-overwrite_original",
+            "-XMP-dc:Subject=trip",
+            "-XMP-dc:Description=From digiKam",
+            str(p),
+        ],
+        check=True,
+    )
     index(pf, lib)
     r = row(db, p)
     assert (json.loads(r["keywords"]), r["description"], r["details_done"]) == (["trip"], "From digiKam", 1)
@@ -304,7 +331,9 @@ def test_killed_while_writing_details(home, lib, tmp_path, after):
     index(pf, lib)
     script = tmp_path / "killer.py"
     script.write_text(KILLER)
-    r = subprocess.run([sys.executable, str(script), str(lib), str(after)], env=dict(os.environ, PYTHONPATH=os.getcwd()))
+    r = subprocess.run(
+        [sys.executable, str(script), str(lib), str(after)], env=dict(os.environ, PYTHONPATH=os.getcwd())
+    )
     assert r.returncode == 9
     fo.recover(db)
     from homepix.core.util import quick_hash
@@ -323,6 +352,7 @@ def test_killed_while_writing_details(home, lib, tmp_path, after):
 
 
 # --- in the app ----------------------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def app():
@@ -401,8 +431,7 @@ def test_rotating_in_the_viewer_shows_it_turned(window, app):
     wait_until(app, lambda: w.viewer._image() is not None)
     before = w.viewer._image()[0].size()
     w.photo.turns["right"].trigger()
-    wait_until(app, lambda: not w.ops.busy and w.viewer._image() is not None
-               and w.viewer._image()[0].size() != before)
+    wait_until(app, lambda: not w.ops.busy and w.viewer._image() is not None and w.viewer._image()[0].size() != before)
     assert w.viewer._image()[0].size().width() == before.height()
 
 
@@ -418,7 +447,9 @@ def test_all_details_lists_the_tags(window, app, monkeypatch):
     groups = {tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())}
     assert "ExifIFD" in groups
     seen["dlg"].find.setText("DateTimeOriginal")
-    visible = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount()) if not tree.topLevelItem(i).isHidden()]
+    visible = [
+        tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount()) if not tree.topLevelItem(i).isHidden()
+    ]
     assert visible == ["ExifIFD"]
 
 

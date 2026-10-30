@@ -119,8 +119,12 @@ class Viewer(QWidget):
         return self.faces if self.show_faces and here else []
 
     def _face_rect(self, f, rect: QRectF) -> QRectF:
-        return QRectF(rect.x() + f["x"] * rect.width(), rect.y() + f["y"] * rect.height(),
-                      f["w"] * rect.width(), f["h"] * rect.height())
+        return QRectF(
+            rect.x() + f["x"] * rect.width(),
+            rect.y() + f["y"] * rect.height(),
+            f["w"] * rect.width(),
+            f["h"] * rect.height(),
+        )
 
     def _face_at(self, pos):
         shown = self._image()
@@ -236,8 +240,11 @@ class Viewer(QWidget):
         p.drawText(box.adjusted(16, 10, -16, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, title)
         p.setPen(QColor(255, 255, 255, 200))
         p.setFont(small)
-        p.drawText(box.adjusted(16, 12 + fm_big.height(), -16, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-                   fm_small.elidedText(detail, Qt.TextElideMode.ElideLeft, int(box.width()) - 28))
+        p.drawText(
+            box.adjusted(16, 12 + fm_big.height(), -16, 0),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            fm_small.elidedText(detail, Qt.TextElideMode.ElideLeft, int(box.width()) - 28),
+        )
         keys = "← →  switch copies   ·   ↑ ↓  other duplicates   ·   K  keep this one   ·   Esc  back"
         kw = fm_small.horizontalAdvance(keys) + 32
         bar = QRectF((self.width() - kw) / 2, self.height() - fm_small.height() - 40, kw, fm_small.height() + 16)
@@ -262,8 +269,15 @@ class Viewer(QWidget):
         p.drawEllipse(box)
         c, r = box.center(), box.width() / 2
         p.setBrush(QColor(255, 255, 255, 235))
-        p.drawPolygon(QPolygonF([QPointF(c.x() - r * 0.28, c.y() - r * 0.42), QPointF(c.x() - r * 0.28, c.y() + r * 0.42),
-                                 QPointF(c.x() + r * 0.45, c.y())]))
+        p.drawPolygon(
+            QPolygonF(
+                [
+                    QPointF(c.x() - r * 0.28, c.y() - r * 0.42),
+                    QPointF(c.x() - r * 0.28, c.y() + r * 0.42),
+                    QPointF(c.x() + r * 0.45, c.y()),
+                ]
+            )
+        )
 
     def play(self):
         """Open the video in the system's player (HomePix has none of its own)."""
@@ -319,7 +333,7 @@ class Viewer(QWidget):
     def wheelEvent(self, e):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier or self.zoom is not None:
             steps = e.angleDelta().y() / 120
-            self.set_zoom(self._current_zoom() * (1.2 ** steps), e.position())
+            self.set_zoom(self._current_zoom() * (1.2**steps), e.position())
         else:  # wheel without Ctrl flicks through photos while fitted
             self.go(self.index + (1 if e.angleDelta().y() < 0 else -1))
 
@@ -331,8 +345,11 @@ class Viewer(QWidget):
         self.set_zoom(None if self.zoom is not None else 1.0, e.position())
 
     def mousePressEvent(self, e):
-        face = self._face_at(e.position()) if e.button() in (Qt.MouseButton.LeftButton,
-                                                              Qt.MouseButton.RightButton) else None
+        face = (
+            self._face_at(e.position())
+            if e.button() in (Qt.MouseButton.LeftButton, Qt.MouseButton.RightButton)
+            else None
+        )
         if face is not None:
             self.face_clicked.emit(face, e.globalPosition().toPoint())
         elif e.button() == Qt.MouseButton.LeftButton and self._is_video() and self._play_rect().contains(e.position()):
@@ -354,8 +371,10 @@ class Viewer(QWidget):
         rect = self._target_rect(shown)
         d = e.position() - self._drag_from
         self._drag_from = e.position()
-        self._center = QPointF(min(1, max(0, self._center.x() - d.x() / rect.width())),
-                               min(1, max(0, self._center.y() - d.y() / rect.height())))
+        self._center = QPointF(
+            min(1, max(0, self._center.x() - d.x() / rect.width())),
+            min(1, max(0, self._center.y() - d.y() / rect.height())),
+        )
         self.update()
 
     def mouseReleaseEvent(self, e):
@@ -381,10 +400,15 @@ class Viewer(QWidget):
             ((K.Key_Minus,), lambda: self.set_zoom(self._current_zoom() / 1.25)),
             ((K.Key_0, K.Key_Z), lambda: self.set_zoom(None)),
             ((K.Key_1,), lambda: self.set_zoom(1.0)),
-            ((K.Key_Escape,), lambda: self.window().showNormal() if self.window().isFullScreen() else self.closed.emit()),
+            (
+                (K.Key_Escape,),
+                lambda: self.window().showNormal() if self.window().isFullScreen() else self.closed.emit(),
+            ),
             ((K.Key_N,), self.toggle_faces),
-            ((K.Key_F, K.Key_F11), lambda: self.window().showNormal() if self.window().isFullScreen()
-             else self.window().showFullScreen()),
+            (
+                (K.Key_F, K.Key_F11),
+                lambda: self.window().showNormal() if self.window().isFullScreen() else self.window().showFullScreen(),
+            ),
         ):
             keys.update(dict.fromkeys(names, do))
         if self._is_video():

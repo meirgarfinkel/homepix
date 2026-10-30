@@ -69,8 +69,9 @@ def _host_env() -> dict:
 
 def _launch(args) -> bool:
     try:
-        subprocess.Popen(args, env=_host_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
+        subprocess.Popen(
+            args, env=_host_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
         return True
     except OSError:
         return False
@@ -105,9 +106,21 @@ def show_in_folder(path: str) -> bool:
     if sys.platform.startswith("linux") and shutil.which("dbus-send"):
         url = QUrl.fromLocalFile(path).toString()
         try:
-            r = subprocess.run(["dbus-send", "--session", "--print-reply", "--dest=org.freedesktop.FileManager1",
-                                "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems",
-                                f"array:string:{url}", "string:"], env=_host_env(), capture_output=True, timeout=5)
+            r = subprocess.run(
+                [
+                    "dbus-send",
+                    "--session",
+                    "--print-reply",
+                    "--dest=org.freedesktop.FileManager1",
+                    "/org/freedesktop/FileManager1",
+                    "org.freedesktop.FileManager1.ShowItems",
+                    f"array:string:{url}",
+                    "string:",
+                ],
+                env=_host_env(),
+                capture_output=True,
+                timeout=5,
+            )
             if r.returncode == 0:
                 return True
         except (OSError, subprocess.TimeoutExpired):

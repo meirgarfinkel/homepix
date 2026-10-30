@@ -97,8 +97,18 @@ class Indexer:
         self.again = False
         self.forget_missing = False  # next pass: also remove photos that can't be found
         self.on_finished = on_finished
-        self.state = {"running": False, "phase": "idle", "done": 0, "todo": 0, "eta": None, "error": None,
-                      "folder": None, "last_run": None, "missing": 0, "changes": 0}
+        self.state = {
+            "running": False,
+            "phase": "idle",
+            "done": 0,
+            "todo": 0,
+            "eta": None,
+            "error": None,
+            "folder": None,
+            "last_run": None,
+            "missing": 0,
+            "changes": 0,
+        }
 
     def start(self, forget_missing=False):
         with self.lock:
@@ -122,10 +132,17 @@ class Indexer:
 
     def _progress(self, info):
         with self.lock:
-            self.state.update(phase=info["phase"], done=info["done"], todo=info["todo"],
-                              eta=info["eta"], folder=info["root"], running=True,
-                              sharpen_done=info.get("sharpen_done", 0), sharpen_todo=info.get("sharpen_todo", 0),
-                              sharpen_eta=info.get("sharpen_eta"))
+            self.state.update(
+                phase=info["phase"],
+                done=info["done"],
+                todo=info["todo"],
+                eta=info["eta"],
+                folder=info["root"],
+                running=True,
+                sharpen_done=info.get("sharpen_done", 0),
+                sharpen_todo=info.get("sharpen_todo", 0),
+                sharpen_eta=info.get("sharpen_eta"),
+            )
 
     def _run(self):
         be_nice()
@@ -143,8 +160,7 @@ class Indexer:
         while True:
             self.again = False
             with self.lock:
-                self.state.update(running=True, error=None, phase="scanning", done=0, todo=0, eta=None,
-                                  folder=None)
+                self.state.update(running=True, error=None, phase="scanning", done=0, todo=0, eta=None, folder=None)
                 forget, self.forget_missing = self.forget_missing, False
             missing, changed = 0, False
             for folder in library_folders():
@@ -153,8 +169,9 @@ class Indexer:
                 if not Path(folder).is_dir():
                     continue  # e.g. an unplugged drive; its photos stay browsable and searchable
                 try:
-                    info = index_folder(folder, True, self._progress, lambda: self.stop_flag or self.again,
-                                        forget_missing=forget)
+                    info = index_folder(
+                        folder, True, self._progress, lambda: self.stop_flag or self.again, forget_missing=forget
+                    )
                     missing += info["missing"]
                     changed |= bool(info["done"] or info["moved"] or info["removed"])
                 except ModelDownloadError as e:

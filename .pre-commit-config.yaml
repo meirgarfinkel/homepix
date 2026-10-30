@@ -1,7 +1,9 @@
-# Checks that run automatically before every `git push` (and in CI).
+# Checks that run automatically: on every `git commit` ruff tidies the code being committed (formats it and
+# fixes what it safely can; a commit it changed stops, so `git add` the result and commit again), and on every
+# `git push` (and in CI) everything is checked without changing anything.
 # One-time setup per clone:  pipx install pre-commit && pre-commit install
 # Run by hand:               pre-commit run --all-files --hook-stage pre-push
-default_install_hook_types: [pre-push]
+default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-push]
 
 repos:
@@ -9,6 +11,15 @@ repos:
     rev: v0.14.10
     hooks:
       - id: ruff-check
+        args: [--fix]
+        stages: [pre-commit]
+      - id: ruff-format
+        stages: [pre-commit]
+      - id: ruff-check
+        stages: [pre-push]
+      - id: ruff-format
+        args: [--check]
+        stages: [pre-push]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

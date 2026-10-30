@@ -7,7 +7,6 @@ and done as a step of an operation in the journal (core/fileops.py), so Undo put
 Naming someone recognizes them in more photos too: those faces are part of the same change.
 """
 
-
 import numpy as np
 
 from .config import ASSIGN_MARGIN, ASSIGN_MIN_PX, ASSIGN_SIM, CLUSTER_SIM, FOLLOW_UP_FACES, MAYBE_SIM, SUBGROUP_SIM
@@ -42,10 +41,10 @@ def likeness_to(embs, owners, refs, people):
     sims = np.empty((len(embs), len(people)), np.float32)
     cols = [np.flatnonzero(owners == p) for p in people]
     for start in range(0, len(embs), 2048):  # (a block at a time: faces × named faces can be big)
-        block = embs[start:start + 2048] @ refs.T
+        block = embs[start : start + 2048] @ refs.T
         for j, c in enumerate(cols):
             k = min(RECOGNIZE_K, len(c))
-            sims[start:start + 2048, j] = -np.partition(-block[:, c], k - 1, axis=1)[:, :k].mean(axis=1)
+            sims[start : start + 2048, j] = -np.partition(-block[:, c], k - 1, axis=1)[:, :k].mean(axis=1)
     return sims
 
 
@@ -61,7 +60,7 @@ def _learn(pos, *negs, l2=1e-3, steps=15):
     neg = np.vstack(negs)
     x = np.hstack([np.vstack([pos, neg]), np.ones((len(pos) + len(neg), 1), np.float32)]).astype(np.float64)
     y = np.r_[np.ones(len(pos)), np.zeros(len(neg))]
-    weight = np.r_[np.full(len(pos), .5 / len(pos)), *(np.full(len(n), .5 / len(negs) / len(n)) for n in negs)]
+    weight = np.r_[np.full(len(pos), 0.5 / len(pos)), *(np.full(len(n), 0.5 / len(negs) / len(n)) for n in negs)]
     ridge = l2 * np.eye(x.shape[1])
     ridge[-1, -1] = 0  # (not the bias)
     w = np.zeros(x.shape[1])
@@ -111,8 +110,15 @@ def auto_assign(db, write: bool = True):
     [(person id, face id)] it would tag instead, changing nothing."""
     owners, refs = references(db)
     people = sorted(set(owners.tolist()))
-    rows, embs = load_faces(db, "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0 "
-                            "AND (f.px IS NULL OR f.px >= ?)", (ASSIGN_MIN_PX,)) if people else ([], None)
+    rows, embs = (
+        load_faces(
+            db,
+            "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0 AND (f.px IS NULL OR f.px >= ?)",
+            (ASSIGN_MIN_PX,),
+        )
+        if people
+        else ([], None)
+    )
     if not rows:
         return 0 if write else []
     sims = likeness_to(embs, owners, refs, people)
@@ -169,9 +175,9 @@ def cluster_unnamed(db):
         return []
     quality = np.array([r["score"] * min(r["w"], r["h"]) for r in rows])
     cents = np.empty_like(embs)  # each group's centroid (there are never more groups than faces)
-    sums = np.empty_like(embs)   # running sum of each group's faces: normalize(sum) == normalize(mean)
+    sums = np.empty_like(embs)  # running sum of each group's faces: normalize(sum) == normalize(mean)
     members = []
-    groups_in = {}               # photo id -> groups that already have a face from that photo
+    groups_in = {}  # photo id -> groups that already have a face from that photo
     for i in np.argsort(-quality):  # clearest faces first, so groups start from good examples
         e, photo, n = embs[i], rows[i]["photo_id"], len(members)
         if n:
@@ -216,11 +222,14 @@ def portrait(db, person_id: int, n_faces: int):
 def named_people(db) -> list[dict]:
     """Everyone named, most photographed first: id, name, photos, and a portrait (a face row for
     face_thumb, or None)."""
-    people = [dict(r) for r in db.execute(
-        "SELECT pe.id, pe.name, COUNT(DISTINCT f.photo_id) AS photos, COUNT(f.id) AS faces FROM people pe "
-        "JOIN faces f ON f.person_id = pe.id JOIN photos p ON p.id = f.photo_id "
-        "WHERE p.error IS NULL AND p.qhash IS NOT NULL GROUP BY pe.id ORDER BY photos DESC, pe.name"
-    )]
+    people = [
+        dict(r)
+        for r in db.execute(
+            "SELECT pe.id, pe.name, COUNT(DISTINCT f.photo_id) AS photos, COUNT(f.id) AS faces FROM people pe "
+            "JOIN faces f ON f.person_id = pe.id JOIN photos p ON p.id = f.photo_id "
+            "WHERE p.error IS NULL AND p.qhash IS NOT NULL GROUP BY pe.id ORDER BY photos DESC, pe.name"
+        )
+    ]
     for person in people:
         person["face"] = portrait(db, person["id"], person.pop("faces"))
     return people
@@ -228,14 +237,20 @@ def named_people(db) -> list[dict]:
 
 # --- changes -----------------------------------------------------------------------------------------
 
+
 def _faces_now(db, face_ids) -> dict:
     marks = ",".join("?" * len(face_ids))
-    return {str(r[0]): [r[1], r[2] or 0, r[3], r[4]] for r in db.execute(
-        f"SELECT id, person_id, locked, hidden, not_person FROM faces WHERE id IN ({marks})", list(face_ids))}
+    return {
+        str(r[0]): [r[1], r[2] or 0, r[3], r[4]]
+        for r in db.execute(
+            f"SELECT id, person_id, locked, hidden, not_person FROM faces WHERE id IN ({marks})", list(face_ids)
+        )
+    }
 
 
-def _change(db, faces: dict, people: dict | None = None, recognize: bool = False,
-            learn: bool = False, teach=()) -> dict | None:
+def _change(
+    db, faces: dict, people: dict | None = None, recognize: bool = False, learn: bool = False, teach=()
+) -> dict | None:
     """The step that sets these faces ({face id: [person id, locked, hidden, not person]}, the last
     left out to keep it) and people ({person id: name or None}); recognize: and tags the faces that
     naming makes recognizable; learn: a face taken from someone is remembered as not them, and the
@@ -284,13 +299,20 @@ def _step(db, faces: dict, people: dict) -> dict | None:
         if len(v) == 3 and k in old_faces:
             v.append(old_faces[k][3])
     faces = {k: v for k, v in faces.items() if k in old_faces and old_faces[k] != v}
-    old_people = {k: (r[0] if (r := db.execute("SELECT name FROM people WHERE id=?", (int(k),)).fetchone()) else None)
-                  for k in people}
+    old_people = {
+        k: (r[0] if (r := db.execute("SELECT name FROM people WHERE id=?", (int(k),)).fetchone()) else None)
+        for k in people
+    }
     people = {k: v for k, v in people.items() if old_people[k] != v}
     if not faces and not people:
         return None
     old = {"faces": {k: old_faces[k] for k in faces}, "people": {k: old_people[k] for k in people}}
-    return {"action": "people", "src": None, "dst": None, "before": {"old": old, "new": {"faces": faces, "people": people}}}
+    return {
+        "action": "people",
+        "src": None,
+        "dst": None,
+        "before": {"old": old, "new": {"faces": faces, "people": people}},
+    }
 
 
 def apply(db, state: dict):
@@ -298,13 +320,19 @@ def apply(db, state: dict):
     those that go last, once no face does."""
     for pid, name in state.get("people", {}).items():
         if name is not None:
-            db.execute("INSERT INTO people (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name",
-                       (int(pid), name))
+            db.execute(
+                "INSERT INTO people (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name",
+                (int(pid), name),
+            )
     faces = state.get("faces", {}).items()
-    db.executemany("UPDATE faces SET person_id=?, locked=?, hidden=? WHERE id=?",
-                   [(v[0], v[1], v[2], int(fid)) for fid, v in faces])
-    db.executemany("UPDATE faces SET not_person=? WHERE id=?",  # (steps from before it was kept have none)
-                   [(v[3], int(fid)) for fid, v in faces if len(v) > 3])
+    db.executemany(
+        "UPDATE faces SET person_id=?, locked=?, hidden=? WHERE id=?",
+        [(v[0], v[1], v[2], int(fid)) for fid, v in faces],
+    )
+    db.executemany(
+        "UPDATE faces SET not_person=? WHERE id=?",  # (steps from before it was kept have none)
+        [(v[3], int(fid)) for fid, v in faces if len(v) > 3],
+    )
     for pid, name in state.get("people", {}).items():
         if name is None:
             db.execute("DELETE FROM people WHERE id=?", (int(pid),))
@@ -331,7 +359,7 @@ def plan_name(db, face_ids, name: str):
 
 
 def plan_not(db, face_ids):
-    """"That isn't them": unnamed, never recognized again (it can still be named), and remembered as
+    """ "That isn't them": unnamed, never recognized again (it can still be named), and remembered as
     not them, so faces like it are less likely to be recognized as them."""
     return _change(db, {f: [None, 1, 0] for f in face_ids}, learn=True)
 
@@ -362,8 +390,14 @@ def plan_merge(db, pids, into: int):
     """Everyone in pids is the person into."""
     pids = [p for p in pids if p != into]
     marks = ",".join("?" * len(pids))
-    faces = {r[0]: [into, r[1] or 0, 0] for r in db.execute(
-        f"SELECT id, locked FROM faces WHERE person_id IN ({marks})", pids)} if pids else {}
+    faces = (
+        {
+            r[0]: [into, r[1] or 0, 0]
+            for r in db.execute(f"SELECT id, locked FROM faces WHERE person_id IN ({marks})", pids)
+        }
+        if pids
+        else {}
+    )
     for r in db.execute(f"SELECT id, person_id, locked, hidden FROM faces WHERE not_person IN ({marks})", pids):
         person, locked, hidden = faces.get(r[0], [r[1], r[2] or 0, r[3]])[:3]
         faces[r[0]] = [person, locked, hidden, None if person == into else into]  # not them: not into either
@@ -380,12 +414,18 @@ def plan_forget(db, pid: int):
 
 # --- for the app -----------------------------------------------------------------------------------
 
+
 def face_rows(db, where: str, params=()) -> list[dict]:
     """Faces to show, with what face_thumb needs."""
-    return [dict(r) for r in db.execute(
-        "SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.person_id, pe.name, p.path, p.qhash FROM faces f "
-        f"JOIN photos p ON p.id = f.photo_id LEFT JOIN people pe ON pe.id = f.person_id WHERE ({where}) "
-        "AND p.error IS NULL AND p.qhash IS NOT NULL", params)]
+    return [
+        dict(r)
+        for r in db.execute(
+            "SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.person_id, pe.name, p.path, p.qhash FROM faces f "
+            f"JOIN photos p ON p.id = f.photo_id LEFT JOIN people pe ON pe.id = f.person_id WHERE ({where}) "
+            "AND p.error IS NULL AND p.qhash IS NOT NULL",
+            params,
+        )
+    ]
 
 
 NEW, MAYBE, KNOWN = 0, 1, 2  # how much a group looks like someone named (its faces' "tier")
@@ -412,12 +452,14 @@ def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
         quality = np.array([r["score"] * min(r["w"], r["h"]) for r in g])
         tier, like = NEW, None
         if people:
-            alike = every[ends[n] - len(g):ends[n]].mean(axis=0)  # the group, to each person
+            alike = every[ends[n] - len(g) : ends[n]].mean(axis=0)  # the group, to each person
             j = int(np.argmax(alike))
             if alike[j] >= MAYBE_SIM:
                 tier, like = (KNOWN if alike[j] >= ASSIGN_SIM else MAYBE), names.get(people[j])
-        faces = [{**{k: g[i][k] for k in _KEEP}, "emb": embs[i], "tier": tier, "like": like}
-                 for i in likeness_order(embs, quality)]
+        faces = [
+            {**{k: g[i][k] for k in _KEEP}, "emb": embs[i], "tier": tier, "like": like}
+            for i in likeness_order(embs, quality)
+        ]
         out.append((tier, -len(g), -float(quality.mean()), faces))
     out.sort(key=lambda t: t[:3])
     return [faces for *_, faces in out]

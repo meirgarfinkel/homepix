@@ -22,8 +22,13 @@ from .video import is_video
 
 DESCRIPTION = ("XMP-dc:Description", "IPTC:Caption-Abstract", "IFD0:ImageDescription")
 KEYWORDS = ("XMP-dc:Subject", "IPTC:Keywords")
-PHOTO_DATES = ("ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate", "XMP-exif:DateTimeOriginal",
-               "XMP-xmp:CreateDate", "XMP-photoshop:DateCreated")
+PHOTO_DATES = (
+    "ExifIFD:DateTimeOriginal",
+    "ExifIFD:CreateDate",
+    "XMP-exif:DateTimeOriginal",
+    "XMP-xmp:CreateDate",
+    "XMP-photoshop:DateCreated",
+)
 VIDEO_DATES = ("QuickTime:CreateDate", "Keys:CreationDate")  # its clock (the date, see dates.py); local
 GPS = ("GPS:GPSLatitude", "GPS:GPSLatitudeRef", "GPS:GPSLongitude", "GPS:GPSLongitudeRef")
 ORIENTATION = ("IFD0:Orientation", "QuickTime:Rotation")
@@ -41,12 +46,23 @@ class MetadataError(OSError):
 # --- orientation -----------------------------------------------------------------------------------
 # Each EXIF orientation maps a point of the stored image (u, v, from 0 to 1) to where it's shown:
 # shown = M @ (u, v) + t.
-_MAPS = {1: ((1, 0, 0, 1), (0, 0)), 2: ((-1, 0, 0, 1), (1, 0)), 3: ((-1, 0, 0, -1), (1, 1)),
-         4: ((1, 0, 0, -1), (0, 1)), 5: ((0, 1, 1, 0), (0, 0)), 6: ((0, -1, 1, 0), (1, 0)),
-         7: ((0, -1, -1, 0), (1, 1)), 8: ((0, 1, -1, 0), (0, 1))}
+_MAPS = {
+    1: ((1, 0, 0, 1), (0, 0)),
+    2: ((-1, 0, 0, 1), (1, 0)),
+    3: ((-1, 0, 0, -1), (1, 1)),
+    4: ((1, 0, 0, -1), (0, 1)),
+    5: ((0, 1, 1, 0), (0, 0)),
+    6: ((0, -1, 1, 0), (1, 0)),
+    7: ((0, -1, -1, 0), (1, 1)),
+    8: ((0, 1, -1, 0), (0, 1)),
+}
 # Turning what's shown: shown' = M @ shown + t
-TURNS = {"right": ((0, -1, 1, 0), (1, 0)), "left": ((0, 1, -1, 0), (0, 1)),
-         "flip-h": ((-1, 0, 0, 1), (1, 0)), "flip-v": ((1, 0, 0, -1), (0, 1))}
+TURNS = {
+    "right": ((0, -1, 1, 0), (1, 0)),
+    "left": ((0, 1, -1, 0), (0, 1)),
+    "flip-h": ((-1, 0, 0, 1), (1, 0)),
+    "flip-v": ((1, 0, 0, -1), (0, 1)),
+}
 HEIC_ROTATION = {1: 0, 8: 90, 3: 180, 6: 270}  # degrees counter-clockwise
 
 
@@ -91,6 +107,7 @@ def move_box(box, old: int, new: int):
 
 
 # --- reading ---------------------------------------------------------------------------------------
+
 
 @dataclass
 class Details:
@@ -157,9 +174,11 @@ def read_all(path) -> dict:
 
 # --- changing --------------------------------------------------------------------------------------
 
+
 @dataclass
 class Edit:
     """What to change; None means leave it as it is."""
+
     description: str | None = None
     keywords: list | None = None  # the whole list
     add_keywords: tuple = ()
@@ -228,8 +247,14 @@ def changes(path, d: Details, edit: Edit, shown: dt.datetime | None = None) -> d
     if edit.gps is not None and not video and tuple(edit.gps or ()) != tuple(d.gps or ()):
         if edit.gps:
             lat, lon = edit.gps
-            out.update({"GPS:GPSLatitude": abs(lat), "GPS:GPSLatitudeRef": "N" if lat >= 0 else "S",
-                        "GPS:GPSLongitude": abs(lon), "GPS:GPSLongitudeRef": "E" if lon >= 0 else "W"})
+            out.update(
+                {
+                    "GPS:GPSLatitude": abs(lat),
+                    "GPS:GPSLatitudeRef": "N" if lat >= 0 else "S",
+                    "GPS:GPSLongitude": abs(lon),
+                    "GPS:GPSLongitudeRef": "E" if lon >= 0 else "W",
+                }
+            )
         else:
             out.update({t: None for t in GPS if t in has})
     if edit.turn:

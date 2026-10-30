@@ -77,9 +77,11 @@ def sharpen_thumbs(db, prefix: str, should_stop=lambda: False, progress=None, wo
     goes. A photo that can't be read now is tried again next time. Returns how many were made."""
     from concurrent.futures import ThreadPoolExecutor
 
-    rows = db.execute("SELECT qhash, path FROM photos WHERE qhash IS NOT NULL AND error IS NULL "
-                      "AND kind IN ('photo', 'video') AND substr(path, 1, ?) = ? ORDER BY taken DESC",
-                      (len(prefix), prefix)).fetchall()
+    rows = db.execute(
+        "SELECT qhash, path FROM photos WHERE qhash IS NOT NULL AND error IS NULL "
+        "AND kind IN ('photo', 'video') AND substr(path, 1, ?) = ? ORDER BY taken DESC",
+        (len(prefix), prefix),
+    ).fetchall()
     seen, todo = set(), []
     for q, path in rows:
         if q not in seen and not thumb_file(q).exists():
@@ -102,7 +104,7 @@ def sharpen_thumbs(db, prefix: str, should_stop=lambda: False, progress=None, wo
         for start in range(0, len(todo), 24):  # a batch at a time, so stopping is quick
             if should_stop():
                 break
-            batch = todo[start:start + 24]
+            batch = todo[start : start + 24]
             made += sum(pool.map(make, batch))
             done += len(batch)
             report(done, len(todo))

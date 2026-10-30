@@ -63,9 +63,7 @@ def ensure_models(names):
         except Exception as e:
             tmp.unlink(missing_ok=True)
             raise ModelDownloadError(
-                f"Could not download {name}: {e}\n"
-                f"You can download it yourself from\n  {url}\n"
-                f"and save it as\n  {dest}"
+                f"Could not download {name}: {e}\nYou can download it yourself from\n  {url}\nand save it as\n  {dest}"
             ) from e
         if tmp.stat().st_size != size:
             tmp.unlink(missing_ok=True)

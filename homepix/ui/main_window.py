@@ -78,8 +78,11 @@ def load_library(place):
     db = open_db()
     try:
         excluded = excluded_folders()
-        items = (load_items(db, folder=_folder(place), person=person_of(place), excluded=excluded)
-                 if shows_photos(place) else [])
+        items = (
+            load_items(db, folder=_folder(place), person=person_of(place), excluded=excluded)
+            if shows_photos(place)
+            else []
+        )
         counts = folder_counts(db)
         unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
         total = sum(n for f, n in counts.items() if not within(f, excluded))
@@ -93,8 +96,11 @@ def load_who(follow=None):
     might be them too (None if not asked for)."""
     db = open_db()
     try:
-        return (known_people.who_groups(db), [r[0] for r in db.execute("SELECT name FROM people")],
-                known_people.follow_up(db, follow) if follow else None)
+        return (
+            known_people.who_groups(db),
+            [r[0] for r in db.execute("SELECT name FROM people")],
+            known_people.follow_up(db, follow) if follow else None,
+        )
     finally:
         db.close()
 
@@ -166,8 +172,7 @@ class JumpSlider(QSlider):
             if not handle.contains(e.position().toPoint()):
                 span = groove.width() - handle.width()
                 x = round(e.position().x()) - groove.x() - handle.width() // 2
-                self.setValue(QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), x, span,
-                                                             opt.upsideDown))
+                self.setValue(QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), x, span, opt.upsideDown))
         super().mousePressEvent(e)  # (now on the handle: a drag carries on from here)
 
 
@@ -336,7 +341,8 @@ class MainWindow(QMainWindow):
         self.who.named.connect(lambda ids, name: self._answer_who(ids, lambda: self.naming.name(ids, name)))
         self.who.hidden.connect(lambda ids: self._answer_who(ids, lambda: self.naming.hide(ids)))
         self.who.confirmed.connect(
-            lambda yes, no, name: self._answer_who(yes + no, lambda: self.naming.confirm(yes, no, name)))
+            lambda yes, no, name: self._answer_who(yes + no, lambda: self.naming.confirm(yes, no, name))
+        )
         self.who.opened.connect(self._open_face_photo)
         self.person_faces.opened.connect(self._open_face_photo)
         self.dupes.trash_extras.connect(self.dedupe.trash_extras)
@@ -400,14 +406,20 @@ class MainWindow(QMainWindow):
     def _status_shown(self, *_):
         """The status bar only while there's something to say."""
         s = self.index_status
-        self.statusBar().setVisible(bool(self.statusBar().currentMessage()) or not s.label.isHidden()
-                                    or not s.bar.isHidden())
+        self.statusBar().setVisible(
+            bool(self.statusBar().currentMessage()) or not s.label.isHidden() or not s.bar.isHidden()
+        )
 
     def _restyle(self):
         """The icons, after the colours changed."""
-        for action, name in ((self.back_action, "back"), (self.library_action, "sidebar"),
-                             (self.faces_action, "faces"), (self.info_action, "info"),
-                             (self.settings_action, "settings"), (self.more_button, "more")):
+        for action, name in (
+            (self.back_action, "back"),
+            (self.library_action, "sidebar"),
+            (self.faces_action, "faces"),
+            (self.info_action, "info"),
+            (self.settings_action, "settings"),
+            (self.more_button, "more"),
+        ):
             action.setIcon(theme.icon(name))
         self.search_box.icon = theme.icon("search")
         self.search_box.clear_icon = theme.icon("clear", "muted")
@@ -522,8 +534,13 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.files.export)
         m.addSeparator()
-        m.addAction(self._action("Tidy the library...", self.organizer.tidy,
-                                 tip="Name every file by when it was taken, in its year's folder"))
+        m.addAction(
+            self._action(
+                "Tidy the library...",
+                self.organizer.tidy,
+                tip="Name every file by when it was taken, in its year's folder",
+            )
+        )
         m.addAction(self._action("Organize a folder...", lambda: self.organizer.choose_folder(self.open_folder())))
         m.addSeparator()
         m.addAction(self.settings_action)
@@ -535,13 +552,26 @@ class MainWindow(QMainWindow):
         m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
         m.addSeparator()
         m.addAction(self._action("Who is this?", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]))
-        m.addAction(self._action("Duplicates", lambda: self.show_place(DUPES),
-                                 tip="Copies of the same photo or video, to review"))
-        m.addAction(self._action("Show faces in the viewer", self.viewer.toggle_faces,
-                                 tip="Boxes around faces, with their names (N in the viewer)"))
+        m.addAction(
+            self._action(
+                "Duplicates", lambda: self.show_place(DUPES), tip="Copies of the same photo or video, to review"
+            )
+        )
+        m.addAction(
+            self._action(
+                "Show faces in the viewer",
+                self.viewer.toggle_faces,
+                tip="Boxes around faces, with their names (N in the viewer)",
+            )
+        )
         m.addSeparator()
-        m.addAction(self._action("Start faces over...", self.naming.start_over,
-                                 tip="Forget every face and name, and look for the faces again"))
+        m.addAction(
+            self._action(
+                "Start faces over...",
+                self.naming.start_over,
+                tip="Forget every face and name, and look for the faces again",
+            )
+        )
 
     # --- working with files ----------------------------------------------------------------------------
 
@@ -579,12 +609,18 @@ class MainWindow(QMainWindow):
                         return self.close_viewer()
                     at = [it.id for it in items]
                     v.show_items(items, at.index(shown) if shown in at else 0)
+
             workers.run(load_copies, done, ids)
             return
         if self._viewer_from is not self.timeline:  # one photo, opened from a face: is it still there?
             shown = self.viewer.items[self.viewer.index]
-            workers.run(load_item, lambda items, err: (self.viewer.show_items(items, 0) if items
-                                                       else self.close_viewer()) if err is None else None, shown.id)
+            workers.run(
+                load_item,
+                lambda items, err: (self.viewer.show_items(items, 0) if items else self.close_viewer())
+                if err is None
+                else None,
+                shown.id,
+            )
             return
         if not self.timeline.items:
             return self.close_viewer()
@@ -614,8 +650,10 @@ class MainWindow(QMainWindow):
             menu.addAction("Include in library again", lambda: self._exclude(path, False))
         elif not within(path, excluded):  # (not inside one already left out)
             ex = menu.addAction("Exclude from library", lambda: self._exclude(path, True))
-            ex.setToolTip("Hide its photos from All photos, people and search. Nothing is deleted, and "
-                          "opening the folder still shows them.")
+            ex.setToolTip(
+                "Hide its photos from All photos, people and search. Nothing is deleted, and "
+                "opening the folder still shows them."
+            )
         menu.exec(pos)
 
     def _exclude(self, path, excluded: bool):
@@ -623,7 +661,10 @@ class MainWindow(QMainWindow):
         name = Path(path).name
         self.statusBar().showMessage(
             f"{name} is left out of All photos, people and search. Right-click it to include it again."
-            if excluded else f"{name} is back in the library.", 8000)
+            if excluded
+            else f"{name} is back in the library.",
+            8000,
+        )
         self.reload()
 
     # --- people ---------------------------------------------------------------------------------------
@@ -676,6 +717,7 @@ class MainWindow(QMainWindow):
             self.who.set_groups(groups, names, follow)
             self.who_count = self.who.remaining()
             self.people.set_who(self.who_count if self.unnamed else None)
+
         # (a follow-up once the naming is done, so it doesn't offer faces that naming recognized)
         self._faces_jobs.run(load_who, done, None if self.ops.busy else self.who.waiting_for)
 
@@ -683,6 +725,7 @@ class MainWindow(QMainWindow):
         def done(res, err):
             if err is None and faces_of(self.place) == pid:
                 self.person_faces.set_faces({"id": pid, "name": self.people_names.get(pid, "them")}, res)
+
         self._faces_jobs.run(load_person_faces, done, pid)
 
     def _load_viewer_faces(self):
@@ -703,6 +746,7 @@ class MainWindow(QMainWindow):
 
     def open_photo(self, photo_id: int):
         """Show one photo in the viewer, over the page shown now (it comes back when the viewer closes)."""
+
         def done(items, err):
             if err is None and items:
                 self._viewer_from = self.stack.currentWidget()
@@ -710,6 +754,7 @@ class MainWindow(QMainWindow):
                 self.viewer.show_items(items, 0)
                 self._show(self.viewer)
                 self.viewer.setFocus()
+
         workers.run(load_item, done, photo_id)
 
     # --- the library ---------------------------------------------------------------------------------
@@ -728,11 +773,18 @@ class MainWindow(QMainWindow):
         self.loaded = True
         roots = library_folders()
         self.people_names = {p["id"]: p["name"] for p in people}
-        self.sidebar.set_folders(roots, counts, total, len(people) if people or self.unnamed else None,
-                                 self.dedupe.count if total else None, excluded_folders())
+        self.sidebar.set_folders(
+            roots,
+            counts,
+            total,
+            len(people) if people or self.unnamed else None,
+            self.dedupe.count if total else None,
+            excluded_folders(),
+        )
         pid = person_of(self.place) if person_of(self.place) is not None else faces_of(self.place)
         gone = (pid is not None and pid not in self.people_names) or (
-            not self.sidebar.select(self.place) and self.place not in (WHO, DUPES))
+            not self.sidebar.select(self.place) and self.place not in (WHO, DUPES)
+        )
         if gone:  # that folder or person is gone
             self.place = ALL
             return self.reload(fresh=True)
@@ -770,8 +822,11 @@ class MainWindow(QMainWindow):
             if fresh:
                 self.search()
             return
-        self.timeline.empty_text = ("No photos here yet. HomePix is still looking through your folders."
-                                    if self.watcher.indexer.snapshot()["running"] else "No photos here.")
+        self.timeline.empty_text = (
+            "No photos here yet. HomePix is still looking through your folders."
+            if self.watcher.indexer.snapshot()["running"]
+            else "No photos here."
+        )
         self.timeline.set_scrubber(True)
         self.timeline.set_months(months, fresh=fresh)
         if self.files.select_after is not None:
@@ -792,13 +847,16 @@ class MainWindow(QMainWindow):
             name = self.people_names.get(pid if pid is not None else fid, "Someone")
             title = name if pid is not None else f"{name}: faces"
         else:
-            title = {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates"}.get(
-                self.place) or Path(self.place).name or self.place
+            title = (
+                {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates"}.get(self.place)
+                or Path(self.place).name
+                or self.place
+            )
         self.page_title.setText(title)
         self.page_back.setVisible(pid is not None and not self.query)
 
     def _place_name(self) -> str:
-        """" in 2023", " of Mom", or nothing for all photos."""
+        """ " in 2023", " of Mom", or nothing for all photos."""
         pid = person_of(self.place)
         if pid is not None:
             where = f" of {self.people_names.get(pid, 'them')}"
@@ -871,8 +929,9 @@ class MainWindow(QMainWindow):
 
         dlg.add_requested.connect(added)
         dlg.remove_requested.connect(self.remove_library_folder)
-        dlg.rescan_requested.connect(lambda: (self.watcher.start(),
-                                              self.statusBar().showMessage("Looking for new photos...", 5000)))
+        dlg.rescan_requested.connect(
+            lambda: (self.watcher.start(), self.statusBar().showMessage("Looking for new photos...", 5000))
+        )
         dlg.exec()
         self._settings_dialog = None
         self.files.editor_changed()
@@ -880,7 +939,8 @@ class MainWindow(QMainWindow):
     def _forget_missing(self):
         n = self.banner.missing
         answer = QMessageBox.question(
-            self, "Remove missing photos",
+            self,
+            "Remove missing photos",
             f"Remove the {n:,} photos that can't be found from HomePix?\n\nOnly do this if they were "
             "deleted on purpose. If they're on a drive that's unplugged, plug it in instead. No files are "
             "touched either way.",
@@ -926,8 +986,7 @@ class MainWindow(QMainWindow):
         self.timeline.set_scrubber(False)
         self.timeline.set_months(sections, fresh=True)
         self._sync_viewer()
-        self._set_count(f"  {n:,} match{'es' if n != 1 else ''} for “{self.query}”{where}"
-                                 f"  ({took:.2f} s)")
+        self._set_count(f"  {n:,} match{'es' if n != 1 else ''} for “{self.query}”{where}  ({took:.2f} s)")
         if self.timeline.items:
             self.timeline.setFocus()
 
@@ -966,18 +1025,22 @@ class MainWindow(QMainWindow):
 
     def compare_copies(self, ids, index):
         """A duplicate's copies, large: the arrows go from one to the next, K keeps the one shown."""
+
         def done(items, err):
             self._copies_coming = None
             if err is None and items:
                 at = [it.id for it in items]
                 first = ids[index] if ids[index] in at else at[0]
                 self._viewer_from = self.dupes
-                self.viewer.compare = (lambda i: self.dupes.copy_info(self.viewer.items[i].id),
-                                       lambda i: self.dupes.keep_photo(self.viewer.items[i].id),
-                                       self._compare_other)
+                self.viewer.compare = (
+                    lambda i: self.dupes.copy_info(self.viewer.items[i].id),
+                    lambda i: self.dupes.keep_photo(self.viewer.items[i].id),
+                    self._compare_other,
+                )
                 self.viewer.show_items(items, at.index(first))
                 self._show(self.viewer)
                 self.viewer.setFocus()
+
         self._copies_coming = ids
         self._copies_jobs.run(load_copies, done, ids)
 
@@ -987,8 +1050,9 @@ class MainWindow(QMainWindow):
         here = self._copies_coming[0] if self._copies_coming else self.viewer.items[i].id
         ids = self.dupes.other_group(here, step)
         if ids is None:
-            self.statusBar().showMessage("That was the last group of duplicates." if step > 0
-                                         else "That's the first group of duplicates.", 3000)
+            self.statusBar().showMessage(
+                "That was the last group of duplicates." if step > 0 else "That's the first group of duplicates.", 3000
+            )
         else:
             self.compare_copies(ids, 0)
 

@@ -132,7 +132,7 @@ class FaceGrid(QListWidget):
             self._items[f["id"]].setSelected(f["id"] in ticked)
         self.blockSignals(False)
         self.faces = faces
-        self._ask(faces[:self._loaded])
+        self._ask(faces[: self._loaded])
         self.scrollToTop()
         self.itemSelectionChanged.emit()
 
@@ -142,8 +142,12 @@ class FaceGrid(QListWidget):
         for f in faces:
             if f["id"] not in self._asked:
                 self._asked.add(f["id"])
-                workers.run(face_thumb, lambda file, err, fid=f["id"]: gen == self._generation
-                            and self._ready(fid, file, err), f, CROP)
+                workers.run(
+                    face_thumb,
+                    lambda file, err, fid=f["id"]: gen == self._generation and self._ready(fid, file, err),
+                    f,
+                    CROP,
+                )
 
     def _blank(self) -> QIcon:
         pm = QPixmap(TILE, TILE)
@@ -173,7 +177,7 @@ class FaceGrid(QListWidget):
             last = self.indexAt(self.viewport().rect().bottomRight())
             if not last.isValid() or last.row() >= self._loaded - 50:
                 start, self._loaded = self._loaded, min(len(self.faces), self._loaded + 600)
-                self._ask(self.faces[start:self._loaded])
+                self._ask(self.faces[start : self._loaded])
         if self.count() == 0 and self.empty_text:
             p = QPainter(self.viewport())
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
@@ -235,9 +239,11 @@ class PersonFaces(QWidget):
         self.person = None
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
-        self.hint = QLabel("The least like the rest come first. Click the faces that aren't them to tick "
-                           "them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the front); "
-                           "double-click a face to see its photo.")
+        self.hint = QLabel(
+            "The least like the rest come first. Click the faces that aren't them to tick "
+            "them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the front); "
+            "double-click a face to see its photo."
+        )
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         self.grid = FaceGrid()
@@ -252,10 +258,13 @@ class PersonFaces(QWidget):
         self.hide_button = QPushButton("Not a face")
         self.hide_button.clicked.connect(lambda: self.hidden.emit(self._ids()))
         self.sort_button = QPushButton("Most like ticked")
-        self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most "
-                                    "alike to least: tick a wrong one to find the others like it")
+        self.sort_button.setToolTip(
+            "Put the faces most like the ones ticked first, then the rest, most "
+            "alike to least: tick a wrong one to find the others like it"
+        )
         self.sort_button.clicked.connect(
-            lambda: self.grid.reorder(by_likeness(self.grid.faces, self.grid.selected_faces())))
+            lambda: self.grid.reorder(by_likeness(self.grid.faces, self.grid.selected_faces()))
+        )
         photos = QPushButton("Their photos")
         photos.clicked.connect(self.back)
         row = QHBoxLayout()
@@ -342,17 +351,17 @@ class WhoView(QWidget):
         self.skip_button.setToolTip("Ask about another group (this one comes back next time)")
         self.skip_button.clicked.connect(self.skip)
         self.hide_button = QPushButton("No one I know")
-        self.hide_button.setToolTip("Strangers, or not faces: don't ask about these again (the ones ticked, or "
-                                    "the whole group if none are)")
-        self.hide_button.clicked.connect(
-            lambda: self.hidden.emit([f["id"] for f in self._chosen() or self.grid.faces]))
+        self.hide_button.setToolTip(
+            "Strangers, or not faces: don't ask about these again (the ones ticked, or the whole group if none are)"
+        )
+        self.hide_button.clicked.connect(lambda: self.hidden.emit([f["id"] for f in self._chosen() or self.grid.faces]))
         self.sort_button = QPushButton("Most like ticked")
-        self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most "
-                                    "alike to least")
+        self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most alike to least")
         self.sort_button.clicked.connect(self._sort)
         self.rest_button = QPushButton()
-        self.rest_button.setToolTip("Name the ticked faces, and remember the others aren't them (they can "
-                                    "still be named someone else)")
+        self.rest_button.setToolTip(
+            "Name the ticked faces, and remember the others aren't them (they can still be named someone else)"
+        )
         self.rest_button.clicked.connect(self._rest_arent)
         self.rest_button.hide()
         row = QHBoxLayout()
@@ -455,9 +464,11 @@ class WhoView(QWidget):
         if self.follow:
             who = self.follow["name"]
             self.title.setText(f"Is this {who}?")
-            self.hint.setText(f"{len(group)} faces that might be {who} too, the most alike first. Tick the ones "
-                              f"that are {who} and press Enter; The rest aren't {who} also says the others "
-                              "aren't, so they're not asked about as them again. Skip goes on to the groups.")
+            self.hint.setText(
+                f"{len(group)} faces that might be {who} too, the most alike first. Tick the ones "
+                f"that are {who} and press Enter; The rest aren't {who} also says the others "
+                "aren't, so they're not asked about as them again. Skip goes on to the groups."
+            )
             return
         self.title.setText("Who is this?" if group or self.waiting_for else "No one to ask about")
         if not group:
@@ -466,9 +477,11 @@ class WhoView(QWidget):
         after = f"{n - 1:,} more group{'s' if n != 2 else ''} after this" if n > 1 else "the last group"
         tier, like = group[0].get("tier", NEW), group[0].get("like")
         seems = {NEW: "Someone new? ", MAYBE: f"Might be {like}. ", KNOWN: f"Looks like {like}. "}.get(tier, "")
-        self.hint.setText(f"{seems}{len(group)} faces that look alike; {after}. Click the faces of the same person "
-                          "to tick them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the "
-                          "front); double-click to see its photo.")
+        self.hint.setText(
+            f"{seems}{len(group)} faces that look alike; {after}. Click the faces of the same person "
+            "to tick them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the "
+            "front); double-click to see its photo."
+        )
 
     def _chosen(self):
         return self.grid.selected_faces()

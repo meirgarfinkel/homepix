@@ -105,8 +105,9 @@ class TimelineView(QAbstractScrollArea):
     def set_scrubber(self, on: bool):
         """The year scrubber (for anything in date order), or a plain scroll bar (search results)."""
         self.scrubber.setVisible(on)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff if on
-                                        else Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if on else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
         self.setViewportMargins(0, 0, Scrubber.WIDTH if on else 0, 0)
         self.scrubber.place()
         self._relayout()  # the grid is wider or narrower now
@@ -221,8 +222,7 @@ class TimelineView(QAbstractScrollArea):
         p.fillRect(self.viewport().rect(), bg)
         if not self.items:
             p.setPen(c("muted"))
-            p.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-                       self.empty_text)
+            p.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.empty_text)
             return
         top = self.verticalScrollBar().value()
         h = self.viewport().height()
@@ -240,14 +240,18 @@ class TimelineView(QAbstractScrollArea):
                 m = self.months[r.month]
                 p.setPen(c("text"))
                 p.setFont(head_font)
-                title = m.title or (f"{calendar.month_name[m.month]} {m.year}" if m.month
-                                    else str(m.year or "Unknown date"))
+                title = m.title or (
+                    f"{calendar.month_name[m.month]} {m.year}" if m.month else str(m.year or "Unknown date")
+                )
                 box = QRect(MARGIN, r.y + 6, self.viewport().width() - 2 * MARGIN, r.h - 6)
                 p.drawText(box, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
                 p.setFont(sub_font)
                 p.setPen(muted)
-                p.drawText(box, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                           f"{len(m.items):,} photo{'s' if len(m.items) != 1 else ''}")
+                p.drawText(
+                    box,
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                    f"{len(m.items):,} photo{'s' if len(m.items) != 1 else ''}",
+                )
             else:
                 for i in range(r.start, r.end):
                     it = self.items[i]
@@ -323,6 +327,7 @@ class TimelineView(QAbstractScrollArea):
 
     def _request_thumbs(self, top, h):
         """On-screen tiles first, then the screens just below and above."""
+
         def items_between(y0, y1):
             out = []
             k = self._row_at(max(0, y0))
@@ -334,8 +339,11 @@ class TimelineView(QAbstractScrollArea):
             return out
 
         ahead = int(h * PREFETCH_SCREENS)
-        order = dict.fromkeys(items_between(top, top + h) + items_between(top + h, top + h + ahead)
-                              + items_between(top - ahead, top)[::-1])  # rows on the edges come up twice
+        order = dict.fromkeys(
+            items_between(top, top + h)
+            + items_between(top + h, top + h + ahead)
+            + items_between(top - ahead, top)[::-1]
+        )  # rows on the edges come up twice
         self.loader.want([(self.items[i].qhash, self.items[i].path) for i in order])
 
     def _thumb_ready(self, qhash):
@@ -417,7 +425,7 @@ class TimelineView(QAbstractScrollArea):
     def wheelEvent(self, e):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier:  # Ctrl+wheel: bigger or smaller tiles
             steps = e.angleDelta().y() / 120
-            self.set_tile_size(round(self.tile * (1.12 ** steps)))
+            self.set_tile_size(round(self.tile * (1.12**steps)))
         else:
             super().wheelEvent(e)
 
@@ -440,8 +448,11 @@ class TimelineView(QAbstractScrollArea):
         if not self.items:
             return
         key, mods = e.key(), e.modifiers()
-        mode = "range" if mods & Qt.KeyboardModifier.ShiftModifier else (
-            "keep" if mods & Qt.KeyboardModifier.ControlModifier else "only")
+        mode = (
+            "range"
+            if mods & Qt.KeyboardModifier.ShiftModifier
+            else ("keep" if mods & Qt.KeyboardModifier.ControlModifier else "only")
+        )
         cur = max(0, self.current)
         per_page = max(1, self.viewport().height() // (self._cell + SPACING))
         moves = {

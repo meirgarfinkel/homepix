@@ -82,8 +82,12 @@ class IndexWatcher(QObject):
         if running or self._was_running:
             self.state.emit(s)
         # new photos show up while a long pass is still going, not only at its end
-        if running and s["phase"] == "indexing" and s["done"] > self._shown_done \
-                and time.time() - self._refreshed > REFRESH_EVERY:
+        if (
+            running
+            and s["phase"] == "indexing"
+            and s["done"] > self._shown_done
+            and time.time() - self._refreshed > REFRESH_EVERY
+        ):
             self._shown_done = s["done"]
             self._refresh()
         if s["changes"] != self._changes:
