@@ -31,7 +31,7 @@ def _read_details(paths):
 class PhotoActions:
     def __init__(self, window):
         self.w = window
-        a = window._action
+        a = window.add_action
         self.details = a("Edit details...", self.edit_details, ["Ctrl+I"])
         self.date = a("Date and time...", self.edit_date, ["Ctrl+Shift+D"])
         self.all_details = a("All details...", self.show_all, ["Alt+Return"])
@@ -57,7 +57,7 @@ class PhotoActions:
 
     # --- doing ------------------------------------------------------------------------------------------
 
-    def _items(self):
+    def _editable_items(self):
         items = self.w.files.targets()
         if items and not available():
             QMessageBox.information(
@@ -69,20 +69,20 @@ class PhotoActions:
             return []
         return items
 
-    def _run(self, items, edit, summary, past, kind="details"):
+    def _run_edit(self, items, edit, summary, past, kind="details"):
         paths = [it.path for it in items]
         self.w.ops.run(kind, summary, past, lambda db: files.plan_details(db, paths, edit))
 
     def turn(self, how: str):
-        items = [it for it in self._items() if it.kind == "photo"]
+        items = [it for it in self._editable_items() if it.kind == "photo"]
         if not items:
             return
         _, summary, past = TURNS[how]
         what = count_of(items)
-        self._run(items, metadata.Edit(turn=how), summary.format(what), past.format(what))
+        self._run_edit(items, metadata.Edit(turn=how), summary.format(what), past.format(what))
 
     def edit_date(self):
-        items = self._items()
+        items = self._editable_items()
         if not items:
             return
         dlg = DateDialog(items, self.w)
@@ -93,10 +93,10 @@ class PhotoActions:
             summary, past = f"Set the date of {what} to {how}", f"Set the date of {what} to {how}"
         else:
             summary, past = f"Move the date of {what} by {how}", f"Moved the date of {what} by {how}"
-        self._run(items, edit, summary, past)
+        self._run_edit(items, edit, summary, past)
 
     def edit_details(self):
-        items = self._items()
+        items = self._editable_items()
         if not items:
             return
         self.w.statusBar().showMessage("Reading the details...")
@@ -113,12 +113,12 @@ class PhotoActions:
             if edit == metadata.Edit():
                 return
             what = count_of(items)
-            self._run(items, edit, f"Change the details of {what}", f"Changed the details of {what}")
+            self._run_edit(items, edit, f"Change the details of {what}", f"Changed the details of {what}")
 
         workers.run(_read_details, ready, [os.path.abspath(it.path) for it in items])
 
     def show_all(self):
-        items = self._items()
+        items = self._editable_items()
         if not items:
             return
         path = items[0].path

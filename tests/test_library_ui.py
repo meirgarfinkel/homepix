@@ -108,10 +108,10 @@ def test_search_sees_new_photos(pf, lib):
     photo(lib / "a.jpg")
     pf.index_folder(lib, want_faces=False)
     index = pf.SearchIndex()
-    assert len(index.vectors()[0]) == 1
+    assert len(index.load_vectors()[0]) == 1
     photo(lib / "b.jpg")
     pf.index_folder(lib, want_faces=False)
-    assert len(index.vectors()[0]) == 2
+    assert len(index.load_vectors()[0]) == 2
 
 
 def test_folder_items_and_counts(pf, lib):

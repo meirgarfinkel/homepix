@@ -144,7 +144,7 @@ class Sidebar(QTreeWidget):
         self.hover_arrow = None  # the row whose arrow the mouse is over
         self.setUniformRowHeights(True)
         self.setMinimumWidth(220)
-        self.itemSelectionChanged.connect(self._picked)
+        self.itemSelectionChanged.connect(self._on_pick)
         self.currentItemChanged.connect(self._embolden)
         self._quiet = False
         self.set_folders([], {}, 0)
@@ -183,7 +183,7 @@ class Sidebar(QTreeWidget):
         heading.setForeground(0, theme.color("muted"))
         self.addTopLevelItem(heading)
         for root, node in folder_tree(roots, counts).items():
-            item = self._add(None, node)
+            item = self._add_node(None, node)
             item.setText(1, "")  # its count is All photos' again: just the name and the arrow
             item.setToolTip(0, root)
             if not Path(root).is_dir():
@@ -210,7 +210,7 @@ class Sidebar(QTreeWidget):
         self.select(chosen or ALL)
         self._quiet = False
 
-    def _add(self, parent, node) -> QTreeWidgetItem:
+    def _add_node(self, parent, node) -> QTreeWidgetItem:
         item = QTreeWidgetItem([node["name"], f"{node['total']:,}" if node["total"] else ""])
         item.setData(0, PATH_ROLE, node["path"])
         self._style_count(item)
@@ -219,7 +219,7 @@ class Sidebar(QTreeWidget):
         else:
             parent.addChild(item)
         for name in sorted(node["children"], key=str.lower):
-            self._add(item, node["children"][name])
+            self._add_node(item, node["children"][name])
         return item
 
     @staticmethod
@@ -307,7 +307,7 @@ class Sidebar(QTreeWidget):
         if path and (os.path.isabs(path) or person_of(path) is not None):
             self.menu_requested.emit(path, e.globalPos())
 
-    def _picked(self):
+    def _on_pick(self):
         path = self.current_path()
         if path and not self._quiet:
             self.chosen.emit(path)

@@ -52,7 +52,7 @@ def _arg(a: str) -> str:
     return a
 
 
-def _key(path: str) -> str:
+def _path_key(path: str) -> str:
     return os.path.normcase(os.path.normpath(path))
 
 
@@ -125,13 +125,13 @@ class ExifTool:
         if not paths:
             return {}
         # ExifTool names each file its own way (with / on Windows): match them back to ours
-        ours = {_key(p): p for p in paths}
+        ours = {_path_key(p): p for p in paths}
         out, _ = self.run(["-j", "-G1", "-struct", *options, *[f"-{t}" for t in tags], *paths])
         try:
             found = json.loads(out.decode("utf-8") or "[]")
         except ValueError:
             return {}
-        return {ours.get(_key(f), f): d for d in found if (f := d.pop("SourceFile", None))}
+        return {ours.get(_path_key(f), f): d for d in found if (f := d.pop("SourceFile", None))}
 
     def version(self) -> float:
         """ExifTool's version, e.g. 13.59 (asked once)."""

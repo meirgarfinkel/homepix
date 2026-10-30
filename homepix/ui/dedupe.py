@@ -10,11 +10,11 @@ from .views.changes_dialog import ChangesDialog, relative
 from .views.sidebar import DUPES
 
 
-def _find():
+def _load_duplicates():
     library = library_folders()
     db = open_db()
     try:
-        return duplicates.find(db), library, duplicates.pending(db)
+        return duplicates.find(db), library, duplicates.count_unchecked(db)
     finally:
         db.close()
 
@@ -36,7 +36,7 @@ class Dedupe:
             view.set_groups(groups, library, pending)
             self.recount(view.to_decide())
 
-        self._jobs.run(_find, done)
+        self._jobs.run(_load_duplicates, done)
 
     def recount(self, n: int):
         """The sidebar's count: groups to decide (not those skipped for now)."""
@@ -86,6 +86,3 @@ class Dedupe:
             f"Marked {plural(n, 'group')} as not duplicates",
             lambda db: [s] if (s := duplicates.plan_apart(db, groups)) is not None else [],
         )
-
-    def open(self, photo_id: int):
-        self.w.open_photo(photo_id)

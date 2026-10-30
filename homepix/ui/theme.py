@@ -291,7 +291,7 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 # --- icons -------------------------------------------------------------------------------------------
 
 
-def _draw(name: str, p: QPainter):
+def _draw_icon(name: str, p: QPainter):
     """On a 24 × 24 grid, in the pen already set."""
     if name == "sidebar":
         p.drawRoundedRect(QRectF(3.5, 5, 17, 14), 3, 3)
@@ -346,7 +346,7 @@ def _pixmap(name: str, col: QColor, px: int = 20, dpr: float = 2.0) -> QPixmap:
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
     p.setPen(pen)
-    _draw(name, p)
+    _draw_icon(name, p)
     p.end()
     pm.setDevicePixelRatio(dpr)
     return pm

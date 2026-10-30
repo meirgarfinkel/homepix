@@ -110,7 +110,7 @@ class FaceGrid(QListWidget):
         self._loaded = min(len(faces), 600)  # (set first: adding items can repaint)
         self._generation += 1
         self._items, self._asked = {}, set()
-        blank = self._blank()
+        blank = self._placeholder_icon()
         for f in faces:
             item = QListWidgetItem(blank, "")
             item.setData(ID_ROLE, f["id"])
@@ -118,7 +118,7 @@ class FaceGrid(QListWidget):
             self.addItem(item)
             item.setSelected(selected)
             self._items[f["id"]] = item
-        self._ask(faces[:600])  # (more as they're scrolled to: see paintEvent)
+        self._request_pictures(faces[:600])  # (more as they're scrolled to: see paintEvent)
 
     def reorder(self, faces: list[dict]):
         """The same faces in another order, keeping their pictures and what's ticked."""
@@ -132,11 +132,11 @@ class FaceGrid(QListWidget):
             self._items[f["id"]].setSelected(f["id"] in ticked)
         self.blockSignals(False)
         self.faces = faces
-        self._ask(faces[: self._loaded])
+        self._request_pictures(faces[: self._loaded])
         self.scrollToTop()
         self.itemSelectionChanged.emit()
 
-    def _ask(self, faces):
+    def _request_pictures(self, faces):
         """Make the pictures of these faces, if they haven't been asked for."""
         gen = self._generation
         for f in faces:
@@ -144,17 +144,17 @@ class FaceGrid(QListWidget):
                 self._asked.add(f["id"])
                 workers.run(
                     face_thumb,
-                    lambda file, err, fid=f["id"]: gen == self._generation and self._ready(fid, file, err),
+                    lambda file, err, fid=f["id"]: gen == self._generation and self._picture_ready(fid, file, err),
                     f,
                     CROP,
                 )
 
-    def _blank(self) -> QIcon:
+    def _placeholder_icon(self) -> QIcon:
         pm = QPixmap(TILE, TILE)
         pm.fill(self.palette().color(QPalette.ColorRole.AlternateBase))
         return QIcon(pm)
 
-    def _ready(self, fid, file, err):
+    def _picture_ready(self, fid, file, err):
         item = self._items.get(fid)
         if err is None and item is not None:
             pm = QPixmap(str(file))
@@ -177,7 +177,7 @@ class FaceGrid(QListWidget):
             last = self.indexAt(self.viewport().rect().bottomRight())
             if not last.isValid() or last.row() >= self._loaded - 50:
                 start, self._loaded = self._loaded, min(len(self.faces), self._loaded + 600)
-                self._ask(self.faces[start : self._loaded])
+                self._request_pictures(self.faces[start : self._loaded])
         if self.count() == 0 and self.empty_text:
             p = QPainter(self.viewport())
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
@@ -342,11 +342,11 @@ class WhoView(QWidget):
         self.grid.opened.connect(self.opened)
         self.grid.itemSelectionChanged.connect(self._selection_changed)
         self.name = NameBox()
-        self.name.returnPressed.connect(self._name)
+        self.name.returnPressed.connect(self._name_selected)
         self.name.textChanged.connect(self._selection_changed)
         self.name_button = QPushButton("Name them")
         self.name_button.setDefault(True)
-        self.name_button.clicked.connect(self._name)
+        self.name_button.clicked.connect(self._name_selected)
         self.skip_button = QPushButton("Skip")
         self.skip_button.setToolTip("Ask about another group (this one comes back next time)")
         self.skip_button.clicked.connect(self.skip)
@@ -354,15 +354,17 @@ class WhoView(QWidget):
         self.hide_button.setToolTip(
             "Strangers, or not faces: don't ask about these again (the ones ticked, or the whole group if none are)"
         )
-        self.hide_button.clicked.connect(lambda: self.hidden.emit([f["id"] for f in self._chosen() or self.grid.faces]))
+        self.hide_button.clicked.connect(
+            lambda: self.hidden.emit([f["id"] for f in self._selected() or self.grid.faces])
+        )
         self.sort_button = QPushButton("Most like ticked")
         self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most alike to least")
-        self.sort_button.clicked.connect(self._sort)
+        self.sort_button.clicked.connect(self._sort_by_likeness)
         self.rest_button = QPushButton()
         self.rest_button.setToolTip(
             "Name the ticked faces, and remember the others aren't them (they can still be named someone else)"
         )
-        self.rest_button.clicked.connect(self._rest_arent)
+        self.rest_button.clicked.connect(self._rest_arent_them)
         self.rest_button.hide()
         row = QHBoxLayout()
         row.addWidget(self.name, 1)
@@ -435,7 +437,7 @@ class WhoView(QWidget):
     def _show_group(self):
         waiting = self._waiting()
         if not waiting and self.skipped and self.groups:
-            self.skipped.clear()  # round again
+            self.skipped.clear()  # every group was skipped: ask about them again
             waiting = self._waiting()
         if self.waiting_for:
             group = []
@@ -483,22 +485,22 @@ class WhoView(QWidget):
             "front); double-click to see its photo."
         )
 
-    def _chosen(self):
+    def _selected(self):
         return self.grid.selected_faces()
 
     def _selection_changed(self, *_):
-        n = len(self._chosen())
+        n = len(self._selected())
         self.name_button.setEnabled(n > 0 and bool(self.name.text().strip()))
         self.name_button.setText(f"Name {n} face{'s' if n != 1 else ''}" if n else "Name them")
         self.hide_button.setEnabled(bool(self.grid.faces))
         self.sort_button.setEnabled(n > 0 and n < len(self.grid.faces) and "emb" in self.grid.faces[0])
         self.rest_button.setEnabled(n < len(self.grid.faces) and bool(self.name.text().strip()))
 
-    def _sort(self):
-        self.grid.reorder(by_likeness(self.grid.faces, self._chosen()))
+    def _sort_by_likeness(self):
+        self.grid.reorder(by_likeness(self.grid.faces, self._selected()))
 
-    def _name(self):
-        faces, name = self._chosen(), self.name.text().strip()
+    def _name_selected(self):
+        faces, name = self._selected(), self.name.text().strip()
         if faces and name:
             self._naming = name  # (drop, if it's done, follows it up)
             try:
@@ -506,7 +508,7 @@ class WhoView(QWidget):
             finally:
                 self._naming = None
 
-    def _rest_arent(self):
+    def _rest_arent_them(self):
         name = self.name.text().strip() or self.follow["name"]
-        yes = {f["id"] for f in self._chosen()}
+        yes = {f["id"] for f in self._selected()}
         self.confirmed.emit(sorted(yes), [f["id"] for f in self.grid.faces if f["id"] not in yes], name)

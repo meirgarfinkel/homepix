@@ -84,23 +84,23 @@ class Viewer(QWidget):
             return
         if self.compare is not None:
             index %= len(self.items)  # round and round the copies
-            shown = self._image() if 0 <= self.index < len(self.items) else None
+            shown = self._best_image() if 0 <= self.index < len(self.items) else None
             if self.zoom is not None and shown is not None and index != self.index:
-                self._carry_width = self._target_rect(shown).width()
+                self._carry_width = self._image_rect(shown).width()
                 keep_view = True
         index = max(0, min(len(self.items) - 1, index))
         self.index = index
         self._shown_id = self.items[index].id
         if keep_view and self.zoom is not None:
-            self._load(index, FULL)
+            self._start_decode(index, FULL)
         if not keep_view:
             self.zoom = None
             self._center = QPointF(0.5, 0.5)
         self._error = None
-        self._load(index, self._screen_side())
+        self._start_decode(index, self._screen_longest_side())
         for n in (index + 1, index - 1):  # read ahead
             if 0 <= n < len(self.items):
-                self._load(n, self._screen_side())
+                self._start_decode(n, self._screen_longest_side())
         self.update()
         self.current_changed.emit(index)
 
@@ -127,10 +127,10 @@ class Viewer(QWidget):
         )
 
     def _face_at(self, pos):
-        shown = self._image()
+        shown = self._best_image()
         if shown is None:
             return None
-        rect = self._target_rect(shown)
+        rect = self._image_rect(shown)
         hits = [f for f in self._current_faces() if self._face_rect(f, rect).contains(pos)]
         return min(hits, key=lambda f: f["w"]) if hits else None  # the smallest: a face behind another
 
@@ -154,11 +154,11 @@ class Viewer(QWidget):
             p.setPen(QColor(255, 255, 255))
             p.drawText(tag, Qt.AlignmentFlag.AlignCenter, label)
 
-    def _screen_side(self) -> int:
+    def _screen_longest_side(self) -> int:
         screen = self.screen().size() * self.devicePixelRatioF()
         return int(max(screen.width(), screen.height()))
 
-    def _load(self, index: int, max_side: int):
+    def _start_decode(self, index: int, max_side: int):
         key = (self.items[index].path, max_side)
         qhash = self.items[index].qhash
         if key in self._images or key in self._pending:
@@ -181,7 +181,7 @@ class Viewer(QWidget):
 
         workers.run(decode, done, *key, self.items[index].kind == "video")
 
-    def _image(self):
+    def _best_image(self):
         """The sharpest decoded version of the current photo there is: (QImage, original's longest
         side), or None while it's loading."""
         path = self.items[self.index].path
@@ -198,7 +198,7 @@ class Viewer(QWidget):
         p.fillRect(self.rect(), Qt.GlobalColor.black)
         if self.index < 0:
             return
-        shown = self._image()
+        shown = self._best_image()
         if shown is None:
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._error or "")
@@ -212,7 +212,7 @@ class Viewer(QWidget):
             scale = self._carry_width / img.width()
             self.zoom = scale * self.devicePixelRatioF() * max(img.width(), img.height()) / full_side
         self._carry_width = None
-        rect = self._target_rect(shown)
+        rect = self._image_rect(shown)
         p.drawImage(rect, shown[0])
         self._draw_faces(p, rect)
         if self._is_video():
@@ -293,7 +293,7 @@ class Viewer(QWidget):
             return min(self.width() / img.width(), self.height() / img.height(), ratio / dpr)
         return self.zoom * ratio / dpr
 
-    def _target_rect(self, shown) -> QRectF:
+    def _image_rect(self, shown) -> QRectF:
         s = self._scale(shown)
         w, h = shown[0].width() * s, shown[0].height() * s
         if self.zoom is None:
@@ -310,20 +310,20 @@ class Viewer(QWidget):
 
     def _current_zoom(self) -> float:
         """Device pixels per original pixel right now."""
-        shown = self._image()
+        shown = self._best_image()
         if shown is None:
             return 1.0
         img, full_side = shown
         return self._scale(shown) * self.devicePixelRatioF() * max(img.width(), img.height()) / full_side
 
     def set_zoom(self, zoom, around: QPointF | None = None):
-        shown = self._image()
+        shown = self._best_image()
         if shown is None or self._is_video():
             return
         if zoom is not None:
             if (self.items[self.index].path, FULL) not in self._images:
-                self._load(self.index, FULL)  # zooming in: get every pixel
-            rect = self._target_rect(shown)
+                self._start_decode(self.index, FULL)  # zooming in: get every pixel
+            rect = self._image_rect(shown)
             if around is not None and rect.contains(around):
                 self._center = QPointF((around.x() - rect.x()) / rect.width(), (around.y() - rect.y()) / rect.height())
             zoom = max(0.05, min(MAX_ZOOM, zoom))
@@ -361,14 +361,14 @@ class Viewer(QWidget):
             self.closed.emit()
 
     def mouseMoveEvent(self, e):
-        shown = self._image()
+        shown = self._best_image()
         if self._drag_from is None or shown is None:
             if self._face_at(e.position()) is not None:
                 self.setCursor(Qt.CursorShape.PointingHandCursor)
             else:
                 self.unsetCursor()
             return
-        rect = self._target_rect(shown)
+        rect = self._image_rect(shown)
         d = e.position() - self._drag_from
         self._drag_from = e.position()
         self._center = QPointF(

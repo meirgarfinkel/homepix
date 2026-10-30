@@ -25,7 +25,7 @@ MIN_TILE, MAX_TILE, DEFAULT_TILE = 90, 360, 170
 PREFETCH_SCREENS = 1.5  # also load this many screens of thumbnails ahead and behind
 
 
-def clock(seconds) -> str:
+def video_length(seconds) -> str:
     """A video's length: 0:42, 3:07, 1:02:15."""
     if not seconds:
         return ""
@@ -72,7 +72,7 @@ class TimelineView(QAbstractScrollArea):
         self.setFrameShape(QAbstractScrollArea.Shape.NoFrame)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.viewport().setAutoFillBackground(False)
-        self.verticalScrollBar().valueChanged.connect(self._scrolled)
+        self.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.verticalScrollBar().setSingleStep(40)
         self.scrubber = Scrubber(self)
         self.setViewportMargins(0, 0, Scrubber.WIDTH, 0)
@@ -269,13 +269,13 @@ class TimelineView(QAbstractScrollArea):
                             p.setPen(muted)
                             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "▶" if video else "Can't show\nthis photo")
                     if video:
-                        self._video_badge(p, rect, it.duration, small_font)
+                        self._draw_video_badge(p, rect, it.duration, small_font)
                     ring = QRectF(rect).adjusted(-4, -4, 4, 4)
                     if i in self.selected:
                         p.setBrush(Qt.BrushStyle.NoBrush)
                         p.setPen(QPen(accent, 2))
                         p.drawRoundedRect(ring, RADIUS + 4, RADIUS + 4)
-                        self._check(p, rect)
+                        self._draw_check(p, rect)
                     elif i == self.current and self.hasFocus():
                         p.setBrush(Qt.BrushStyle.NoBrush)
                         p.setPen(QPen(muted, 1.5, Qt.PenStyle.DashLine))
@@ -294,7 +294,7 @@ class TimelineView(QAbstractScrollArea):
         return self._corner_cache[1]
 
     @staticmethod
-    def _check(p, rect):
+    def _draw_check(p, rect):
         """A tick in an accent circle, top left: it's selected."""
         centre = QPointF(rect.x() + 20, rect.y() + 20)
         p.setPen(QPen(theme.color("bg"), 2))
@@ -311,9 +311,9 @@ class TimelineView(QAbstractScrollArea):
         p.drawPath(tick)
 
     @staticmethod
-    def _video_badge(p, rect, duration, font):
+    def _draw_video_badge(p, rect, duration, font):
         """▶ and the length, bottom right, white on a dark pill."""
-        text = f"▶ {clock(duration)}".strip()
+        text = f"▶ {video_length(duration)}".strip()
         p.setFont(font)
         fm = p.fontMetrics()
         w, h = fm.horizontalAdvance(text) + 16, 20
@@ -349,7 +349,7 @@ class TimelineView(QAbstractScrollArea):
     def _thumb_ready(self, qhash):
         self.viewport().update()
 
-    def _scrolled(self, _):
+    def _on_scroll(self, _):
         self.viewport().update()
         self.scrubber.update()
 
@@ -429,7 +429,7 @@ class TimelineView(QAbstractScrollArea):
         else:
             super().wheelEvent(e)
 
-    def _vertical(self, i: int, rows_down: int) -> int:
+    def _rows_away(self, i: int, rows_down: int) -> int:
         """The item rows_down tile rows below (negative: above) item i, in the same column if it can."""
         k = self._row_of_item(i)
         col = i - self.rows[k].start
@@ -458,10 +458,10 @@ class TimelineView(QAbstractScrollArea):
         moves = {
             Qt.Key.Key_Left: lambda: cur - 1,
             Qt.Key.Key_Right: lambda: cur + 1,
-            Qt.Key.Key_Up: lambda: self._vertical(cur, -1),
-            Qt.Key.Key_Down: lambda: self._vertical(cur, 1),
-            Qt.Key.Key_PageUp: lambda: self._vertical(cur, -per_page),
-            Qt.Key.Key_PageDown: lambda: self._vertical(cur, per_page),
+            Qt.Key.Key_Up: lambda: self._rows_away(cur, -1),
+            Qt.Key.Key_Down: lambda: self._rows_away(cur, 1),
+            Qt.Key.Key_PageUp: lambda: self._rows_away(cur, -per_page),
+            Qt.Key.Key_PageDown: lambda: self._rows_away(cur, per_page),
             Qt.Key.Key_Home: lambda: 0,
             Qt.Key.Key_End: lambda: len(self.items) - 1,
         }
@@ -607,14 +607,14 @@ class Scrubber(QWidget):
                 return mi
         return None
 
-    def _label(self, y: float) -> str:
+    def _month_label(self, y: float) -> str:
         mi = self.view.month_at_y(int(y / self._scale()))
         if mi < 0:
             return ""
         m = self.view.months[mi]
         return f"{calendar.month_name[m.month]} {m.year}" if m.month else str(m.year)
 
-    def _jump(self, y: float):
+    def _jump_to(self, y: float):
         target = int(y / self._scale()) - self.view.viewport().height() // 2
         self.view.verticalScrollBar().setValue(target)
 
@@ -625,14 +625,14 @@ class Scrubber(QWidget):
                 self.view.verticalScrollBar().setValue(self.view.month_y(mi))
                 return
             self._drag = True
-            self._jump(e.position().y())
+            self._jump_to(e.position().y())
 
     def mouseMoveEvent(self, e):
         y = e.position().y()
         self._hover_y = y
         if self._drag:
-            self._jump(y)
-        QToolTip.showText(self.mapToGlobal(QPoint(-140, int(y) - 12)), self._label(y), self)
+            self._jump_to(y)
+        QToolTip.showText(self.mapToGlobal(QPoint(-140, int(y) - 12)), self._month_label(y), self)
         self.update()
 
     def mouseReleaseEvent(self, e):

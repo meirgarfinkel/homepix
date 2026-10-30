@@ -33,7 +33,7 @@ class Plan:
     looked_at: int  # files it considered
     not_ready: int  # files still being indexed: they have no date yet, so they're left for now
 
-    def steps(self) -> list[dict]:
+    def as_steps(self) -> list[dict]:
         return [{"action": "move", "src": c.src, "dst": c.dst} for c in self.changes]
 
 
@@ -55,7 +55,7 @@ class _Sidecars:
         self._folders: dict[str, dict[str, str]] = {}
         self.used: set[str] = set()
 
-    def of(self, path: str) -> list[tuple[str, str]]:
+    def sidecars_of(self, path: str) -> list[tuple[str, str]]:
         """[(sidecar path, what follows the photo's new stem in its name)] for a photo or video:
         IMG_1.AAE and IMG_1.xmp (named by its stem) or IMG_1.JPG.json (by its whole name)."""
         folder, name = os.path.split(path)
@@ -97,7 +97,7 @@ class _Group:
         return all(src == dst for (src, _, _), dst in zip(self.members, self.paths(self.base), strict=True))
 
 
-def _place(root: str, path: str, taken: dt.datetime | None) -> tuple[str, str, str]:
+def _destination(root: str, path: str, taken: dt.datetime | None) -> tuple[str, str, str]:
     """(the folder it belongs in, the stem it'd be named by, why it moves if it does)."""
     folder, name = os.path.split(path)
     stem = os.path.splitext(name)[0]
@@ -123,7 +123,7 @@ def plan(db, folders, scope=None) -> Plan:
         raise ValueError(f"{scope} isn't in the library")
     files, not_ready = _files(db, roots, scope)
     moving = [g for g in _groups(db, files) if not g.unchanged()]
-    return Plan(_named(moving), len(files), not_ready)
+    return Plan(_with_free_names(moving), len(files), not_ready)
 
 
 def _files(db, roots, scope):
@@ -158,16 +158,16 @@ def _groups(db, files) -> list:
     for path, _kind, root, taken in files:
         if path in with_photo:
             continue
-        folder, base, why = _place(root, path, taken)
+        folder, base, why = _destination(root, path, taken)
         members = [(path, os.path.splitext(path)[1].lower(), why)]
         if path in clips:
             members.append((clips[path], os.path.splitext(clips[path])[1].lower(), "with its photo"))
-        members += [(side, tail.lower(), "with its photo") for side, tail in sidecars.of(path)]
+        members += [(side, tail.lower(), "with its photo") for side, tail in sidecars.sidecars_of(path)]
         groups.append(_Group(path, taken, folder, base, members))
     return groups
 
 
-def _named(moving) -> list:
+def _with_free_names(moving) -> list:
     """The changes, each group under its name or, where that's taken, the first free numbered one."""
     # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
     leaving = {os.path.normcase(src) for g in moving for src, _, _ in g.members}

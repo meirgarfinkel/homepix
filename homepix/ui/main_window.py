@@ -63,13 +63,13 @@ from .views.viewer import Viewer
 from .views.welcome import Welcome
 
 
-def _folder(place):
+def _folder_of(place):
     return place if os.path.isabs(place) else None
 
 
 def shows_photos(place) -> bool:
     """Is it a place shown as a grid of photos (rather than a page of people or faces)?"""
-    return place == ALL or person_of(place) is not None or _folder(place) is not None
+    return place == ALL or person_of(place) is not None or _folder_of(place) is not None
 
 
 def load_library(place):
@@ -79,7 +79,7 @@ def load_library(place):
     try:
         excluded = excluded_folders()
         items = (
-            load_items(db, folder=_folder(place), person=person_of(place), excluded=excluded)
+            load_items(db, folder=_folder_of(place), person=person_of(place), excluded=excluded)
             if shows_photos(place)
             else []
         )
@@ -141,7 +141,7 @@ def load_item(photo_id):
 
 def run_search(index: SearchIndex, q: str, place):
     start = time.perf_counter()
-    found = index.search(q, folder=_folder(place), person_id=person_of(place))
+    found = index.search(q, folder=_folder_of(place), person_id=person_of(place))
     sections = []
     for title, rows in (("Best matches", found["matches"]), ("Possibly related", found["related"])):
         if rows:
@@ -149,7 +149,7 @@ def run_search(index: SearchIndex, q: str, place):
     return sections, len(found["matches"]), time.perf_counter() - start
 
 
-def _gap(width: int, stretch: bool = False) -> QWidget:
+def _spacer(width: int, stretch: bool = False) -> QWidget:
     """Space in the toolbar: fixed, or taking what's left."""
     w = QWidget()
     if stretch:
@@ -323,9 +323,9 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.index_status)
         self.statusBar().setSizeGripEnabled(False)
         self.statusBar().setContentsMargins(10, 0, 4, 0)
-        self.statusBar().messageChanged.connect(self._status_shown)
-        self.watcher.state.connect(self._status_shown)
-        self._status_shown()
+        self.statusBar().messageChanged.connect(self._update_status_bar)
+        self.watcher.state.connect(self._update_status_bar)
+        self._update_status_bar()
         theme.signals.changed.connect(self._restyle)
         self._restyle()
 
@@ -360,11 +360,11 @@ class MainWindow(QMainWindow):
         self.banner.forget_missing.connect(self._forget_missing)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
         self.watcher.library_changed.connect(self.reload)
-        self.watcher.state.connect(self._sharpening)
+        self.watcher.state.connect(self._repaint_while_sharpening)
         self.timeline.menu_requested.connect(self.files.tile_menu)
-        self.timeline.selection_changed.connect(self.files.update)
+        self.timeline.selection_changed.connect(self.files.update_enabled)
         self.sidebar.menu_requested.connect(self._folder_menu)
-        QGuiApplication.clipboard().dataChanged.connect(self.files.update)
+        QGuiApplication.clipboard().dataChanged.connect(self.files.update_enabled)
         self.ops.finished.connect(self._after_change)
         self.ops.history_changed.connect(self.files.history_changed)
 
@@ -382,7 +382,7 @@ class MainWindow(QMainWindow):
         self._recover()
         self.reload()
         self.files.history_changed()
-        self.files.update()
+        self.files.update_enabled()
         self.files.editor_changed()
         if index:  # look for new photos once the window is up (bringing in a folder's copy first, if waiting)
             QTimer.singleShot(1500, lambda: portable_ui.offer(self, library_folders(), self.watcher.start))
@@ -398,12 +398,12 @@ class MainWindow(QMainWindow):
         self.addDockWidget(area, dock)
         return dock
 
-    def _sharpening(self, s: dict):
+    def _repaint_while_sharpening(self, s: dict):
         """While thumbnails are sharpened, repaint now and then: tiles on screen swap to sharper ones."""
         if s.get("phase") == "sharpening":
             self.timeline.viewport().update()
 
-    def _status_shown(self, *_):
+    def _update_status_bar(self, *_):
         """The status bar only while there's something to say."""
         s = self.index_status
         self.statusBar().setVisible(
@@ -436,13 +436,13 @@ class MainWindow(QMainWindow):
         bar.setIconSize(QSize(20, 20))
         bar.setFixedHeight(60)
         self.addToolBar(bar)
-        bar.addWidget(_gap(6))
+        bar.addWidget(_spacer(6))
         self.brand = QLabel()
         bar.addWidget(self.brand)
         name = QLabel("HomePix")
         name.setObjectName("brand")
         bar.addWidget(name)
-        bar.addWidget(_gap(14))
+        bar.addWidget(_spacer(14))
         folders = self.library_action = self.sidebar_dock.toggleViewAction()
         folders.setText("Library")
         folders.setToolTip("Show or hide the library")
@@ -452,8 +452,8 @@ class MainWindow(QMainWindow):
         self.back_action.triggered.connect(self.close_viewer)
         self.back_action.setVisible(False)
         bar.addAction(self.back_action)
-        self._labelled(bar, self.back_action)
-        bar.addWidget(_gap(0, stretch=True))
+        self._show_label(bar, self.back_action)
+        bar.addWidget(_spacer(0, stretch=True))
         self.search_box = SearchBox()
         self.search_box.setObjectName("search")
         self.search_box.setPlaceholderText("Search your photos: a dog on the beach, a red car...")
@@ -466,7 +466,7 @@ class MainWindow(QMainWindow):
         self.search_box.focused.connect(self._warm_search)
         self.search_box.escaped.connect(self._leave_search_box)
         bar.addWidget(self.search_box)
-        bar.addWidget(_gap(0, stretch=True))
+        bar.addWidget(_spacer(0, stretch=True))
         find = QAction("Search", self)
         find.setShortcut(QKeySequence.StandardKey.Find)
         find.triggered.connect(lambda: (self.search_box.setFocus(), self.search_box.selectAll()))
@@ -477,14 +477,14 @@ class MainWindow(QMainWindow):
         self.zoom.setToolTip("Thumbnail size (Ctrl + mouse wheel, Ctrl + / Ctrl -)")
         self.zoom.valueChanged.connect(self.timeline.set_tile_size)
         bar.addWidget(self.zoom)
-        bar.addWidget(_gap(8))
+        bar.addWidget(_spacer(8))
         self.faces_action = QAction("Their faces", self)
         self.faces_action.setCheckable(True)
         self.faces_action.setToolTip("See the faces taken to be them, to take out any that aren't")
         self.faces_action.triggered.connect(self._toggle_person_faces)
         self.faces_action.setVisible(False)
         bar.addAction(self.faces_action)
-        self._labelled(bar, self.faces_action)
+        self._show_label(bar, self.faces_action)
         info = self.info_action = self.info_dock.toggleViewAction()
         info.setText("Info")
         info.setShortcut(QKeySequence("I"))
@@ -511,13 +511,13 @@ class MainWindow(QMainWindow):
         self.addAction(full)
 
     @staticmethod
-    def _labelled(bar, action):
+    def _show_label(bar, action):
         """A toolbar button showing its words beside the icon."""
         button = bar.widgetForAction(action)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         button.setProperty("label", True)
 
-    def _action(self, text, slot, keys=(), tip=None) -> QAction:
+    def add_action(self, text, slot, keys=(), tip=None) -> QAction:
         a = QAction(text, self)
         a.setShortcuts([QKeySequence(k) for k in keys])
         a.triggered.connect(slot)
@@ -535,30 +535,30 @@ class MainWindow(QMainWindow):
         m.addAction(self.files.export)
         m.addSeparator()
         m.addAction(
-            self._action(
+            self.add_action(
                 "Tidy the library...",
                 self.organizer.tidy,
                 tip="Name every file by when it was taken, in its year's folder",
             )
         )
-        m.addAction(self._action("Organize a folder...", lambda: self.organizer.choose_folder(self.open_folder())))
+        m.addAction(self.add_action("Organize a folder...", lambda: self.organizer.choose_folder(self.open_folder())))
         m.addSeparator()
         m.addAction(self.settings_action)
         m.addSeparator()
-        m.addAction(self._action("Quit", self.close, [QKeySequence.StandardKey.Quit]))
+        m.addAction(self.add_action("Quit", self.close, [QKeySequence.StandardKey.Quit]))
         bar.addMenu(self.files.menu(self))
         bar.addMenu(self.photo.menu(self))
         m = bar.addMenu("&View")
         m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
         m.addSeparator()
-        m.addAction(self._action("Who is this?", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]))
+        m.addAction(self.add_action("Who is this?", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]))
         m.addAction(
-            self._action(
+            self.add_action(
                 "Duplicates", lambda: self.show_place(DUPES), tip="Copies of the same photo or video, to review"
             )
         )
         m.addAction(
-            self._action(
+            self.add_action(
                 "Show faces in the viewer",
                 self.viewer.toggle_faces,
                 tip="Boxes around faces, with their names (N in the viewer)",
@@ -566,14 +566,14 @@ class MainWindow(QMainWindow):
         )
         m.addSeparator()
         m.addAction(
-            self._action(
+            self.add_action(
                 "Start faces over...",
                 self.naming.start_over,
                 tip="Forget every face and name, and look for the faces again",
             )
         )
 
-    # --- working with files ----------------------------------------------------------------------------
+    # --- files and folders ---------------------------------------------------------------------------
 
     def open_folder(self):
         """The folder being looked at, if it's one."""
@@ -593,7 +593,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(message, 12000)
         self.reload()
         if self.query:
-            self._searches.run(run_search, self._searched, self.search_index, self.query, self.place)
+            self._searches.run(run_search, self._search_done, self.search_index, self.query, self.place)
 
     def _sync_viewer(self):
         """After files changed under the viewer: keep showing the same photo, or the next one if it's gone."""
@@ -638,7 +638,9 @@ class MainWindow(QMainWindow):
         paste.setEnabled(mime is not None and mime.hasUrls() and os.path.isdir(path))
         selected = self.files.targets()
         if selected:
-            menu.addAction(f"Move {count_of(selected)} here", lambda: self.files.into("move", selected, path))
+            menu.addAction(
+                f"Move {count_of(selected)} here", lambda: self.files.move_or_copy_into("move", selected, path)
+            )
         menu.addSeparator()
         if os.path.isdir(path):
             menu.addAction("Organize this folder...", lambda: self.organizer.preview(path))
@@ -752,7 +754,7 @@ class MainWindow(QMainWindow):
                 self._viewer_from = self.stack.currentWidget()
                 self.viewer.compare = None
                 self.viewer.show_items(items, 0)
-                self._show(self.viewer)
+                self._switch_to(self.viewer)
                 self.viewer.setFocus()
 
         workers.run(load_item, done, photo_id)
@@ -762,9 +764,9 @@ class MainWindow(QMainWindow):
     def reload(self, fresh: bool = False):
         """Load what's shown again (after indexing, or a folder was added or removed)."""
         self._fresh |= fresh
-        self._library.run(load_library, self._loaded, self.place)
+        self._library.run(load_library, self._library_loaded, self.place)
 
-    def _loaded(self, res, err):
+    def _library_loaded(self, res, err):
         if err is not None:
             self.timeline.empty_text = f"Couldn't open the photo library:\n{err}"
             self.timeline.viewport().update()
@@ -789,7 +791,7 @@ class MainWindow(QMainWindow):
             self.place = ALL
             return self.reload(fresh=True)
         if not roots and not total:
-            self._show(self.welcome)
+            self._switch_to(self.welcome)
             return
         self.people.set_people(people, self.who_count if self.unnamed else None)
         self.faces_action.setVisible(person_of(self.place) is not None or faces_of(self.place) is not None)
@@ -811,12 +813,12 @@ class MainWindow(QMainWindow):
         if self.stack.currentWidget() is self.viewer:
             self._sync_viewer()  # (the page shows again when the viewer closes)
         else:
-            self._show({PEOPLE: self.people, WHO: self.who, DUPES: self.dupes}.get(self.place, self.person_faces))
+            self._switch_to({PEOPLE: self.people, WHO: self.who, DUPES: self.dupes}.get(self.place, self.person_faces))
 
     def _show_photos(self, months):
         """The grid: all photos, a folder's, or someone's (or the search results, which stay until cleared)."""
         if self.stack.currentWidget() in (self.welcome, self.people, self.who, self.person_faces, self.dupes):
-            self._show(self.timeline)
+            self._switch_to(self.timeline)
         fresh, self._fresh = self._fresh, False
         if self.query:
             if fresh:
@@ -835,7 +837,7 @@ class MainWindow(QMainWindow):
             self.files.select_after = None
         self._sync_viewer()
         self._count_text()
-        self.files.update()
+        self.files.update_enabled()
 
     def _set_count(self, text: str):
         """The page's title (where we are) and, beside it, how much is shown."""
@@ -965,9 +967,9 @@ class MainWindow(QMainWindow):
         self.close_viewer()
         self.query = q
         self._set_count("  Searching...")
-        self._searches.run(run_search, self._searched, self.search_index, q, self.place)
+        self._searches.run(run_search, self._search_done, self.search_index, q, self.place)
 
-    def _searched(self, res, err):
+    def _search_done(self, res, err):
         if not self.query:
             return
         if err is not None:
@@ -980,7 +982,7 @@ class MainWindow(QMainWindow):
             self.place = ALL  # searching from a people page: search everything
             self.sidebar.select(ALL)
         if self.stack.currentWidget() in (self.people, self.who, self.person_faces, self.dupes):
-            self._show(self.timeline)
+            self._switch_to(self.timeline)
         where = self._place_name()
         self.timeline.empty_text = f"No photos{where} look like “{self.query}”."
         self.timeline.set_scrubber(False)
@@ -1008,19 +1010,19 @@ class MainWindow(QMainWindow):
 
     # --- viewer --------------------------------------------------------------------------------------
 
-    def _show(self, widget):
+    def _switch_to(self, widget):
         self.stack.setCurrentWidget(widget)
         in_viewer = widget is self.viewer
         self.back_action.setVisible(in_viewer)
         self.page_header.setVisible(widget in (self.timeline, self.people))  # the others have their own
         self.zoom.setEnabled(widget is self.timeline)
-        self.files.update()
+        self.files.update_enabled()
 
     def open_viewer(self, index: int):
         self._viewer_from = self.timeline
         self.viewer.compare = None
         self.viewer.show_items(self.timeline.items, index)
-        self._show(self.viewer)
+        self._switch_to(self.viewer)
         self.viewer.setFocus()
 
     def compare_copies(self, ids, index):
@@ -1038,7 +1040,7 @@ class MainWindow(QMainWindow):
                     self._compare_other,
                 )
                 self.viewer.show_items(items, at.index(first))
-                self._show(self.viewer)
+                self._switch_to(self.viewer)
                 self.viewer.setFocus()
 
         self._copies_coming = ids
@@ -1063,7 +1065,7 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
         i, back = self.viewer.index, self._viewer_from or self.timeline
-        self._show(back)
+        self._switch_to(back)
         if back is self.timeline:
             if i >= 0:
                 self.timeline.set_current(i)  # come back to the photo you were looking at

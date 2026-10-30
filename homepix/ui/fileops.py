@@ -56,7 +56,7 @@ class FileOps(QObject):
 
     # --- running --------------------------------------------------------------------------------------
 
-    def _go(self, title: str, work, finished, exclusive: bool = True, files: bool = True):
+    def _in_background(self, title: str, work, finished, exclusive: bool = True, files: bool = True):
         """work(progress, should_stop) on a worker thread, then finished(result, error) here.
         exclusive: no indexing meanwhile (anything that changes the library); files: and it changes
         files, so look through the folders again afterwards."""
@@ -114,22 +114,27 @@ class FileOps(QObject):
             finally:
                 db.close()
 
-        self._go(
-            f"{summary}...", work, lambda res, err: self._report(past, res, err), files=kind not in ("people", "apart")
+        self._in_background(
+            f"{summary}...",
+            work,
+            lambda res, err: self._report_result(past, res, err),
+            files=kind not in ("people", "apart"),
         )
 
     def undo(self):
-        self._go(
+        self._in_background(
             "Undoing...",
-            lambda p, s: self._history(fileops.can_undo, fileops.undo, p),
-            lambda res, err: self._report(f"Undid: {res[0]}" if res else "", res and res[1], err),
+            lambda p, s: self._undo_or_redo(fileops.can_undo, fileops.undo, p),
+            lambda res, err: self._report_result(f"Undid: {res[0]}" if res else "", res and res[1], err),
         )
 
     def redo(self):
-        self._go(
+        self._in_background(
             "Redoing...",
-            lambda p, s: self._history(fileops.can_redo, fileops.redo, p),
-            lambda res, err: self._report(f"Redid: {self._redo_name(res[0])}" if res else "", res and res[1], err),
+            lambda p, s: self._undo_or_redo(fileops.can_redo, fileops.redo, p),
+            lambda res, err: self._report_result(
+                f"Redid: {self._redo_name(res[0])}" if res else "", res and res[1], err
+            ),
         )
 
     @staticmethod
@@ -137,7 +142,7 @@ class FileOps(QObject):
         return summary[len("Undo: ") :] if summary.startswith("Undo: ") else summary
 
     @staticmethod
-    def _history(which, do, progress):
+    def _undo_or_redo(which, do, progress):
         db = open_db()
         try:
             op = which(db)
@@ -165,7 +170,7 @@ class FileOps(QObject):
             elif notes:
                 self.finished.emit("Finished what was interrupted last time: " + "; ".join(notes))
 
-        self._go("Finishing what was interrupted last time...", work, done)
+        self._in_background("Finishing what was interrupted last time...", work, done)
 
     def export(self, paths, folder, resize, quality):
         def work(progress, should_stop):
@@ -177,14 +182,14 @@ class FileOps(QObject):
                 return
             n, failed = res
             if failed:
-                self._skipped("Export", f"Exported {plural(n, 'file')}.", failed)
+                self._show_skipped("Export", f"Exported {plural(n, 'file')}.", failed)
             self.window.statusBar().showMessage(f"Exported {plural(n, 'file')} to {folder}.", 8000)
 
-        self._go(f"Exporting to {os.path.basename(folder) or folder}...", work, done, exclusive=False)
+        self._in_background(f"Exporting to {os.path.basename(folder) or folder}...", work, done, exclusive=False)
 
     # --- telling what happened ------------------------------------------------------------------------
 
-    def _report(self, past: str, result, err):
+    def _report_result(self, past: str, result, err):
         if err is not None:
             QMessageBox.warning(self.window, "HomePix", f"That didn't work:\n{err}")
             self.finished.emit("")
@@ -198,10 +203,10 @@ class FileOps(QObject):
         elif not result.finished:
             text = "Nothing was changed"
         if result.skipped:
-            self._skipped("HomePix", text + ".", result.skipped)
+            self._show_skipped("HomePix", text + ".", result.skipped)
         self.finished.emit(f"{text}. Ctrl+Z undoes it." if result.finished else "")
 
-    def _skipped(self, title, text, skipped):
+    def _show_skipped(self, title, text, skipped):
         lines = [f"{os.path.basename(p)}: {why}" for p, why in skipped[:12]]
         if len(skipped) > 12:
             lines.append(f"...and {len(skipped) - 12:,} more")

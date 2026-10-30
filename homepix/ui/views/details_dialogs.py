@@ -165,10 +165,10 @@ class DateDialog(QDialog):
         lay.addWidget(self.buttons)
         (self.set_to if n == 1 else self.shift).setChecked(True)
         for w in (self.days, self.hours, self.minutes):
-            w.valueChanged.connect(lambda _: (self.shift.setChecked(True), self._update()))
-        self.when.dateTimeChanged.connect(lambda _: (self.set_to.setChecked(True), self._update()))
-        group.buttonToggled.connect(lambda *_: self._update())
-        self._update()
+            w.valueChanged.connect(lambda _: (self.shift.setChecked(True), self._update_preview()))
+        self.when.dateTimeChanged.connect(lambda _: (self.set_to.setChecked(True), self._update_preview()))
+        group.buttonToggled.connect(lambda *_: self._update_preview())
+        self._update_preview()
 
     @staticmethod
     def _taken(item):
@@ -177,14 +177,18 @@ class DateDialog(QDialog):
         except ValueError:
             return None
 
-    def delta(self) -> dt.timedelta:
+    def time_shift(self) -> dt.timedelta:
         return dt.timedelta(days=self.days.value(), hours=self.hours.value(), minutes=self.minutes.value())
 
-    def _update(self):
+    def _update_preview(self):
         lines = []
         for it in self.items[:3]:
             old = self._taken(it)
-            new = self.when.dateTime().toPython() if self.set_to.isChecked() else (old + self.delta() if old else None)
+            new = (
+                self.when.dateTime().toPython()
+                if self.set_to.isChecked()
+                else (old + self.time_shift() if old else None)
+            )
             shown = old.strftime("%Y-%m-%d %H:%M") if old else "no date"
             lines.append(
                 f"{os.path.basename(it.path)}: {shown} → {new:%Y-%m-%d %H:%M}"
@@ -194,13 +198,13 @@ class DateDialog(QDialog):
         if len(self.items) > 3:
             lines.append("...")
         self.preview.setText("\n".join(lines))
-        ok = self.set_to.isChecked() or bool(self.delta())
+        ok = self.set_to.isChecked() or bool(self.time_shift())
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(ok)
 
     def edit(self) -> Edit:
         if self.set_to.isChecked():
             return Edit(date=self.when.dateTime().toPython().replace(microsecond=0))
-        return Edit(shift=self.delta())
+        return Edit(shift=self.time_shift())
 
     def describe(self) -> str:
         """For Undo: "Set the date of 3 photos" or "Move 3 photos by -3 h"."""

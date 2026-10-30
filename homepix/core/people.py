@@ -11,7 +11,7 @@ import numpy as np
 
 from .config import ASSIGN_MARGIN, ASSIGN_MIN_PX, ASSIGN_SIM, CLUSTER_SIM, FOLLOW_UP_FACES, MAYBE_SIM, SUBGROUP_SIM
 from .db import backup, from_blob
-from .util import normalize
+from .util import unit_vectors
 
 
 def load_faces(db, where="1=1", params=()):
@@ -22,13 +22,13 @@ def load_faces(db, where="1=1", params=()):
         params,
     ).fetchall()
     embs = np.stack([from_blob(r["emb"]) for r in rows]) if rows else np.zeros((0, 128), np.float32)
-    return rows, normalize(embs)
+    return rows, unit_vectors(embs)
 
 
 RECOGNIZE_K = 3  # a face is compared with the 3 most like it of someone's named faces
 
 
-def references(db):
+def reference_faces(db):
     """The faces someone named (not those recognized by themselves): what recognizing compares
     with, so a wrong match is never a reason for more. Returns their people ids and embeddings."""
     rows, embs = load_faces(db, "f.person_id IS NOT NULL AND f.locked = 1 AND f.hidden = 0")
@@ -52,7 +52,7 @@ NOT_THEM_OTHERS = 200  # the other people's named faces most like someone, as mo
 _models = {}  # person id -> (what it learned from, model): learning again only when that changes
 
 
-def _learn(pos, *negs, l2=1e-3, steps=15):
+def _train_classifier(pos, *negs, l2=1e-3, steps=15):
     """A line between face prints that are someone (pos) and ones that aren't (negs, sets that each
     weigh the same, and all of them as much as pos): logistic regression, (w, b), where e @ w + b > 0
     is the pos side. Newton's method: a few steps, no tuning."""
@@ -82,19 +82,19 @@ def _not_them_model(db, pid, owners, refs):
         return None
     others = refs[owners != pid]
     if len(others):
-        likeness = others @ normalize(pos.mean(axis=0))
+        likeness = others @ unit_vectors(pos.mean(axis=0))
         others = others[np.argsort(-likeness)[:NOT_THEM_OTHERS]]
     key = (len(pos), pos.sum(axis=0).tobytes(), tuple(r[0] for r in nots), len(others))
     if pid not in _models or _models[pid][0] != key:
-        marks = normalize(np.stack([from_blob(r[1]) for r in nots]))
-        _models[pid] = (key, _learn(pos, marks, others))
+        marks = unit_vectors(np.stack([from_blob(r[1]) for r in nots]))
+        _models[pid] = (key, _train_classifier(pos, marks, others))
     return _models[pid][1]
 
 
 def _doubtful(db, pid):
     """The faces recognized as someone (not named by hand) that their "that isn't them" marks say
     aren't them."""
-    owners, refs = references(db)
+    owners, refs = reference_faces(db)
     model = _not_them_model(db, pid, owners, refs)
     if model is None:
         return []
@@ -108,7 +108,7 @@ def auto_assign(db, write: bool = True):
     to anyone else, big enough to tell (ASSIGN_MIN_PX), and not on the wrong side of what their
     "that isn't them" marks taught (_not_them_model). Returns how many; with write=False, the
     [(person id, face id)] it would tag instead, changing nothing."""
-    owners, refs = references(db)
+    owners, refs = reference_faces(db)
     people = sorted(set(owners.tolist()))
     rows, embs = (
         load_faces(
@@ -175,7 +175,7 @@ def cluster_unnamed(db):
         return []
     quality = np.array([r["score"] * min(r["w"], r["h"]) for r in rows])
     cents = np.empty_like(embs)  # each group's centroid (there are never more groups than faces)
-    sums = np.empty_like(embs)  # running sum of each group's faces: normalize(sum) == normalize(mean)
+    sums = np.empty_like(embs)  # running sum of each group's faces: unit_vectors(sum) == unit_vectors(mean)
     members = []
     groups_in = {}  # photo id -> groups that already have a face from that photo
     for i in np.argsort(-quality):  # clearest faces first, so groups start from good examples
@@ -188,7 +188,7 @@ def cluster_unnamed(db):
                 members[j].append(i)
                 groups_in.setdefault(photo, []).append(j)
                 sums[j] += e
-                cents[j] = normalize(sums[j])
+                cents[j] = unit_vectors(sums[j])
                 continue
         cents[n] = sums[n] = e
         members.append([i])
@@ -210,7 +210,7 @@ def portrait(db, person_id: int, n_faces: int):
     rows, embs = load_faces(db, "f.person_id = ? AND p.error IS NULL AND p.qhash IS NOT NULL", (person_id,))
     if not rows:
         return None
-    sims = embs @ normalize(embs.mean(axis=0))
+    sims = embs @ unit_vectors(embs.mean(axis=0))
     usual = np.array([0.06 <= r["w"] <= 0.4 and r["score"] >= 0.9 for r in rows])
     if usual.any():
         sims = np.where(usual, sims, -2.0)
@@ -248,7 +248,7 @@ def _faces_now(db, face_ids) -> dict:
     }
 
 
-def _change(
+def _plan_change(
     db, faces: dict, people: dict | None = None, recognize: bool = False, learn: bool = False, teach=()
 ) -> dict | None:
     """The step that sets these faces ({face id: [person id, locked, hidden, not person]}, the last
@@ -257,15 +257,15 @@ def _change(
     faces recognized as them that it then says aren't are unnamed. None if it changes nothing."""
     people = {str(k): v for k, v in (people or {}).items()}
     faces = {str(k): list(v) for k, v in faces.items()}
-    taught = set(teach)  # (people faces are now marked not to be)
+    taught = set(teach)  # people that faces were just marked as not being
     if learn and faces:
-        taught |= _remember_not(db, faces)
+        taught |= _remember_who_it_isnt(db, faces)
     if recognize or taught:
-        _follow_on(db, faces, people, taught, recognize)
-    return _step(db, faces, people)
+        _add_knock_on_changes(db, faces, people, taught, recognize)
+    return _as_step(db, faces, people)
 
 
-def _remember_not(db, faces: dict) -> set:
+def _remember_who_it_isnt(db, faces: dict) -> set:
     """Faces taken from someone are remembered as not them (added to faces). Returns who they were."""
     taught = set()
     for k, (was, *_rest) in _faces_now(db, faces).items():
@@ -276,7 +276,7 @@ def _remember_not(db, faces: dict) -> set:
     return taught
 
 
-def _follow_on(db, faces: dict, people: dict, taught, recognize: bool):
+def _add_knock_on_changes(db, faces: dict, people: dict, taught, recognize: bool):
     """Add to faces what follows from the change: faces recognized as the taught people that may not be
     them are unnamed; recognize: faces the naming makes recognizable are named. Works it out by
     making the change and taking it back."""
@@ -292,7 +292,7 @@ def _follow_on(db, faces: dict, people: dict, taught, recognize: bool):
         db.execute("RELEASE plan")
 
 
-def _step(db, faces: dict, people: dict) -> dict | None:
+def _as_step(db, faces: dict, people: dict) -> dict | None:
     """The step for what actually changes, with what it was before (to undo it). None if nothing does."""
     old_faces = _faces_now(db, faces) if faces else {}
     for k, v in faces.items():
@@ -355,13 +355,13 @@ def _new_person(db, name: str) -> tuple[int, dict]:
 def plan_name(db, face_ids, name: str):
     """These faces are name (someone known, or someone new). Faces it then recognizes are named too."""
     pid, people = _new_person(db, name)
-    return _change(db, {f: [pid, 1, 0] for f in face_ids}, people, recognize=True, learn=True)
+    return _plan_change(db, {f: [pid, 1, 0] for f in face_ids}, people, recognize=True, learn=True)
 
 
 def plan_not(db, face_ids):
     """ "That isn't them": unnamed, never recognized again (it can still be named), and remembered as
     not them, so faces like it are less likely to be recognized as them."""
-    return _change(db, {f: [None, 1, 0] for f in face_ids}, learn=True)
+    return _plan_change(db, {f: [None, 1, 0] for f in face_ids}, learn=True)
 
 
 def plan_confirm(db, yes, no, name: str):
@@ -370,12 +370,12 @@ def plan_confirm(db, yes, no, name: str):
     pid, people = _new_person(db, name)
     now = _faces_now(db, no) if no else {}
     faces = {**{f: [*now[str(f)][:3], pid] for f in no if str(f) in now}, **{f: [pid, 1, 0] for f in yes}}
-    return _change(db, faces, people, recognize=True, learn=True, teach={pid} if no else ())
+    return _plan_change(db, faces, people, recognize=True, learn=True, teach={pid} if no else ())
 
 
 def plan_hide(db, face_ids):
     """Not a face, or no one to name: never asked about or recognized again."""
-    return _change(db, {f: [None, 1, 1] for f in face_ids})
+    return _plan_change(db, {f: [None, 1, 1] for f in face_ids})
 
 
 def plan_rename(db, pid: int, name: str):
@@ -383,7 +383,7 @@ def plan_rename(db, pid: int, name: str):
     other = person_id(db, name)
     if other is not None and other != pid:
         return plan_merge(db, [pid], other)
-    return _change(db, {}, {pid: name.strip()})
+    return _plan_change(db, {}, {pid: name.strip()})
 
 
 def plan_merge(db, pids, into: int):
@@ -401,7 +401,7 @@ def plan_merge(db, pids, into: int):
     for r in db.execute(f"SELECT id, person_id, locked, hidden FROM faces WHERE not_person IN ({marks})", pids):
         person, locked, hidden = faces.get(r[0], [r[1], r[2] or 0, r[3]])[:3]
         faces[r[0]] = [person, locked, hidden, None if person == into else into]  # not them: not into either
-    return _change(db, faces, dict.fromkeys(pids), recognize=True)
+    return _plan_change(db, faces, dict.fromkeys(pids), recognize=True)
 
 
 def plan_forget(db, pid: int):
@@ -409,7 +409,7 @@ def plan_forget(db, pid: int):
     faces = {r[0]: [None, 0, 0] for r in db.execute("SELECT id FROM faces WHERE person_id=?", (pid,))}
     for r in db.execute("SELECT id, person_id, locked, hidden FROM faces WHERE not_person=?", (pid,)):
         faces[r[0]] = [*faces.get(r[0], [r[1], r[2] or 0, r[3]])[:3], None]  # (so Undo brings the marks back)
-    return _change(db, faces, {pid: None})
+    return _plan_change(db, faces, {pid: None})
 
 
 # --- for the app -----------------------------------------------------------------------------------
@@ -440,10 +440,10 @@ def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
     face has its "emb" (normalized), to sort by, and its group's "tier" and "like": the name of who
     it looks like (None for NEW). Changes nothing (about a second for 40,000 faces)."""
     groups = [g for g in cluster_unnamed(db) if len(g) >= min_faces]
-    owners, refs = references(db)
+    owners, refs = reference_faces(db)
     people = sorted(set(owners.tolist()))
     names = dict(db.execute("SELECT id, name FROM people"))
-    embs_of = [normalize(np.stack([from_blob(r["emb"]) for r in g])) for g in groups]
+    embs_of = [unit_vectors(np.stack([from_blob(r["emb"]) for r in g])) for g in groups]
     if people and groups:  # (all at once: quicker than group by group)
         every = likeness_to(np.vstack(embs_of), owners, refs, people)
         ends = np.cumsum([len(g) for g in groups])
@@ -470,7 +470,7 @@ def follow_up(db, name: str, limit: int = FOLLOW_UP_FACES) -> list[dict]:
     not yet enough to be recognized, or held back), from all the groups, most alike first. None
     that were said not to be them. Each with its "emb", as in who_groups."""
     pid = person_id(db, name)
-    owners, refs = references(db)
+    owners, refs = reference_faces(db)
     if pid is None or not (owners == pid).any():
         return []
     rows, embs = load_faces(db, "f.person_id IS NULL AND f.hidden = 0 AND f.not_person IS NOT ?", (pid,))
@@ -496,7 +496,7 @@ def likeness_order(embs, quality) -> list[int]:
             if sims[j] >= SUBGROUP_SIM:
                 members[j].append(i)
                 sums[j] += embs[i]
-                cents[j] = normalize(sums[j])
+                cents[j] = unit_vectors(sums[j])
                 continue
         cents[k] = sums[k] = embs[i]
         members.append([i])
@@ -521,7 +521,7 @@ def by_likeness(faces: list[dict], to: list[dict]) -> list[dict]:
     chosen = {f["id"] for f in to}
     if not to:
         return list(faces)
-    cent = normalize(np.mean([f["emb"] for f in to], axis=0))
+    cent = unit_vectors(np.mean([f["emb"] for f in to], axis=0))
     rest = sorted((f for f in faces if f["id"] not in chosen), key=lambda f: -float(f["emb"] @ cent))
     return [f for f in faces if f["id"] in chosen] + rest
 
@@ -531,6 +531,6 @@ def person_faces(db, pid: int) -> list[dict]:
     "emb" (normalized), to sort by."""
     rows = {r["id"]: r for r in face_rows(db, "f.person_id = ?", (pid,))}
     found, vecs = load_faces(db, "f.person_id = ?", (pid,))
-    sims = vecs @ normalize(vecs.mean(axis=0)) if len(found) else np.zeros(0)
+    sims = vecs @ unit_vectors(vecs.mean(axis=0)) if len(found) else np.zeros(0)
     order = np.argsort(sims, kind="stable")
     return [{**rows[found[i]["id"]], "emb": vecs[i]} for i in order if found[i]["id"] in rows]

@@ -48,7 +48,7 @@ def copy_path(root) -> Path:
     return Path(root) / FOLDER / NAME
 
 
-def stamp() -> str:
+def db_stamp() -> str:
     """When the database last changed (its file and its write-ahead log), to tell if a copy is current."""
 
     def st(p):
@@ -63,17 +63,17 @@ def stamp() -> str:
     return json.dumps([st(path)[0], wal if wal[1] else [0, 0]])
 
 
-def _owned(root) -> str | None:
+def _copy_owner(root) -> str | None:
     return load_settings().get("copies", {}).get(str(root))
 
 
-def _own(root, library: str):
+def _set_copy_owner(root, library: str):
     s = load_settings()
     s.setdefault("copies", {})[str(root)] = library
     save_settings(s)
 
 
-def info(root) -> dict | None:
+def copy_details(root) -> dict | None:
     """What root's copy says about itself ({library, written, photos, people, version, source}), or
     None if there's none (or it can't be read)."""
     path = copy_path(root)
@@ -98,10 +98,10 @@ def photos_in(db, root) -> int:
     return db.execute("SELECT COUNT(*) FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix)).fetchone()[0]
 
 
-def offered(root) -> dict | None:
+def copy_to_offer(root) -> dict | None:
     """root's copy, if it has one to bring in: there's a copy and none of the folder's photos are in
     the database yet (a new computer, or the folder was taken out of the library and added again)."""
-    meta = info(root)
+    meta = copy_details(root)
     if meta is None or not meta["photos"]:
         return None
     db = open_db()
@@ -111,7 +111,7 @@ def offered(root) -> dict | None:
         db.close()
 
 
-def _hide(folder: Path):
+def _hide_folder(folder: Path):
     if os.name == "nt":  # a leading dot hides it everywhere else
         try:
             import ctypes
@@ -146,7 +146,7 @@ def _write_copy(root: Path) -> int | None:
     if not root.is_dir():
         return None
     prefix = folder_prefix(root)
-    source = stamp()  # taken first: a change made while copying leaves the copy older than the database
+    source = db_stamp()  # taken first: a change made while copying leaves the copy older than the database
     work = data_dir() / "portable-out.tmp.db"
     work.unlink(missing_ok=True)
     db = open_db()
@@ -168,10 +168,10 @@ def _write_copy(root: Path) -> int | None:
         out.execute("DELETE FROM photos WHERE substr(path, 1, ?) != ?", (n, prefix))
         out.execute("UPDATE photos SET path = replace(substr(path, ?), ?, '/')", (n + 1, os.sep))
         out.execute("DELETE FROM people WHERE id NOT IN (SELECT person_id FROM faces WHERE person_id IS NOT NULL)")
-        library = _owned(root)
+        library = _copy_owner(root)
         if library is None:
             library = uuid.uuid4().hex
-            _own(root, library)
+            _set_copy_owner(root, library)
         excluded = [
             os.path.relpath(f, root).replace(os.sep, "/")
             for f in load_settings().get("excluded", [])
@@ -190,7 +190,7 @@ def _write_copy(root: Path) -> int | None:
         out.executemany("INSERT INTO portable VALUES (?, ?)", [(k, str(v)) for k, v in meta.items()])
         out.commit()
         folder.mkdir(exist_ok=True)
-        _hide(folder)
+        _hide_folder(folder)
         if not (folder / NOTE).exists():
             (folder / NOTE).write_text(NOTE_TEXT, encoding="utf-8")
         tmp.unlink(missing_ok=True)
@@ -205,17 +205,17 @@ def _write_copy(root: Path) -> int | None:
         done.close()
     dst = folder / NAME
     if dst.exists():
-        there = info(root)
+        there = copy_details(root)
         if there is None or there.get("library") != library:
             _set_aside(dst, there)
     os.replace(tmp, dst)  # all at once: a copy is never half written
     return meta["photos"]
 
 
-def current(root) -> bool:
+def is_current(root) -> bool:
     """Is root's copy up to date: written here, since the database last changed?"""
-    meta = info(root)
-    return meta is not None and meta.get("library") == _owned(root) and meta.get("source") == stamp()
+    meta = copy_details(root)
+    return meta is not None and meta.get("library") == _copy_owner(root) and meta.get("source") == db_stamp()
 
 
 def refresh_copies(roots=None) -> list[str]:
@@ -226,7 +226,7 @@ def refresh_copies(roots=None) -> list[str]:
     written = []
     with _lock:
         for root in library_folders() if roots is None else roots:
-            if current(root):
+            if is_current(root):
                 continue
             try:
                 if write_copy(root) is not None:
@@ -263,7 +263,7 @@ def read_copy(root) -> dict:
         on_disk = scan_folder(root)[0]
         db = open_db()
         try:
-            found = _find(db, rows, on_disk, prefix)
+            found = _locate_photos(db, rows, on_disk, prefix)
             named = _bring_in(db, cp, found)
             db.commit()
         except BaseException:
@@ -277,11 +277,11 @@ def read_copy(root) -> dict:
     for f in json.loads(meta.get("excluded") or "[]"):
         set_excluded(prefix + f.replace("/", os.sep), True)
     if meta.get("library"):
-        _own(root, meta["library"])
+        _set_copy_owner(root, meta["library"])
     return {"photos": len(found), "missing": len(rows) - len(found), "people": named}
 
 
-def _find(db, rows, on_disk: dict, prefix: str) -> dict:
+def _locate_photos(db, rows, on_disk: dict, prefix: str) -> dict:
     """Where the copy's photos are now: {its photo id: (path, modified time)}. Each is found where it was
     (if that file hasn't changed) or else by its content, anywhere in the folder; none where the
     database already has a photo."""
@@ -325,7 +325,7 @@ def _bring_in(db, cp, found: dict) -> int:
     """Copy the found photos' rows (and what hangs off them) from the copy into the database. Returns
     how many people they're of."""
     new = _bring_photos(db, cp, found)
-    named = _bring_faces(db, cp, new, _people(db, cp))
+    named = _bring_faces(db, cp, new, _match_people(db, cp))
     for a, b in cp.execute("SELECT a, b FROM apart"):
         if a in new and b in new:
             db.execute("INSERT OR IGNORE INTO apart (a, b) VALUES (?, ?)", sorted((new[a], new[b])))
@@ -346,7 +346,7 @@ def _bring_photos(db, cp, found: dict) -> dict:
     return new
 
 
-def _people(db, cp) -> dict:
+def _match_people(db, cp) -> dict:
     """{the copy's person id: the id here}, matched by name (someone not here yet is added)."""
     people = {}
     for pid, name in cp.execute("SELECT id, name FROM people"):

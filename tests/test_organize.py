@@ -42,7 +42,7 @@ def plan(home, lib, scope=None):
 def apply(home, lib, scope=None):
     pf, db = home
     p = plan(home, lib, scope)
-    fo.run(db, "organize", "Organize", p.steps())
+    fo.run(db, "organize", "Organize", p.as_steps())
     return p
 
 
@@ -164,7 +164,7 @@ def test_a_live_photo_clip_and_sidecars_go_with_their_photo_and_undo_brings_all_
     with_clip(home, lib, photo, lib / "new" / "IMG_1.MOV", "2022-04-01 04:32:32")  # its clock is UTC
     before = contents(lib)
     p = organize.plan(db, [lib])
-    fo.run(db, "organize", "Organize", p.steps())
+    fo.run(db, "organize", "Organize", p.as_steps())
     assert files(lib) == [
         "2022/2022_04_01_07_32_31.aae",
         "2022/2022_04_01_07_32_31.jpg",

@@ -39,7 +39,7 @@ def _boxes(f, start: int, end: int):
         pos += size
 
 
-def _find(f, start, end, kind):
+def _find_box(f, start, end, kind):
     for k, a, b in _boxes(f, start, end):
         if k == kind:
             return a, b
@@ -48,8 +48,8 @@ def _find(f, start, end, kind):
 
 def _apple_date(f, meta_start, meta_end):
     """com.apple.quicktime.creationdate from a QuickTime meta box: keys name the items in ilst."""
-    keys = _find(f, meta_start, meta_end, b"keys")
-    ilst = _find(f, meta_start, meta_end, b"ilst")
+    keys = _find_box(f, meta_start, meta_end, b"keys")
+    ilst = _find_box(f, meta_start, meta_end, b"ilst")
     if not keys or not ilst:
         return None
     f.seek(keys[0] + 4)
@@ -68,7 +68,7 @@ def _apple_date(f, meta_start, meta_end):
         return None
     for kind, a, b in _boxes(f, *ilst):
         if struct.unpack(">I", kind)[0] == want:
-            data = _find(f, a, b, b"data")
+            data = _find_box(f, a, b, b"data")
             if data:
                 f.seek(data[0] + 8)  # type and locale
                 return f.read(min(data[1] - data[0] - 8, 64)).decode("utf-8", "replace").strip()
@@ -83,10 +83,10 @@ def video_meta(path) -> dict:
     try:
         with open(path, "rb") as f:
             f.seek(0, 2)
-            moov = _find(f, 0, f.tell(), b"moov")
+            moov = _find_box(f, 0, f.tell(), b"moov")
             if not moov:
                 return out
-            mvhd = _find(f, *moov, b"mvhd")
+            mvhd = _find_box(f, *moov, b"mvhd")
             if mvhd:
                 f.seek(mvhd[0])
                 version = f.read(1)[0]
@@ -101,7 +101,7 @@ def video_meta(path) -> dict:
                     utc = _EPOCH_1904 + dt.timedelta(seconds=created)
                     out["clock"] = utc.replace(tzinfo=None)
                     out["taken"] = utc.astimezone().replace(tzinfo=None)
-            meta = _find(f, *moov, b"meta")
+            meta = _find_box(f, *moov, b"meta")
             if meta:
                 apple = _apple_date(f, *meta)
                 if apple:

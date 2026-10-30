@@ -256,11 +256,11 @@ def test_face_boxes_in_the_viewer(window, pf, app):
 
     window.open_viewer(0)
     v = window.viewer
-    wait_until(app, lambda: v._image() is not None)
+    wait_until(app, lambda: v._best_image() is not None)
     v.show_faces = False
     v.toggle_faces()
     wait_until(app, lambda: v._current_faces())
-    rect = v._target_rect(v._image())
+    rect = v._image_rect(v._best_image())
     face = v._face_at(QPointF(rect.center()))  # the face is in the middle of the photo
     assert face is not None and face["name"] is None
     assert v._face_at(QPointF(rect.x() + 2, rect.y() + 2)) is None
