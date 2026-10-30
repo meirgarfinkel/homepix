@@ -117,3 +117,19 @@ jobs:
           dist/HomePix-Linux/HomePix-x86_64.AppImage dist/HomePix-Windows/HomePixSetup.exe
         env:
           GH_TOKEN: ${{ github.token }}
+
+  cleanup:
+    # A pull request's or a tag's builds are only for the jobs above (a Release keeps its own copies):
+    # delete them once those are done, so they don't fill the repository's storage. A build started by
+    # hand keeps them, to download.
+    if: always() && github.event_name != 'workflow_dispatch'
+    needs: [linux, linux-models, linux-smoke, windows, release]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate --jq '.artifacts[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; done
+        env:
+          GH_TOKEN: ${{ github.token }}
