@@ -6,6 +6,7 @@ An old, smaller one is shown until its sharper one has been made, then swapped i
 Each is cropped square and shrunk to the tile size, so a tile in memory costs only its own pixels.
 """
 
+import contextlib
 import threading
 from collections import OrderedDict
 
@@ -105,10 +106,8 @@ class ThumbLoader(QObject):
                 size = self._size
                 self._busy.add(qhash)
             img, soft = None, False
-            try:
+            with contextlib.suppress(Exception):
                 img, soft = self._decode(qhash, path, size)
-            except Exception:
-                pass
             with self._lock:
                 self._busy.discard(qhash)
                 if self._stop:

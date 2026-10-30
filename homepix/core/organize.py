@@ -4,8 +4,8 @@ date (only when it was last changed) goes to <library>/Unsorted/ with its own na
 
 The date is the one the app shows everywhere (dates.py), so organizing agrees with the timeline. A
 Live Photo's clip and a photo's sidecar files (.aae, .xmp, .json) are named and moved with it. A year
-folder's own subfolders are left alone (a file in 2022/Trip/ from 2022 stays there). Nothing is done here: plan() works out the moves, which fileops.run() makes, and
-which can be undone like any other.
+folder's own subfolders are left alone (a file in 2022/Trip/ from 2022 stays there). Nothing is done
+here: plan() works out the moves, which fileops.run() makes, and which can be undone like any other.
 """
 
 import datetime as dt

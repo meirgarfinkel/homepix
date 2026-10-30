@@ -30,7 +30,7 @@ def main(argv=None):
     self_test = "--self-test" in argv
     # from the applications menu there's no terminal (on Windows, no output at all): keep a log
     if sys.stdout is None or (not self_test and not sys.stdout.isatty()):
-        log = open(data_dir() / "app.log", "a", buffering=1, encoding="utf-8")
+        log = open(data_dir() / "app.log", "a", buffering=1, encoding="utf-8")  # noqa: SIM115 (open while the app runs)
         sys.stdout = sys.stderr = log
         print(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} HomePix {__version__}")
 

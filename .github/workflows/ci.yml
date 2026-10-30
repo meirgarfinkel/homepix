@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - run: pip install pre-commit
       - run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
 
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Install
         # what the app needs (the UI tests run offscreen, so no display), plus Qt's system libraries
         run: |
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - uses: actions/cache@v4
         with:
           path: build/downloads

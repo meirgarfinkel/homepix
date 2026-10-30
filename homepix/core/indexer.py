@@ -24,7 +24,7 @@ class _IndexLock:
         self.f = None
 
     def acquire(self) -> bool:
-        f = open(data_dir() / "indexing.lock", "a+b")
+        f = open(data_dir() / "indexing.lock", "a+b")  # noqa: SIM115 (held open while indexing: it's the lock)
         try:
             if os.name == "nt":
                 import msvcrt

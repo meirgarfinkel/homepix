@@ -1,5 +1,6 @@
 """Face detection (YuNet) and recognition (SFace)."""
 
+import contextlib
 from pathlib import Path
 
 import numpy as np
@@ -17,10 +18,8 @@ class Faces:
     def __init__(self):
         import cv2
 
-        try:
+        with contextlib.suppress(Exception):
             cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
-        except Exception:
-            pass
         ensure_models(["face_detect.onnx", "face_embed.onnx"])
         self.cv2 = cv2
         self.det = cv2.FaceDetectorYN.create(str(model_path("face_detect.onnx")), "", (320, 320), FACE_SCORE, 0.3, 5000)

@@ -401,7 +401,7 @@ def plan_merge(db, pids, into: int):
     for r in db.execute(f"SELECT id, person_id, locked, hidden FROM faces WHERE not_person IN ({marks})", pids):
         person, locked, hidden = faces.get(r[0], [r[1], r[2] or 0, r[3]])[:3]
         faces[r[0]] = [person, locked, hidden, None if person == into else into]  # not them: not into either
-    return _change(db, faces, {p: None for p in pids}, recognize=True)
+    return _change(db, faces, dict.fromkeys(pids), recognize=True)
 
 
 def plan_forget(db, pid: int):
