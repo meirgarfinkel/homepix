@@ -14,12 +14,14 @@ How a file is never lost:
   way its row is at the file's hidden name too, so the index always matches the disk.
 
 Steps (op_steps.action): move, copy, trash, restore, and meta (details written into the file: the
-values before and after are in `before`, so undoing writes the old ones back). op_steps.done: 0 planned, 1 under way (a move's
-file is at its hidden name; a Trash name is reserved), 2 finished, 3 skipped (why: in `after`).
+values before and after are in `before`, so undoing writes the old ones back). op_steps.done: 0 planned,
+1 under way (a move's file is at its hidden name; a Trash name is reserved), 2 finished, 3 skipped (why: in
+`after`).
 An operation's state: running, done, interrupted (stopped or crashed partway: what finished stays
 finished and can be undone), undone.
 """
 
+import contextlib
 import datetime as dt
 import filecmp
 import json
@@ -174,10 +176,8 @@ def _apply_meta(db, path, change) -> dict:
             for old in thumbs_dir(kind).glob(f"{row['qhash']}*.jpg"):
                 new = old.with_name(qh + old.name[len(row["qhash"]) :])
                 if not new.exists():
-                    try:
+                    with contextlib.suppress(OSError):
                         shutil.copyfile(old, new)  # (a copy, not a rename: an exact copy elsewhere shares them)
-                    except OSError:
-                        pass
     return {}
 
 

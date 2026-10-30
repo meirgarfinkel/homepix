@@ -219,8 +219,10 @@ QToolButton#pageBack:hover {{ background: {hover}; color: {text}; }}
 
 QTreeWidget#sidebar {{ background: {side}; border: none; padding: 10px 10px; outline: 0; }}
 QTreeWidget#sidebar::item {{ min-height: 36px; padding: 0 4px; border: none; }}
-QTreeWidget#sidebar::item:first {{ border-top-left-radius: 18px; border-bottom-left-radius: 18px; padding-left: 10px; }}
-QTreeWidget#sidebar::item:last {{ border-top-right-radius: 18px; border-bottom-right-radius: 18px; padding-right: 12px; }}
+QTreeWidget#sidebar::item:first {{ border-top-left-radius: 18px; border-bottom-left-radius: 18px;
+    padding-left: 10px; }}
+QTreeWidget#sidebar::item:last {{ border-top-right-radius: 18px; border-bottom-right-radius: 18px;
+    padding-right: 12px; }}
 QTreeWidget#sidebar::item:hover {{ background: {hover}; }}
 QTreeWidget#sidebar::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 QTreeWidget#sidebar::branch {{ background: {side}; image: none; border-image: none; }}
@@ -255,8 +257,8 @@ QComboBox QAbstractItemView::item, QListView#popup::item {{ min-height: 32px; pa
 QComboBox QAbstractItemView::item:hover, QListView#popup::item:hover {{ background: {hover}; }}
 QComboBox QAbstractItemView::item:selected, QListView#popup::item:selected {{ background: {accentSoft};
     color: {accentText}; }}
-QDialog QListWidget, QDialog QTreeView, QDialog QTableView {{ background: {field}; border: none; border-radius: 10px; padding: 4px;
-                                            outline: 0; }}
+QDialog QListWidget, QDialog QTreeView, QDialog QTableView {{ background: {field}; border: none;
+    border-radius: 10px; padding: 4px; outline: 0; }}
 QDialog QListWidget::item {{ padding: 6px 8px; border-radius: 8px; }}
 QDialog QListWidget::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 

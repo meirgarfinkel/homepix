@@ -1,5 +1,6 @@
 """Scanning folders and keeping the index in step with them."""
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -77,23 +78,23 @@ def index_folder(
     root = Path(root).expanduser().resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"Folder not found: {root}")
-    info = dict(
-        phase="scanning",
-        root=str(root),
-        found=0,
-        todo=0,
-        done=0,
-        faces=0,
-        errors=0,
-        moved=0,
-        removed=0,
-        unreachable=0,
-        missing=0,
-        rate=0.0,
-        eta=None,
-        stopped=False,
-        tagged=0,
-    )
+    info = {
+        "phase": "scanning",
+        "root": str(root),
+        "found": 0,
+        "todo": 0,
+        "done": 0,
+        "faces": 0,
+        "errors": 0,
+        "moved": 0,
+        "removed": 0,
+        "unreachable": 0,
+        "missing": 0,
+        "rate": 0.0,
+        "eta": None,
+        "stopped": False,
+        "tagged": 0,
+    }
     report = on_progress or (lambda i: None)
     stop = should_stop or (lambda: False)
     report(info)
@@ -293,7 +294,8 @@ def read_details(db, prefix: str, should_stop=lambda: False) -> int:
     rows = {
         r[0]: r
         for r in db.execute(
-            "SELECT path, mtime, taken, moment FROM photos WHERE details_done=0 AND error IS NULL AND substr(path, 1, ?) = ?",
+            "SELECT path, mtime, taken, moment FROM photos "
+            "WHERE details_done=0 AND error IS NULL AND substr(path, 1, ?) = ?",
             (len(prefix), prefix),
         )
     }
@@ -374,10 +376,9 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
             "INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?,?,?,?,?,?,?,?)",
             [(pid, x, y, w, h, s, to_blob(v), px) for x, y, w, h, s, v, px in found],
         )
-    try:  # the photo is already decoded, so its thumbnail is nearly free now
+    # The photo is already decoded, so its thumbnail is nearly free now. If it fails, it's made on demand later.
+    with contextlib.suppress(OSError):
         photo_thumb(qh, path, img)
-    except OSError:
-        pass  # not worth failing the photo over; it's made on demand later
     return len(found)
 
 

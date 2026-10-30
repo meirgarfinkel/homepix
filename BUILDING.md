@@ -51,7 +51,7 @@ If double-clicking does nothing on some computer, running it as `./HomePix-x86_6
 
 ## Windows installer (on a Windows 10 or 11 PC)
 
-1. **Install Python 3.12** from [python.org](https://www.python.org/downloads/). In the installer, tick **Add python.exe to PATH**.
+1. **Install Python 3.11** from [python.org](https://www.python.org/downloads/). In the installer, tick **Add python.exe to PATH**.
 
 2. **Install Inno Setup 6** from [jrsoftware.org](https://jrsoftware.org/isinfo.php). It's what turns the app into an installer.
 

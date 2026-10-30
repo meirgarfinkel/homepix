@@ -8,9 +8,14 @@ testpaths = ["tests"]
 pythonpath = [".", "tests"]
 
 [tool.ruff.lint]
-# pycodestyle errors/warnings, pyflakes, bugbear (likely bugs), pyupgrade, import order
-select = ["E", "W", "F", "B", "UP", "I"]
+# pycodestyle, pyflakes, bugbear (likely bugs), pyupgrade, import order, simplify, comprehensions,
+# returns, and a cap on how tangled one function may get
+select = ["E", "W", "F", "B", "UP", "I", "SIM", "C4", "RET", "C90"]
 ignore = [
-    "E501",  # long lines: style only
-    "E731",  # small `q = lambda ...` helpers are used on purpose
+    "E731",    # small `q = lambda ...` helpers are used on purpose
+    "RET502",  # a bare `return` in a function that returns a value only sometimes is fine
+    "RET503",  # ... and so is falling off its end
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15

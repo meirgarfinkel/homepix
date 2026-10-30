@@ -5,6 +5,7 @@ The date comes from the file itself: Apple's creation date (local time, as recor
 else the movie header's creation time (UTC, turned into local time).
 """
 
+import contextlib
 import datetime as dt
 import struct
 from pathlib import Path
@@ -104,10 +105,8 @@ def video_meta(path) -> dict:
             if meta:
                 apple = _apple_date(f, *meta)
                 if apple:
-                    try:  # e.g. 2023-05-28T23:07:00+0300: the wall time where it was recorded
+                    with contextlib.suppress(ValueError):  # e.g. 2023-05-28T23:07:00+0300: the wall time there
                         out["taken"] = dt.datetime.fromisoformat(apple[:19])
-                    except ValueError:
-                        pass
     except (OSError, struct.error, IndexError):
         pass
     return out

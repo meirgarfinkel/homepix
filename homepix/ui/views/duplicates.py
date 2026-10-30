@@ -411,10 +411,7 @@ class DuplicatesView(QWidget):
         shown = self.list.shown(g)
         i = next(i for i, c in enumerate(shown) if c.id == photo_id)
         c = shown[i]
-        if c.id == g.keeper.id:
-            kept = "✓ Keep"
-        else:
-            kept = "Same file" if g.how == "exact" else "Extra copy"
+        kept = "✓ Keep" if c.id == g.keeper.id else "Same file" if g.how == "exact" else "Extra copy"
         size = f"{c.width:,} × {c.height:,} · " if c.width else ""
         n = self.groups.index(g)
         return (
