@@ -76,17 +76,20 @@ def _server_name() -> str:
 
 def single_instance(files=()):
     """A local server other launches can find, or None if HomePix is already open (it's then
-    told to show itself, and the files to open: one path per line)."""
+    told to show itself, and given the files to open)."""
     name = _server_name()
     probe = QLocalSocket()
     probe.connectToServer(name)
     if probe.waitForConnected(500):
-        if files:
-            probe.write("\n".join(files).encode())
-            probe.waitForBytesWritten(1000)
+        if sys.platform == "win32":  # let the open window come to the front (else it only flashes)
+            import ctypes
+
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)
+        # the paths, one per line, then a zero byte; the open window answers once it has them
+        probe.write("\n".join(files).encode() + b"\0")
+        probe.waitForBytesWritten(1000)
+        probe.waitForReadyRead(3000)
         probe.disconnectFromServer()
-        if probe.state() != QLocalSocket.LocalSocketState.UnconnectedState:
-            probe.waitForDisconnected(1000)
         return None
     server = QLocalServer()
     if not server.listen(name):
@@ -96,25 +99,38 @@ def single_instance(files=()):
 
 
 def _listen(sock, win):
-    """Another launch: show the window, and open the files it was given (sent before it hangs up)."""
-    got = bytearray()
+    """Another launch: show the window, and open the files it was given."""
+    got, handled = bytearray(), []
 
-    def read():
-        got.extend(bytes(sock.readAll()))
-
-    def done():
-        read()
-        sock.deleteLater()
+    def handle():
+        if handled:
+            return
+        handled.append(True)
         paths = [p for p in got.decode(errors="replace").split("\n") if p]
         if paths:
             win.opener.open(paths)
         else:
             win.bring_forward()
 
+    def read():
+        got.extend(bytes(sock.readAll()))
+        if b"\0" in got and not handled:
+            del got[got.index(b"\0") :]
+            sock.write(b"ok")  # it can go now
+            sock.flush()
+            handle()
+
+    def gone():
+        read()
+        handle()
+        sock.deleteLater()
+
     sock.readyRead.connect(read)
-    sock.disconnected.connect(done)
+    sock.disconnected.connect(gone)
+    if sock.bytesAvailable():
+        read()
     if sock.state() == QLocalSocket.LocalSocketState.UnconnectedState:  # it hung up already
-        done()
+        gone()
 
 
 def add_menu_entry():

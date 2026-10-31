@@ -36,9 +36,10 @@ def given_files(args) -> list[str]:
     found = []
     for a in args:
         if a.startswith("file://"):
-            from urllib.parse import unquote, urlparse
+            from urllib.parse import urlparse
+            from urllib.request import url2pathname
 
-            a = unquote(urlparse(a).path)
+            a = url2pathname(urlparse(a).path)
         if os.path.isfile(a) and os.path.splitext(a)[1].lower() in MEDIA_EXTS:
             found.append(os.path.abspath(a))
     return found

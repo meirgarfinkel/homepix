@@ -14,7 +14,7 @@ def test_only_photos_and_videos_are_taken_from_the_arguments(tmp_path):
 
     a = photo(tmp_path / "my photo.jpg")
     (tmp_path / "notes.txt").write_text("hi")
-    url = "file://" + str(a).replace(" ", "%20")
+    url = a.as_uri()
     assert given_files([str(a), str(tmp_path / "notes.txt"), "--flag", str(tmp_path / "gone.jpg"), url]) == [
         str(a),
         str(a),
@@ -77,17 +77,36 @@ def test_a_photo_outside_the_library_offers_to_add_its_folder(window, pf, lib, a
     assert window.viewer.items[window.viewer.index].path == str(outside)
 
 
-def test_a_second_launch_hands_its_photo_to_the_open_window(window, pf, lib, app, monkeypatch):
+def test_a_second_launch_hands_its_photo_to_the_open_window(window, pf, lib, app):
+    import subprocess
+    import sys
+
     from homepix.ui import app as app_module
 
     photo(lib / "a.jpg")
     pf.add_folder(lib)
     pf.index_folder(lib, want_faces=False)
-    monkeypatch.setattr(app_module, "_server_name", lambda: f"homepix-test-{os.getpid()}")
     server = app_module.single_instance()
     assert server is not None
     server.newConnection.connect(lambda: app_module._listen(server.nextPendingConnection(), window))
-    assert app_module.single_instance([str(lib / "a.jpg")]) is None  # already open: handed over
-    wait_until(app, lambda: window.stack.currentWidget() is window.viewer)
+    launch = (  # another HomePix starting, with a photo to open (as "Open With" starts it)
+        "import sys; from PySide6.QtCore import QCoreApplication; a = QCoreApplication([]); "
+        "from homepix.ui.app import single_instance; sys.exit(0 if single_instance([sys.argv[1]]) is None else 1)"
+    )
+    second = subprocess.Popen([sys.executable, "-c", launch, str(lib / "a.jpg")])
+    wait_until(app, lambda: second.poll() is not None and window.stack.currentWidget() is window.viewer)
+    assert second.returncode == 0  # it found this one open, handed the photo over and stopped
     assert window.viewer.items[0].path == str(lib / "a.jpg")
     server.close()
+
+
+def test_the_windows_installer_offers_homepix_for_every_kind_it_reads():
+    from pathlib import Path
+
+    from homepix.core.library import MEDIA_EXTS
+    from homepix.core.media import IMAGE_EXTS
+
+    iss = (Path(__file__).parents[1] / "packaging" / "homepix.iss").read_text()
+    for ext in MEDIA_EXTS | IMAGE_EXTS | {".heic", ".heif"}:
+        assert f"Software\\Classes\\{ext}\\OpenWithProgids" in iss, ext
+        assert f'SupportedTypes"; ValueType: string; ValueName: "{ext}"' in iss, ext
