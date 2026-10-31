@@ -33,15 +33,18 @@ without touching your own.
   passed CI.
 - **Work happens on short-lived branches** cut from `main`, named for what they do:
   - `feature/<name>`, `fix/<name>`, `chore/<name>`, `docs/<name>` for everything else
-- Open a pull request into `main`. When CI is green, it's **squash-merged** by itself (one commit per change on
-  `main`; `.github/workflows/automerge.yml`). Open it as a draft, or add the `no-automerge` label, to hold it back.
+- Open a pull request into `main` and turn on GitHub's auto-merge: `gh pr merge <number> --auto --squash`. Once
+  every required check passes it's **squash-merged** (one commit per change on `main`). To hold it back, don't turn
+  auto-merge on, or turn it off with `gh pr merge <number> --disable-auto`.
+- `main` is protected: changes only arrive through pull requests, and `lint`, `test`, `test-windows`, `linux`
+  and `windows` must all pass. Force-pushes and deleting `main` are blocked.
 
 ## CI/CD
 
 | Workflow | Runs on | Does |
 |---|---|---|
 | `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests; required for merging into `main` |
-| `Build HomePix` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros, and the Windows installer. A pull request's build saves no files on GitHub; a tag's publishes a GitHub Release with both and then deletes its copies; one started by hand keeps them, to download |
+| `Build HomePix` (`.github/workflows/build.yml`) | every pull request; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros, and the Windows installer. A pull request's build saves no files on GitHub; a tag's publishes a GitHub Release with both and then deletes its copies; one started by hand keeps them, to download |
 
 ## Releasing
 
