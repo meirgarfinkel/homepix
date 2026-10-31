@@ -90,3 +90,7 @@ Constants in `homepix/core/config.py`:
 - From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (the downloads bundle their own).
 - On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so HomePix won't delete them.
 - Very small faces in big group photos are often missed or not recognized (small faces are read from the full-size photo, which helps when it has the pixels).
+
+## License
+
+HomePix is free software under the [GNU General Public License v3.0](LICENSE). You may use, change and share it, including for money, but anything you distribute that's built on it must also be released under the GPL-3.0, with its full source code. The AI models and the font keep their own licenses, listed above.
