@@ -12,7 +12,7 @@ From then on:
 - **every `git commit`** runs `ruff` on what's being committed: it formats the code and fixes what it safely can.
   If it changed anything the commit stops; `git add` the changes and commit again.
 - **every `git push`** checks everything (lint, formatting, line length, a few file checks) without changing
-  anything. A push with problems is stopped before it leaves your computer. CI runs the same checks.
+  anything. A push with problems is stopped before it leaves your computer.
 
 Run the push checks any time with `pre-commit run --all-files --hook-stage pre-push`.
 
@@ -29,19 +29,29 @@ without touching your own.
 
 ## Branches
 
-- **`main`** always works. Nobody pushes to it directly; changes arrive through pull requests that
-  passed CI.
+- **`main`** always works. Nobody pushes to it directly; changes arrive through pull requests.
 - **Work happens on short-lived branches** cut from `main`, named for what they do:
   - `feature/<name>`, `fix/<name>`, `chore/<name>`, `docs/<name>` for everything else
-- Open a pull request into `main`. When CI is green, it's **squash-merged** by itself (one commit per change on
-  `main`; `.github/workflows/automerge.yml`). Open it as a draft, or add the `no-automerge` label, to hold it back.
+- Open a pull request into `main`. Before merging, run the checks and tests on your computer (below), then
+  **squash-merge** it by hand (one commit per change on `main`): `gh pr merge <number> --squash`.
 
-## CI/CD
+## Checks before merging
 
-| Workflow | Runs on | Does |
-|---|---|---|
-| `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests; required for merging into `main` |
-| `Build HomePix` (`.github/workflows/build.yml`) | pull requests that change the app or packaging; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros, and the Windows installer. A pull request's build saves no files on GitHub; a tag's publishes a GitHub Release with both and then deletes its copies; one started by hand keeps them, to download |
+GitHub runs nothing on pull requests; the checks run on your computer:
+
+```bash
+pre-commit run --all-files --hook-stage pre-push        # lint and formatting
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q  # tests
+```
+
+For a change to the app or its packaging, also build the AppImage and self-test it on other distros
+(`packaging/build_in_container.sh`, `packaging/smoke_test.sh`; see BUILDING.md). Windows isn't checked until a
+release.
+
+`Build HomePix` (`.github/workflows/build.yml`) is the only GitHub workflow. It runs for version tags and when
+started by hand from the Actions tab: it builds the AppImage in AlmaLinux 9 and self-tests it on six distros, and
+builds and self-tests the Windows installer. A tag's run publishes a GitHub Release with both and then deletes its
+copies; a hand-started one keeps them for 2 days, to download.
 
 ## Releasing
 

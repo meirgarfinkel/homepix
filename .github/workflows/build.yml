@@ -1,14 +1,10 @@
-# Builds HomePix on GitHub's machines.
+# Builds HomePix on GitHub's machines, only for releases (and when started by hand from the Actions tab).
+# Everyday checks and builds run on your own computer; see CONTRIBUTING.md.
 # - Linux: the AppImage is built in AlmaLinux 9 (glibc 2.34), then its self-test runs on a fresh
-#   Debian, Ubuntu, Fedora and Arch. This runs on every pull request that touches the app or its
-#   packaging, so a change that breaks some distro shows up before it's merged.
-# - Windows: the installer, built the same way on Windows; its self-test runs too, with the AI models.
-# Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files.
-#
-# A pull request's build saves nothing on GitHub: each job tests what it built itself, and the AI models
-# come from the cache (free, and separate from the storage quota that saved files count against). Only a
-# tag's build and one started by hand save their files: a tag's for the Release, a hand-started one's
-# to download.
+#   Debian, Ubuntu, Fedora and Arch.
+# - Windows: the installer, built on Windows; its self-test runs too, with the AI models.
+# Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files, then deletes
+# the run's own copies. A hand-started run keeps its files for 2 days, to download.
 
 name: Build HomePix
 
@@ -16,22 +12,9 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
-  pull_request:
-    branches: [main]
-    paths:
-      - "homepix/**"
-      - "homepix_app.py"
-      - "homepix-icon.*"
-      - "requirements.txt"
-      - "packaging/**"
-      - ".github/workflows/build.yml"
 
 permissions:
   contents: read
-
-concurrency:  # a new push to a pull request replaces the build still running for the old one
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   linux:
@@ -59,8 +42,7 @@ jobs:
             echo "::endgroup::"
           done
           if [ -n "$failed" ]; then echo "::error::The self-test failed on:$failed"; exit 1; fi
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: HomePix-Linux
           path: HomePix-x86_64.AppImage
@@ -90,8 +72,7 @@ jobs:
       - run: choco install innosetup --no-progress -y
       - run: packaging\build_windows.bat
         shell: cmd
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: HomePix-Windows
           path: HomePixSetup.exe
