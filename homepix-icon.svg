@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <!-- HomePix: a roof with a chimney over a camera lens. homepix-icon.png and .ico are made from this. -->
+  <rect width="64" height="64" rx="15" fill="#13212C"/>
+  <rect x="40" y="16.5" width="4" height="7.5" rx="0.8" fill="#E4E7EA"/>
+  <path d="M12 30.9L32 15.3L52 30.9" fill="none" stroke="#E4E7EA" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="39" r="11" fill="none" stroke="#3AA9DB" stroke-width="3.4"/>
+  <path d="M25.9 36.8A6.5 6.5 0 0 1 29.8 32.9" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

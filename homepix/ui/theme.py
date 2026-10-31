@@ -365,24 +365,36 @@ def icon(name: str, colour: str = "text") -> QIcon:
 
 
 def brand_mark(px: int = 28, dpr: float = 2.0) -> QPixmap:
-    """A rounded square in the accent with a sun over hills."""
+    """The app icon (homepix-icon.svg): a roof with a chimney over a camera lens, on a dark rounded
+    square. Drawn on a 64-unit grid, the same as the SVG."""
     pm = QPixmap(round(px * dpr), round(px * dpr))
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.scale(dpr * px / 28, dpr * px / 28)
+    p.scale(dpr * px / 64, dpr * px / 64)
+    roof_colour, lens_colour = QColor("#E4E7EA"), QColor("#3AA9DB")
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(color("accent"))
-    p.drawRoundedRect(QRectF(0, 0, 28, 28), 8, 8)
-    p.setBrush(color("accentInk"))
-    p.drawEllipse(QPointF(18.5, 9.5), 2.6, 2.6)
-    hills = QPainterPath(QPointF(5, 21))
-    hills.lineTo(11, 13)
-    hills.lineTo(15, 18)
-    hills.lineTo(17.5, 15.5)
-    hills.lineTo(23, 21)
-    hills.closeSubpath()
-    p.drawPath(hills)
+    p.setBrush(QColor("#13212C"))
+    p.drawRoundedRect(QRectF(0, 0, 64, 64), 15, 15)
+    p.setBrush(roof_colour)
+    p.drawRoundedRect(QRectF(40, 16.5, 4, 7.5), 0.8, 0.8)  # chimney
+
+    def pen(col, width):
+        pn = QPen(col, width)
+        pn.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pn.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        return pn
+
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(pen(roof_colour, 4))
+    roof = QPainterPath(QPointF(12, 30.9))
+    roof.lineTo(32, 15.3)
+    roof.lineTo(52, 30.9)
+    p.drawPath(roof)
+    p.setPen(pen(lens_colour, 3.4))
+    p.drawEllipse(QPointF(32, 39), 11, 11)
+    p.setPen(pen(QColor("#FFFFFF"), 2.2))
+    p.drawArc(QRectF(25.5, 32.5, 13, 13), 110 * 16, 50 * 16)  # the glare, top left inside the lens
     p.end()
     pm.setDevicePixelRatio(dpr)
     return pm
