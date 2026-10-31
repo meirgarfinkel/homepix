@@ -40,6 +40,12 @@ def bad_name(name: str):
     return None
 
 
+def _found_new(result) -> bool:
+    """After an operation: did it leave photos the index doesn't know yet? Moves, copies, Trash, renames
+    and edits keep the index up to date themselves, so a rescan would only make the next change wait."""
+    return result is not None and result.unindexed > 0
+
+
 class FileOps(QObject):
     """Runs the operations; the window connects:
     finished(str): a message for the status bar, after anything changed files;
@@ -56,10 +62,10 @@ class FileOps(QObject):
 
     # --- running --------------------------------------------------------------------------------------
 
-    def _in_background(self, title: str, work, finished, exclusive: bool = True, files: bool = True):
+    def _in_background(self, title: str, work, finished, exclusive: bool = True, rescan=lambda res: True):
         """work(progress, should_stop) on a worker thread, then finished(result, error) here.
-        exclusive: no indexing meanwhile (anything that changes the library); files: and it changes
-        files, so look through the folders again afterwards."""
+        exclusive: no indexing meanwhile (anything that changes the library); rescan(result): whether it
+        left something for indexing to find, so look through the folders again afterwards."""
         if self.busy:
             self.window.statusBar().showMessage("Still busy with the last one. A moment...", 4000)
             return
@@ -90,7 +96,8 @@ class FileOps(QObject):
             dlg.deleteLater()
             self.busy = False
             if exclusive:
-                watcher.release(rescan=self.window.indexing and (files or was_indexing))
+                found = err is not None or rescan(res)  # (after an error, look: something may have changed)
+                watcher.release(rescan=self.window.indexing and (found or was_indexing))
             finished(res, err)
             self.history_changed.emit()
 
@@ -118,9 +125,7 @@ class FileOps(QObject):
             f"{summary}...",
             work,
             lambda res, err: self._report_result(past, res, err),
-            # Trash takes the photos out of the index itself, so there's nothing new to look for: a rescan
-            # would only make the next change wait for it to stop
-            files=kind not in ("people", "apart", "trash"),
+            rescan=_found_new,
         )
 
     def undo(self):
@@ -128,6 +133,7 @@ class FileOps(QObject):
             "Undoing...",
             lambda p, s: self._undo_or_redo(fileops.can_undo, fileops.undo, p),
             lambda res, err: self._report_result(f"Undid: {res[0]}" if res else "", res and res[1], err),
+            rescan=lambda res: _found_new(res and res[1]),
         )
 
     def redo(self):
@@ -137,6 +143,7 @@ class FileOps(QObject):
             lambda res, err: self._report_result(
                 f"Redid: {self._redo_name(res[0])}" if res else "", res and res[1], err
             ),
+            rescan=lambda res: _found_new(res and res[1]),
         )
 
     @staticmethod

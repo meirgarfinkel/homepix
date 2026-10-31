@@ -48,12 +48,16 @@ def likeness_to(embs, owners, refs, people):
     """How alike each face is to each of people: on average, to the RECOGNIZE_K most like it of the
     faces they were named on (from references). A faces × people array."""
     sims = np.empty((len(embs), len(people)), np.float32)
-    cols = [np.flatnonzero(owners == p) for p in people]
+    # Each person's named faces side by side, so their columns are one range (a cheap slice) instead
+    # of scattered ones that would have to be gathered for every person and block.
+    order = np.argsort(owners, kind="stable")
+    owners, refs = owners[order], refs[order]
+    spans = [(np.searchsorted(owners, p, "left"), np.searchsorted(owners, p, "right")) for p in people]
     for start in range(0, len(embs), 2048):  # (a block at a time: faces × named faces can be big)
         block = embs[start : start + 2048] @ refs.T
-        for j, c in enumerate(cols):
-            k = min(RECOGNIZE_K, len(c))
-            sims[start : start + 2048, j] = -np.partition(-block[:, c], k - 1, axis=1)[:, :k].mean(axis=1)
+        for j, (a, b) in enumerate(spans):
+            k = min(RECOGNIZE_K, b - a)
+            sims[start : start + 2048, j] = -np.partition(-block[:, a:b], k - 1, axis=1)[:, :k].mean(axis=1)
     return sims
 
 
