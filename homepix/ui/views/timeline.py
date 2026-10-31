@@ -10,7 +10,7 @@ import calendar
 import math
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QAbstractScrollArea, QToolTip, QWidget
 
@@ -67,6 +67,11 @@ class TimelineView(QAbstractScrollArea):
         self.selected = set()
         self._anchor = -1
         self.ticking = False  # a click ticks or unticks a photo (as on Who is this?) instead of choosing it
+        self._sweep = (
+            None  # ticking, while dragging across photos: tick or untick, where it began and is, what was ticked
+        )
+        self._sweep_scroll = QTimer(self, interval=30)  # (dragged past the top or bottom: scroll on)
+        self._sweep_scroll.timeout.connect(self._scroll_sweep)
         self.empty_text = ""
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -400,8 +405,65 @@ class TimelineView(QAbstractScrollArea):
             self.set_current(i, "range")
         elif mods & Qt.KeyboardModifier.ControlModifier or self.ticking:
             self.set_current(i, "toggle")
+            if self.ticking:  # dragging on from here ticks (or unticks) every photo it passes over
+                at = self._content_point(e.position().toPoint())
+                self._sweep = {"tick": i in self.selected, "from": at, "at": at, "base": set(self.selected)}
         else:
             self.set_current(i, "only")
+
+    # --- ticking by dragging across photos (as on Who is this?) ------------------------------------------
+
+    def _content_point(self, pos: QPoint) -> QPoint:
+        return QPoint(pos.x(), pos.y() + self.verticalScrollBar().value())
+
+    def mouseMoveEvent(self, e):
+        if self._sweep is None or not e.buttons() & Qt.MouseButton.LeftButton:
+            return super().mouseMoveEvent(e)
+        pos = e.position().toPoint()
+        self._sweep_to(self._content_point(pos))
+        h = self.viewport().height()
+        if pos.y() < 0 or pos.y() > h:
+            self._sweep["edge"] = pos.y() if pos.y() < 0 else pos.y() - h
+            self._sweep_scroll.start()
+        else:
+            self._sweep_scroll.stop()
+
+    def mouseReleaseEvent(self, e):
+        self._sweep = None
+        self._sweep_scroll.stop()
+        super().mouseReleaseEvent(e)
+
+    def _scroll_sweep(self):
+        if self._sweep is None:
+            return self._sweep_scroll.stop()
+        bar = self.verticalScrollBar()
+        edge = self._sweep["edge"]
+        before = bar.value()
+        bar.setValue(before + max(-60, min(60, edge // 2 or (1 if edge > 0 else -1))))
+        at = self._sweep["at"]
+        self._sweep_to(QPoint(at.x(), at.y() + bar.value() - before))
+
+    def _sweep_to(self, to: QPoint):
+        """The photos in the rectangle from where the drag began to this point (content coordinates) are
+        ticked (or unticked) on top of what was ticked before it began: dragging back lets them go."""
+        sweep = self._sweep
+        sweep["at"] = to
+        box = QRect(sweep["from"], to).normalized()
+        hit = set()
+        if self.rows:
+            for k in range(self._row_at(box.top()), self._row_at(box.bottom()) + 1):
+                r = self.rows[k]
+                if r.start != -1:
+                    hit.update(i for i in range(r.start, r.end) if self.item_rect(i).intersects(box))
+        selected = sweep["base"] | hit if sweep["tick"] else sweep["base"] - hit
+        under = self.item_at(QPoint(to.x(), to.y() - self.verticalScrollBar().value()))
+        if under >= 0 and under != self.current:
+            self.current = under
+            self.current_changed.emit(under)
+        if selected != self.selected:
+            self.selected = selected
+            self.selection_changed.emit()
+        self.viewport().update()
 
     def contextMenuEvent(self, e):
         """Right-click a photo that isn't selected: it alone is chosen (ticking: it's ticked as well). On a
