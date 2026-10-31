@@ -33,9 +33,11 @@ from pathlib import Path
 from . import dates, duplicates, metadata, people
 from . import trash as trashcan
 from .db import columns
+from .media import IMAGE_EXTS
 from .safefs import copy_file, free_name, move_file, rename_noreplace
 from .thumbs import thumbs_dir
 from .util import quick_hash
+from .video import VIDEO_EXTS
 
 # Steps that change only the index (who's who, what isn't a duplicate): {action: its module}, whose
 # apply(db, state) sets a state; the step's before is {"old": state, "new": state}.
@@ -196,6 +198,13 @@ def _mark_finished(db, step, dst=None):
     db.execute(
         "UPDATE op_steps SET done=?, dst=?, after=? WHERE id=?", (FINISHED, step["dst"], json.dumps(after), step["id"])
     )
+
+
+def _unindexed(db, path) -> bool:
+    """A photo or video at path that the index doesn't have (sidecars and other files aren't indexed)."""
+    if os.path.splitext(path)[1].lower() not in IMAGE_EXTS | VIDEO_EXTS:
+        return False
+    return db.execute("SELECT 1 FROM photos WHERE path=?", (path,)).fetchone() is None
 
 
 def _mark_skipped(db, step, why: str):
@@ -383,8 +392,12 @@ def pattern_names(pattern: str, items) -> list[str]:
 
 
 class Result:
+    """unindexed: photos and videos it put somewhere that the index doesn't know about yet (pasted in
+    from outside the library): only then is there anything for a rescan to find."""
+
     def __init__(self, op_id, finished=0, skipped=None, stopped=False):
         self.op_id, self.finished, self.skipped, self.stopped = op_id, finished, skipped or [], stopped
+        self.unindexed = 0
 
     def __repr__(self):
         return f"Result(op={self.op_id}, finished={self.finished}, skipped={self.skipped}, stopped={self.stopped})"
@@ -446,6 +459,8 @@ class _Op:
     def finished(self, step, dst):
         _mark_finished(self.db, step, dst)
         self.result.finished += 1
+        if step["action"] in ("move", "copy", "restore") and _unindexed(self.db, dst or step["dst"]):
+            self.result.unindexed += 1
         self.done += 1
         self.report(self.done, len(self.rows))
         if time.monotonic() - self.last_commit > 0.5:  # so the window can show the progress

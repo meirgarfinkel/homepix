@@ -253,26 +253,43 @@ def test_toggling_the_scrubber_lays_the_grid_out_again(app):
     v.close()
 
 
-def test_trashing_doesnt_look_through_the_folders_again(window, pf, lib, app, tmp_path, monkeypatch):
-    """Trash takes photos out of the index itself: a rescan after it would only make the next change
-    wait. Moving does still look again."""
+def test_only_photos_from_outside_the_library_start_a_rescan(window, pf, lib, app, tmp_path, monkeypatch):
+    """Trash, moves, copies and undo keep the index up to date themselves: a rescan after them would
+    only make the next change wait. Photos pasted in from outside the library are new to it."""
+    from homepix.core import fileops as files
+
     own_trash(monkeypatch, tmp_path)
     for i in range(3):
         photo(lib / f"{i}.jpg")
+    outside = photo(tmp_path / "elsewhere" / "new.jpg")
     pf.add_folder(lib)
     pf.index_folder(lib, want_faces=False)
     window.reload()
     wait_until(app, lambda: len(window.timeline.items) == 3)
     wait_until(app, lambda: not window.watcher.indexer.snapshot()["running"])
-    starts = []
+    starts, said = [], []
     monkeypatch.setattr(window.watcher, "start", lambda *a, **k: starts.append(1))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", staticmethod(lambda *a: said.append(a[2])))
 
-    window.timeline.set_current(0)
+    def done(cond):
+        wait_until(app, lambda: cond() and not window.ops.busy)
+        assert said == []
+
+    def shown(name):
+        return next(it for it in window.timeline.items if os.path.basename(it.path) == name)
+
+    window.timeline.set_current(next(i for i, it in enumerate(window.timeline.items) if it.path.endswith("0.jpg")))
     window.files.trash_them()
-    wait_until(app, lambda: len(window.timeline.items) == 2 and not window.ops.busy)
+    done(lambda: len(window.timeline.items) == 2)
     assert len(trashed_files(tmp_path)) == 1
+    window.files.move_or_copy_into("move", [shown("1.jpg")], str(lib / "moved"))
+    done(lambda: (lib / "moved" / "1.jpg").exists())
+    window.files.move_or_copy_into("copy", [shown("2.jpg")], str(lib / "copies"))
+    done(lambda: (lib / "copies" / "2.jpg").exists())
+    window.ops.undo()
+    done(lambda: not (lib / "copies" / "2.jpg").exists())
     assert starts == []
 
-    window.files.move_or_copy_into("move", [window.timeline.items[0]], str(lib / "moved"))
-    wait_until(app, lambda: (lib / "moved").is_dir() and not window.ops.busy)
+    window.ops.run("copy", "Paste", "Pasted", lambda db: files.plan_into([str(outside)], str(lib), "copy"))
+    done(lambda: (lib / "new.jpg").exists())
     assert starts == [1]

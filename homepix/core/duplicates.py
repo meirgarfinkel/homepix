@@ -207,16 +207,18 @@ def _near_pairs(rows) -> list[tuple[int, int, int, float]]:
     clip = np.frombuffer(b"".join(r["clip"] for r in photos), np.float16).reshape(len(photos), -1).astype(np.float32)
     pairs = []
     for i in range(0, len(photos), 1024):
-        d = np.bitwise_count(h[i : i + 1024, None] ^ h[None, :])
+        # each pair once: this block against itself and the photos after it, not those before
+        d = np.bitwise_count(h[i : i + 1024, None] ^ h[None, i:])
         a, b = np.nonzero(d <= NEAR_BITS)
-        a += i
+        bits = d[a, b]
+        a, b = a + i, b + i
         keep = b > a
-        a, b = a[keep], b[keep]
+        a, b, bits = a[keep], b[keep], bits[keep]
         if not len(a):
             continue
         look = np.einsum("ij,ij->i", clip[a], clip[b])
         ok = look >= NEAR_LOOK
-        for x, y, dist, sim in zip(a[ok], b[ok], d[a[ok] - i, b[ok]], look[ok], strict=True):
+        for x, y, dist, sim in zip(a[ok], b[ok], bits[ok], look[ok], strict=True):
             if not two_shots(photos[x], photos[y]):
                 pairs.append((photos[x]["id"], photos[y]["id"], int(dist), float(sim)))
     return pairs
