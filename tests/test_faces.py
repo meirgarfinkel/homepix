@@ -421,3 +421,29 @@ def test_forty_thousand_faces(db):
     t = time.perf_counter()
     fileops.undo(db)
     assert time.perf_counter() - t < 3
+
+
+def test_recognizing_again_only_when_faces_or_names_changed(db, monkeypatch):
+    """A rescan that found nothing new skips recognizing (slow with many faces); any change to the
+    faces or who they are makes it run again."""
+    ran = []
+    real = people.auto_assign
+    monkeypatch.setattr(people, "auto_assign", lambda d, write=True: (write and ran.append(1)) or real(d, write))
+    monkeypatch.setattr(people, "_assigned", {})
+    a = add_faces(db, [1, 1, 1, 2, 2], seed=1)
+    do(db, people.plan_name(db, a[:2], "Ann"))
+
+    people.auto_assign_if_changed(db)  # the first time in a run of the app, it always looks
+    assert len(ran) == 1
+    people.auto_assign_if_changed(db)  # nothing changed: skipped
+    assert len(ran) == 1
+
+    new = add_faces(db, [1], seed=2)  # a new photo of Ann
+    assert people.auto_assign_if_changed(db) == 1 and len(ran) == 2
+    assert names(db)[new[0]] == "Ann"
+
+    do(db, people.plan_not(db, new))  # "that isn't her": the marks changed
+    people.auto_assign_if_changed(db)
+    assert len(ran) == 3 and names(db)[new[0]] is None
+    people.auto_assign_if_changed(db)
+    assert len(ran) == 3

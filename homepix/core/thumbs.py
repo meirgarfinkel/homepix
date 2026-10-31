@@ -5,6 +5,7 @@ deletions, while an edited photo gets a new fingerprint and a moved one keeps it
 """
 
 import hashlib
+import os
 import threading
 from pathlib import Path
 
@@ -45,10 +46,14 @@ def face_thumb(row, size=128) -> Path:
     return out
 
 
+def _thumb_name(qhash: str) -> str:
+    return f"{qhash}-{THUMB_SIZE}.jpg"
+
+
 def thumb_file(qhash: str) -> Path:
     """Where a photo's thumbnail is (or goes). Its size is in the name, so a bigger size later
     doesn't pass off the smaller ones as up to date."""
-    return thumbs_dir("photos") / f"{qhash}-{THUMB_SIZE}.jpg"
+    return thumbs_dir("photos") / _thumb_name(qhash)
 
 
 def old_thumb_file(qhash: str) -> Path:
@@ -82,9 +87,10 @@ def sharpen_thumbs(db, prefix: str, should_stop=lambda: False, progress=None, wo
         "AND kind IN ('photo', 'video') AND substr(path, 1, ?) = ? ORDER BY taken DESC",
         (len(prefix), prefix),
     ).fetchall()
+    made_already = set(os.listdir(thumbs_dir("photos")))  # (one listing: much faster than a check per photo)
     seen, todo = set(), []
     for q, path in rows:
-        if q not in seen and not thumb_file(q).exists():
+        if q not in seen and _thumb_name(q) not in made_already:
             seen.add(q)
             todo.append((q, path))
     if not todo:
