@@ -9,7 +9,16 @@ Naming someone recognizes them in more photos too: those faces are part of the s
 
 import numpy as np
 
-from .config import ASSIGN_MARGIN, ASSIGN_MIN_PX, ASSIGN_SIM, CLUSTER_SIM, FOLLOW_UP_FACES, MAYBE_SIM, SUBGROUP_SIM
+from .config import (
+    ASSIGN_MARGIN,
+    ASSIGN_MIN_PX,
+    ASSIGN_SIM,
+    CLUSTER_SIM,
+    FOLLOW_UP_FACES,
+    MAYBE_SIM,
+    SUBGROUP_SIM,
+    db_file,
+)
 from .db import backup, from_blob
 from .util import unit_vectors
 
@@ -100,6 +109,31 @@ def _doubtful(db, pid):
         return []
     rows, embs = load_faces(db, "f.person_id = ? AND f.locked = 0", (pid,))
     return [r["id"] for r, s in zip(rows, embs @ model[0] + model[1], strict=True) if s < 0]
+
+
+_assigned = {}  # database file -> faces_state() after auto_assign last ran on it (in this run of the app)
+
+
+def faces_state(db) -> tuple:
+    """Changes whenever a face is added or removed, or who it is, its lock, "not a face" or "that isn't them"
+    changes: everything recognizing depends on."""
+    return tuple(
+        db.execute(
+            "SELECT COUNT(*), MAX(id), TOTAL(id * COALESCE(person_id, 0)), TOTAL(id * locked), TOTAL(id * hidden), "
+            "TOTAL(id * COALESCE(not_person, 0)) FROM faces"
+        ).fetchone()
+    )
+
+
+def auto_assign_if_changed(db) -> int:
+    """auto_assign, skipped when no face or name changed since it last ran: with many faces it's the
+    slowest part of a rescan that found nothing new, and gives the same answer again."""
+    key = str(db_file())
+    if _assigned.get(key) == faces_state(db):
+        return 0
+    tagged = auto_assign(db)
+    _assigned[key] = faces_state(db)
+    return tagged
 
 
 def auto_assign(db, write: bool = True):

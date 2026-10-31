@@ -118,7 +118,9 @@ class FileOps(QObject):
             f"{summary}...",
             work,
             lambda res, err: self._report_result(past, res, err),
-            files=kind not in ("people", "apart"),
+            # Trash takes the photos out of the index itself, so there's nothing new to look for: a rescan
+            # would only make the next change wait for it to stop
+            files=kind not in ("people", "apart", "trash"),
         )
 
     def undo(self):

@@ -13,7 +13,7 @@ from .ai import ClipImage, Faces
 from .config import MISSING_MIN, MISSING_SHARE, THUMB_SIZE, data_dir
 from .db import open_db, to_blob
 from .media import IMAGE_EXTS, READER, load_photo
-from .people import auto_assign
+from .people import auto_assign, auto_assign_if_changed
 from .thumbs import photo_thumb, prune_thumbs, sharpen_thumbs
 from .util import folder_prefix, quick_hash
 from .video import VIDEO_EXTS, is_video, video_frame, video_meta
@@ -255,7 +255,7 @@ def _after_indexing(db, prefix, want_faces, info, report, stop, deadline, change
     """After indexing: recognize named people, read the details written in the files, work out how
     they look (for duplicates), sharpen thumbnails, and pair Live Photos with their clips."""
     if want_faces:
-        info["tagged"] += auto_assign(db)
+        info["tagged"] += auto_assign_if_changed(db)
     redated = 0 if info.get("stopped") else read_details(db, prefix, stop)
     if not info.get("stopped"):
         from .duplicates import fill_looks

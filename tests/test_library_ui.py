@@ -4,7 +4,7 @@ import os
 import shutil
 
 import pytest
-from conftest import open_window, photo, rows, wait_until
+from conftest import open_window, own_trash, photo, rows, trashed_files, wait_until
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -251,3 +251,28 @@ def test_toggling_the_scrubber_lays_the_grid_out_again(app):
     v.set_scrubber(True)
     assert (v.cols, v._cell) == before
     v.close()
+
+
+def test_trashing_doesnt_look_through_the_folders_again(window, pf, lib, app, tmp_path, monkeypatch):
+    """Trash takes photos out of the index itself: a rescan after it would only make the next change
+    wait. Moving does still look again."""
+    own_trash(monkeypatch, tmp_path)
+    for i in range(3):
+        photo(lib / f"{i}.jpg")
+    pf.add_folder(lib)
+    pf.index_folder(lib, want_faces=False)
+    window.reload()
+    wait_until(app, lambda: len(window.timeline.items) == 3)
+    wait_until(app, lambda: not window.watcher.indexer.snapshot()["running"])
+    starts = []
+    monkeypatch.setattr(window.watcher, "start", lambda *a, **k: starts.append(1))
+
+    window.timeline.set_current(0)
+    window.files.trash_them()
+    wait_until(app, lambda: len(window.timeline.items) == 2 and not window.ops.busy)
+    assert len(trashed_files(tmp_path)) == 1
+    assert starts == []
+
+    window.files.move_or_copy_into("move", [window.timeline.items[0]], str(lib / "moved"))
+    wait_until(app, lambda: (lib / "moved").is_dir() and not window.ops.busy)
+    assert starts == [1]
