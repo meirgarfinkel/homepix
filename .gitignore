@@ -1,5 +1,6 @@
 build/
 *.AppImage
+*.deb
 HomePixSetup.exe
 __pycache__/
 *.py[cod]

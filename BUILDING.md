@@ -3,6 +3,7 @@
 This turns HomePix into something you can hand to anyone:
 
 - **Linux:** `HomePix-x86_64.AppImage`, a single file of about 235 MB. Make it executable once, then double-click.
+- **Ubuntu, Debian, Mint, Pop!_OS:** `HomePix.deb`, the same app as a package. Double-click it, and the software installer installs it.
 - **Windows:** `HomePixSetup.exe`, a normal installer with Start menu and desktop shortcuts.
 
 Both contain their own copy of Python and every library, so the people you give them to install nothing else. The AI models (about 130 MB) download automatically the first time the app looks through photos.
@@ -47,6 +48,8 @@ The AppImage runs on the Linux it was built on and on newer ones. Release builds
 
 If double-clicking does nothing on some computer, running it as `./HomePix-x86_64.AppImage --appimage-extract-and-run` works without the FUSE support AppImages normally use.
 
+**The .deb:** `bash packaging/build_deb.sh` turns the AppImage into `HomePix.deb` (it needs `dpkg-deb`, on every Debian or Ubuntu). It's the same app, installed in `/opt/homepix`, with `homepix` to start it, a menu entry, the icon, and "Open With" for photos and videos. Its version comes from `homepix/__init__.py`. To check it installs and runs on a fresh system: `bash packaging/smoke_test.sh ubuntu:24.04 HomePix.deb`.
+
 ---
 
 ## Windows installer (on a Windows 10 or 11 PC)
@@ -73,9 +76,9 @@ If double-clicking does nothing on some computer, running it as `./HomePix-x86_6
 
 `.github/workflows/build.yml` builds on GitHub's computers:
 
-- **Every pull request** builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch. It also builds the Windows installer and runs its app's self-test on Windows, with the AI models.
-- **By hand** (Actions tab > **Build HomePix** > **Run workflow**): the same. After 15–25 minutes, download **HomePix-Linux** and **HomePix-Windows** under **Artifacts**.
-- **A version tag** such as `v0.2.0` does everything and publishes a GitHub Release with both files.
+- **Every pull request** builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch. It makes `HomePix.deb` from it, installs it on Debian 12, Ubuntu 22.04 and 24.04, and runs the installed app's self-test there. It also builds the Windows installer and runs its app's self-test on Windows, with the AI models.
+- **By hand** (Actions tab > **Build HomePix** > **Run workflow**): the same. After 15–25 minutes, download **HomePix-Linux** (the AppImage and the .deb) and **HomePix-Windows** under **Artifacts**.
+- **A version tag** such as `v0.2.0` does everything and publishes a GitHub Release with all three files.
 
 A pull request with auto-merge turned on (`gh pr merge <number> --auto --squash`) merges once CI and both builds have passed.
 

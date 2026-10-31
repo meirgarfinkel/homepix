@@ -1,6 +1,7 @@
 # Builds HomePix on GitHub's machines.
 # - Linux: the AppImage is built in AlmaLinux 9 (glibc 2.34), then its self-test runs on a fresh
-#   Debian, Ubuntu, Fedora and Arch. This runs on every pull request (its two builds are required
+#   Debian, Ubuntu, Fedora and Arch. HomePix.deb is made from it, and installed and tested on Debian
+#   and Ubuntu. This runs on every pull request (its two builds are required
 #   checks for merging into main), so a change that breaks some distro shows up before it's merged.
 # - Windows: the installer, built the same way on Windows; its self-test runs too, with the AI models.
 # Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files.
@@ -52,11 +53,23 @@ jobs:
             echo "::endgroup::"
           done
           if [ -n "$failed" ]; then echo "::error::The self-test failed on:$failed"; exit 1; fi
+      - run: bash packaging/build_deb.sh HomePix-x86_64.AppImage HomePix.deb
+      - name: Install the .deb and self-test on Debian and Ubuntu
+        run: |
+          failed=""
+          for distro in debian:12 ubuntu:22.04 ubuntu:24.04; do
+            echo "::group::$distro"
+            bash packaging/smoke_test.sh "$distro" HomePix.deb models || failed="$failed $distro"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::The .deb failed on:$failed"; exit 1; fi
       - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: HomePix-Linux
-          path: HomePix-x86_64.AppImage
+          path: |
+            HomePix-x86_64.AppImage
+            HomePix.deb
           retention-days: 2
           if-no-files-found: error
 
@@ -104,7 +117,8 @@ jobs:
           path: dist
       - run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes
-          dist/HomePix-Linux/HomePix-x86_64.AppImage dist/HomePix-Windows/HomePixSetup.exe
+          dist/HomePix-Linux/HomePix-x86_64.AppImage dist/HomePix-Linux/HomePix.deb
+          dist/HomePix-Windows/HomePixSetup.exe
         env:
           GH_TOKEN: ${{ github.token }}
 
