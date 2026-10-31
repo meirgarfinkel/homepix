@@ -13,7 +13,7 @@ SHOWN = "error IS NULL AND qhash IS NOT NULL AND kind != 'motion'"
 
 @dataclass(slots=True)
 class Item:
-    id: int
+    id: int | None  # None: a photo outside the library, only being looked at
     path: str
     taken: str  # "YYYY-MM-DD HH:MM:SS"
     qhash: str

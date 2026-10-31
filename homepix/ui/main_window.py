@@ -48,6 +48,7 @@ from .dedupe import Dedupe
 from .file_actions import FileActions, count_of
 from .fileops import FileOps
 from .indexing import IndexStatus, IndexWatcher
+from .open_files import Opener, folder_items, photos_in
 from .organizer import Organizer
 from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
@@ -282,6 +283,7 @@ class MainWindow(QMainWindow):
         self._faces_jobs = workers.Latest()  # the who groups, someone's faces, or a photo's
         self._viewer_faces = workers.Latest()
         self._viewer_from = None  # the page the viewer opened over
+        self._viewer_folder = None  # the folder shown, when a photo was opened from the file manager
         self.stack = QStackedWidget()
         for w in (self.welcome, self.timeline, self.people, self.who, self.person_faces, self.dupes, self.viewer):
             self.stack.addWidget(w)
@@ -327,6 +329,7 @@ class MainWindow(QMainWindow):
         self._copies_coming = None  # the ids of that group, until it's shown
         self._build_toolbar()
         self.files = FileActions(self)
+        self.opener = Opener(self)
         self.photo = PhotoActions(self)
         self._build_menus()
         self.index_status = IndexStatus(self.watcher)
@@ -623,6 +626,18 @@ class MainWindow(QMainWindow):
 
             workers.run(load_copies, done, ids)
             return
+        if self.viewer.items and self.viewer.items[0].id is None:  # photos outside the library: as they were
+            return
+        if self._viewer_folder is not None:  # a photo opened from the file manager: its folder again
+            shown = self.viewer.items[self.viewer.index]
+            workers.run(
+                folder_items,
+                lambda res, err: (self.viewer.show_items(*res) if res else self._next_in_folder())
+                if err is None
+                else None,
+                shown.path,
+            )
+            return
         if self._viewer_from is not self.timeline:  # one photo, opened from a face: is it still there?
             shown = self.viewer.items[self.viewer.index]
             workers.run(
@@ -748,6 +763,8 @@ class MainWindow(QMainWindow):
         if not v.show_faces or not 0 <= v.index < len(v.items):
             return
         photo_id = v.items[v.index].id
+        if photo_id is None:  # outside the library: nothing known about it
+            return
         self._viewer_faces.run(load_photo_faces, lambda res, err: err is None and v.set_faces(photo_id, res), photo_id)
 
     def _faces_toggled(self, on):
@@ -761,16 +778,41 @@ class MainWindow(QMainWindow):
 
     def open_photo(self, photo_id: int):
         """Show one photo in the viewer, over the page shown now (it comes back when the viewer closes)."""
+        workers.run(load_item, lambda items, err: err is None and items and self._show_in_viewer(items, 0), photo_id)
+
+    def show_folder_in_viewer(self, folder: str, items, index: int):
+        """A photo opened from the file manager, with the others in its folder."""
+        self._show_in_viewer(items, index)
+        self._viewer_folder = folder
+
+    def _next_in_folder(self):
+        """The photo opened from the file manager is gone (deleted or moved): the folder's others."""
+        v, folder = self.viewer, self._viewer_folder
 
         def done(items, err):
-            if err is None and items:
-                self._viewer_from = self.stack.currentWidget()
-                self.viewer.compare = None
-                self.viewer.show_items(items, 0)
-                self._switch_to(self.viewer)
-                self.viewer.setFocus()
+            if err is None and items and self._viewer_folder == folder:
+                v.show_items(items, min(v.index, len(items) - 1))
+            elif err is None:
+                self.close_viewer()
 
-        workers.run(load_item, done, photo_id)
+        workers.run(photos_in, done, folder)
+
+    def _show_in_viewer(self, items, index: int):
+        """Over the page shown now (it comes back when the viewer closes)."""
+        if self.stack.currentWidget() is not self.viewer:
+            self._viewer_from = self.stack.currentWidget()
+        self._viewer_folder = None
+        self.viewer.compare = None
+        self.viewer.show_items(items, index)
+        self._switch_to(self.viewer)
+        self.viewer.setFocus()
+
+    def bring_forward(self):
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     # --- the library ---------------------------------------------------------------------------------
 
@@ -909,15 +951,16 @@ class MainWindow(QMainWindow):
         else:
             self.reload(fresh=True)
 
-    def add_library_folder(self, path: str):
+    def add_library_folder(self, path: str) -> bool:
         try:
             p = add_folder(path)
         except ValueError as e:
             QMessageBox.information(self, "Add folder", str(e))
-            return
+            return False
         self.statusBar().showMessage(f"Added {p}. Looking for photos in it...", 8000)
         portable_ui.offer(self, [p], self.watcher.start)  # it may hold a library from another computer
         self.reload()
+        return True
 
     def library_brought_in(self):
         """A folder's portable copy came in: show its photos, people and duplicates."""
@@ -1047,6 +1090,7 @@ class MainWindow(QMainWindow):
 
     def open_viewer(self, index: int):
         self._viewer_from = self.timeline
+        self._viewer_folder = None
         self.viewer.compare = None
         self.viewer.show_items(self.timeline.items, index)
         self._switch_to(self.viewer)
@@ -1061,6 +1105,7 @@ class MainWindow(QMainWindow):
                 at = [it.id for it in items]
                 first = ids[index] if ids[index] in at else at[0]
                 self._viewer_from = self.dupes
+                self._viewer_folder = None
                 self.viewer.compare = (
                     lambda i: self.dupes.copy_info(self.viewer.items[i].id),
                     lambda i: self.dupes.keep_photo(self.viewer.items[i].id),
@@ -1092,6 +1137,7 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
         i, back = self.viewer.index, self._viewer_from or self.timeline
+        self._viewer_folder = None
         self._switch_to(back)
         if back is self.timeline:
             if i >= 0:

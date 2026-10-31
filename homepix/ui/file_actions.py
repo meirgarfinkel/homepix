@@ -91,7 +91,8 @@ class FileActions:
         w = self.w
         shown = w.stack.currentWidget()
         if shown is w.viewer and 0 <= w.viewer.index < len(w.viewer.items):
-            return [w.viewer.items[w.viewer.index]]
+            it = w.viewer.items[w.viewer.index]
+            return [it] if it.id is not None else []  # one outside the library can only be looked at
         return w.timeline.selected_items() if shown is w.timeline else []
 
     def update_enabled(self):
