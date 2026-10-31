@@ -285,3 +285,25 @@ def test_a_face_grid_can_be_drawn_before_it_has_faces(app, monkeypatch):
     grid.resize(400, 300)
     grid.grab()  # (paints it)
     assert errors == []
+
+
+def test_a_follow_up_fills_the_page(window, app, monkeypatch):
+    """The faces that might be someone just named: as many as fit on the page, never fewer than 30."""
+    from homepix.core.config import FOLLOW_UP_FACES
+    from homepix.ui.views.faces import FaceGrid
+
+    grid = FaceGrid()
+    grid.resize(1300, 700)
+    grid.show()
+    app.processEvents()
+    cell, view = grid.gridSize(), grid.viewport().size()
+    assert grid.fits() == (view.width() // cell.width()) * (view.height() // cell.height()) > 30
+    grid.close()
+
+    asked = []
+    monkeypatch.setattr(window._faces_jobs, "run", lambda fn, done, *args: asked.append(args))
+    window.who.waiting_for = "Ann"
+    for fits, wanted in ((80, 80), (12, FOLLOW_UP_FACES)):
+        monkeypatch.setattr(window.who.grid, "fits", lambda fits=fits: fits)
+        window._load_who()
+        assert asked[-1] == ("Ann", wanted)
