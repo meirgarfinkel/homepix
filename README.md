@@ -4,12 +4,21 @@ A private photo manager with AI search and face recognition that runs entirely o
 
 Nothing is uploaded anywhere. The only network access is a one-time download of the AI models (about 130 MB) the first time you index.
 
-## Getting it
+## Download
 
-One download per system, with nothing else to install (on the project's GitHub Releases page, once a version is published):
+<p>
+  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePixSetup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-0A7DAD?style=for-the-badge" height="44"></a>
+  &nbsp;
+  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix-x86_64.AppImage"><img alt="Download for Linux" src="https://img.shields.io/badge/Download_for_Linux-13212C?style=for-the-badge" height="44"></a>
+</p>
 
-- **Linux:** `HomePix-x86_64.AppImage`, for Debian 12+, Ubuntu 22.04+, Fedora, Arch and others. Make it executable once (right-click, Properties, Permissions), then double-click it. The first time, it adds **HomePix** to your applications menu.
-- **Windows 10 and 11:** `HomePixSetup.exe`. It installs for you alone (no administrator password) and adds HomePix to the Start menu. Windows warns about an unknown publisher the first time, because the installer isn't signed: click **More info**, then **Run anyway**.
+Free, and nothing else to install.
+
+**Windows 10 and 11:** double-click the downloaded `HomePixSetup.exe`. If Windows says it protected your PC (the installer isn't signed by a paid certificate), click **More info**, then **Run anyway**. HomePix then appears in the Start menu, and no administrator password is needed.
+
+**Linux** (Ubuntu, Debian, Fedora, Mint and most others): right-click the downloaded `HomePix-x86_64.AppImage`, choose **Properties**, and turn on **Allow executing file as program** (or *Executable as Program*). Linux asks this once for anything downloaded. Then double-click it. The first time, it adds **HomePix** to your applications menu.
+
+All versions are on the [Releases page](https://github.com/meirgarfinkel/homepix/releases).
 
 To build these yourself, see **[BUILDING.md](BUILDING.md)**.
 
