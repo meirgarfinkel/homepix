@@ -13,6 +13,7 @@ from PIL import Image  # noqa: E402
 from PySide6.QtCore import QObject, QPoint, QRect, Qt, Signal  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from homepix.core.timeline import Item, group_by_month  # noqa: E402
 
@@ -84,6 +85,42 @@ def test_layout_has_a_header_per_month_and_every_item_once(view):
     covered = [i for r in view.rows if r.start != -1 for i in range(r.start, r.end)]
     assert covered == list(range(20))
     assert all(r.end - r.start <= view.cols for r in view.rows if r.start != -1)
+
+
+def test_ticking_by_dragging_across_photos(view):
+    """While ticking (as on Possibly junk): press on a photo and drag, and every photo in the rectangle
+    gets the state the first one got: ticked, or (starting on a ticked one) unticked."""
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    view.ticking = True
+    left = Qt.MouseButton.LeftButton
+
+    def at(i):
+        return view.item_rect(i).translated(0, -view.verticalScrollBar().value()).center()
+
+    def drag(start, end):
+        QTest.mousePress(view.viewport(), left, Qt.KeyboardModifier.NoModifier, at(start))
+        p = QPointF(at(end))
+        move = QMouseEvent(
+            QEvent.Type.MouseMove,
+            p,
+            view.viewport().mapToGlobal(p),
+            Qt.MouseButton.NoButton,
+            left,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(view.viewport(), move)
+        QTest.mouseRelease(view.viewport(), left, Qt.KeyboardModifier.NoModifier, at(end))
+
+    assert view.cols == 3
+    drag(0, 4)  # first row's first two, and the second's
+    assert view.selected == {0, 1, 3, 4}
+    drag(1, 2)  # starting on a ticked one unticks
+    assert view.selected == {0, 3, 4}
+    view.ticking = False
+    drag(5, 7)  # not ticking: a drag doesn't tick
+    assert view.selected == {5}
 
 
 def test_click_ctrl_and_shift_select(view):
