@@ -73,11 +73,11 @@ If double-clicking does nothing on some computer, running it as `./HomePix-x86_6
 
 `.github/workflows/build.yml` builds on GitHub's computers:
 
-- **Every pull request** that changes the app or its packaging builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch. It also builds the Windows installer and runs its app's self-test on Windows, with the AI models.
+- **Every pull request** builds the AppImage in AlmaLinux 9. It then runs the self-test, including the AI models, on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora and Arch. It also builds the Windows installer and runs its app's self-test on Windows, with the AI models.
 - **By hand** (Actions tab > **Build HomePix** > **Run workflow**): the same. After 15–25 minutes, download **HomePix-Linux** and **HomePix-Windows** under **Artifacts**.
 - **A version tag** such as `v0.2.0` does everything and publishes a GitHub Release with both files.
 
-A pull request merges itself (`.github/workflows/automerge.yml`) once CI and, when they ran, the builds have all passed. To hold one back, make it a draft or give it the label `no-automerge`.
+A pull request with auto-merge turned on (`gh pr merge <number> --auto --squash`) merges once CI and both builds have passed.
 
 ---
 
