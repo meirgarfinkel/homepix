@@ -1,7 +1,7 @@
 # Builds HomePix on GitHub's machines.
 # - Linux: the AppImage is built in AlmaLinux 9 (glibc 2.34), then its self-test runs on a fresh
-#   Debian, Ubuntu, Fedora and Arch. This runs on every pull request that touches the app or its
-#   packaging, so a change that breaks some distro shows up before it's merged.
+#   Debian, Ubuntu, Fedora and Arch. This runs on every pull request (its two builds are required
+#   checks for merging into main), so a change that breaks some distro shows up before it's merged.
 # - Windows: the installer, built the same way on Windows; its self-test runs too, with the AI models.
 # Pushing a tag like v0.2.0 does all of it and publishes a GitHub Release with both files.
 #
@@ -18,13 +18,6 @@ on:
     tags: ["v*"]
   pull_request:
     branches: [main]
-    paths:
-      - "homepix/**"
-      - "homepix_app.py"
-      - "homepix-icon.*"
-      - "requirements.txt"
-      - "packaging/**"
-      - ".github/workflows/build.yml"
 
 permissions:
   contents: read
