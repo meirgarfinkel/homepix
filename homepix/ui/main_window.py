@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core import people as known_people
-from ..core.config import data_dir
+from ..core.config import FOLLOW_UP_FACES, data_dir
 from ..core.db import open_db
 from ..core.people import named_people
 from ..core.search import SearchIndex
@@ -91,15 +91,15 @@ def load_library(place):
         db.close()
 
 
-def load_who(follow=None):
-    """The "who is this?" groups, everyone's names, and (for a name just given) the faces that
+def load_who(follow=None, limit=FOLLOW_UP_FACES):
+    """The "who is this?" groups, everyone's names, and (for a name just given) up to limit faces that
     might be them too (None if not asked for)."""
     db = open_db()
     try:
         return (
             known_people.who_groups(db),
             [r[0] for r in db.execute("SELECT name FROM people")],
-            known_people.follow_up(db, follow) if follow else None,
+            known_people.follow_up(db, follow, limit) if follow else None,
         )
     finally:
         db.close()
@@ -721,7 +721,9 @@ class MainWindow(QMainWindow):
             self.people.set_who(self.who_count if self.unnamed else None)
 
         # (a follow-up once the naming is done, so it doesn't offer faces that naming recognized)
-        self._faces_jobs.run(load_who, done, None if self.ops.busy else self.who.waiting_for)
+        # (a follow-up fills the page, and is never smaller than FOLLOW_UP_FACES)
+        limit = max(FOLLOW_UP_FACES, self.who.grid.fits())
+        self._faces_jobs.run(load_who, done, None if self.ops.busy else self.who.waiting_for, limit)
 
     def _load_person_faces(self, pid):
         def done(res, err):

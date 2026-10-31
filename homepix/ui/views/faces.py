@@ -103,6 +103,11 @@ class FaceGrid(QListWidget):
         self._items, self._asked = {}, set()  # face id -> its tile; ids whose pictures were asked for
         self.itemDoubleClicked.connect(lambda it: self.opened.emit(self.faces[self.row(it)]))
 
+    def fits(self) -> int:
+        """How many tiles fit on the page without scrolling."""
+        size, view = self.gridSize(), self.viewport().size()
+        return max(1, view.width() // size.width()) * max(1, view.height() // size.height())
+
     def set_faces(self, faces: list[dict], selected: bool = False):
         self.faces = []
         self.clear()  # (says the selection changed: with no faces left)
