@@ -23,13 +23,24 @@ from .db import backup, from_blob
 from .util import unit_vectors
 
 
-def load_faces(db, where="1=1", params=()):
-    rows = db.execute(
+class Stopped(Exception):
+    """should_stop() said to stop partway."""
+
+
+def load_faces(db, where="1=1", params=(), should_stop=lambda: False):
+    """(rows, their normalized embeddings). Raises Stopped if should_stop() says to (checked every few
+    thousand faces)."""
+    cur = db.execute(
         f"SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.emb, f.person_id, f.locked, "
         f"f.not_person, p.path, p.qhash "
         f"FROM faces f JOIN photos p ON p.id = f.photo_id WHERE {where}",
         params,
-    ).fetchall()
+    )
+    rows = []
+    while batch := cur.fetchmany(4000):
+        if should_stop():
+            raise Stopped
+        rows += batch
     embs = np.stack([from_blob(r["emb"]) for r in rows]) if rows else np.zeros((0, 128), np.float32)
     return rows, unit_vectors(embs)
 
@@ -44,9 +55,10 @@ def reference_faces(db):
     return np.array([r["person_id"] for r in rows], dtype=np.int64), embs
 
 
-def likeness_to(embs, owners, refs, people):
+def likeness_to(embs, owners, refs, people, should_stop=lambda: False):
     """How alike each face is to each of people: on average, to the RECOGNIZE_K most like it of the
-    faces they were named on (from references). A faces × people array."""
+    faces they were named on (from references). A faces × people array. Raises Stopped if
+    should_stop() says to (checked between blocks of faces)."""
     sims = np.empty((len(embs), len(people)), np.float32)
     # Each person's named faces side by side, so their columns are one range (a cheap slice) instead
     # of scattered ones that would have to be gathered for every person and block.
@@ -54,6 +66,8 @@ def likeness_to(embs, owners, refs, people):
     owners, refs = owners[order], refs[order]
     spans = [(np.searchsorted(owners, p, "left"), np.searchsorted(owners, p, "right")) for p in people]
     for start in range(0, len(embs), 2048):  # (a block at a time: faces × named faces can be big)
+        if should_stop():
+            raise Stopped
         block = embs[start : start + 2048] @ refs.T
         for j, (a, b) in enumerate(spans):
             k = min(RECOGNIZE_K, b - a)
@@ -129,23 +143,31 @@ def faces_state(db) -> tuple:
     )
 
 
-def auto_assign_if_changed(db) -> int:
+def auto_assign_if_changed(db, should_stop=lambda: False) -> int:
     """auto_assign, skipped when no face or name changed since it last ran: with many faces it's the
     slowest part of a rescan that found nothing new, and gives the same answer again."""
     key = str(db_file())
     if _assigned.get(key) == faces_state(db):
         return 0
-    tagged = auto_assign(db)
-    _assigned[key] = faces_state(db)
+    tagged = auto_assign(db, should_stop=should_stop)
+    if not should_stop():  # (stopped partway: it runs again next time)
+        _assigned[key] = faces_state(db)
     return tagged
 
 
-def auto_assign(db, write: bool = True):
+def auto_assign(db, write: bool = True, should_stop=lambda: False):
     """Tag unnamed faces that clearly match someone already named: on average as alike as
     ASSIGN_SIM to the RECOGNIZE_K most alike of the faces they were named on, ASSIGN_MARGIN more than
     to anyone else, big enough to tell (ASSIGN_MIN_PX), and not on the wrong side of what their
     "that isn't them" marks taught (_not_them_model). Returns how many; with write=False, the
     [(person id, face id)] it would tag instead, changing nothing."""
+    try:
+        return _auto_assign(db, write, should_stop)
+    except Stopped:  # nothing tagged: it's done next time
+        return 0 if write else []
+
+
+def _auto_assign(db, write, should_stop):
     owners, refs = reference_faces(db)
     people = sorted(set(owners.tolist()))
     rows, embs = (
@@ -153,23 +175,28 @@ def auto_assign(db, write: bool = True):
             db,
             "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0 AND (f.px IS NULL OR f.px >= ?)",
             (ASSIGN_MIN_PX,),
+            should_stop,
         )
         if people
         else ([], None)
     )
     if not rows:
         return 0 if write else []
-    sims = likeness_to(embs, owners, refs, people)
+    sims = likeness_to(embs, owners, refs, people, should_stop)
     order = np.argsort(-sims, axis=1)
     best = sims[np.arange(len(rows)), order[:, 0]]
     second = sims[np.arange(len(rows)), order[:, 1]] if len(people) > 1 else np.full(len(rows), -1.0)
     ok = (best >= ASSIGN_SIM) & (best - second >= ASSIGN_MARGIN)
     ok &= np.array([r["not_person"] != people[j] for r, j in zip(rows, order[:, 0], strict=True)])
     for j in set(order[ok, 0].tolist()):  # what "that isn't them" taught can still say no
+        if should_stop():
+            raise Stopped
         model = _not_them_model(db, people[j], owners, refs)
         if model is not None:
             mine = np.flatnonzero(ok & (order[:, 0] == j))
             ok[mine[embs[mine] @ model[0] + model[1] < 0]] = False
+    if should_stop():
+        raise Stopped
     taken = {
         (r["photo_id"], r["person_id"])
         for r in db.execute("SELECT photo_id, person_id FROM faces WHERE person_id IS NOT NULL")
