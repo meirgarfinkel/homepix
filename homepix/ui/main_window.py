@@ -51,6 +51,7 @@ from .indexing import IndexStatus, IndexWatcher
 from .organizer import Organizer
 from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
+from .status_pill import StatusPill
 from .thumbs import ThumbLoader
 from .views.banner import Banner
 from .views.duplicates import DuplicatesView
@@ -329,12 +330,11 @@ class MainWindow(QMainWindow):
         self.photo = PhotoActions(self)
         self._build_menus()
         self.index_status = IndexStatus(self.watcher)
-        self.statusBar().addPermanentWidget(self.index_status)
-        self.statusBar().setSizeGripEnabled(False)
-        self.statusBar().setContentsMargins(10, 0, 4, 0)
-        self.statusBar().messageChanged.connect(self._update_status_bar)
-        self.watcher.state.connect(self._update_status_bar)
-        self._update_status_bar()
+        # messages and indexing in a small box over the page's corner: nothing moves when it shows
+        self.status_pill = StatusPill(
+            self.centralWidget(), self.statusBar(), self.index_status, right_inset=Scrubber.WIDTH
+        )
+        self.watcher.state.connect(self.status_pill.refresh)
         theme.signals.changed.connect(self._restyle)
         self._restyle()
 
@@ -398,6 +398,7 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(1500, lambda: portable_ui.offer(self, library_folders(), self.watcher.start))
         QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
         QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
+        QTimer.singleShot(3000, lambda: workers.run(junk.warm, lambda res, err: None, self.search_index))  # Declutter
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -412,13 +413,6 @@ class MainWindow(QMainWindow):
         """While thumbnails are sharpened, repaint now and then: tiles on screen swap to sharper ones."""
         if s.get("phase") == "sharpening":
             self.timeline.viewport().update()
-
-    def _update_status_bar(self, *_):
-        """The status bar only while there's something to say."""
-        s = self.index_status
-        self.statusBar().setVisible(
-            bool(self.statusBar().currentMessage()) or not s.label.isHidden() or not s.bar.isHidden()
-        )
 
     def _restyle(self):
         """The icons, after the colours changed."""
@@ -899,6 +893,13 @@ class MainWindow(QMainWindow):
         self.close_viewer()
         self.place = place
         self.sidebar.select(place)
+        if place == JUNK and not self.query:  # there at once, while its photos are looked for
+            self._switch_to(self.timeline)
+            self.timeline.ticking = True
+            self.timeline.set_scrubber(False)
+            self.timeline.empty_text = "Looking for photos to declutter..."
+            self.timeline.set_months([], fresh=True)
+            self._set_count("")
         if self.query and not shows_photos(place):  # the people pages aren't something to search
             self.query = ""
             self.search_box.clear()

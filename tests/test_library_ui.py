@@ -293,3 +293,31 @@ def test_only_photos_from_outside_the_library_start_a_rescan(window, pf, lib, ap
     window.ops.run("copy", "Paste", "Pasted", lambda db: files.plan_into([str(outside)], str(lib), "copy"))
     done(lambda: (lib / "new.jpg").exists())
     assert starts == [1]
+
+
+def test_messages_and_indexing_float_in_a_corner_without_moving_anything(window, app):
+    """The status pill floats over the page's bottom right; the page doesn't move when it comes or goes."""
+    pill, page = window.status_pill, window.centralWidget()
+    wait_until(app, lambda: window.loaded)
+    app.processEvents()
+    before = window.stack.geometry()
+    assert not pill.isVisible() and not window.statusBar().isVisible()
+
+    window.statusBar().showMessage("Moved 3 photos to Trash. Ctrl+Z undoes it.")
+    app.processEvents()
+    assert pill.isVisible() and "Moved 3 photos" in pill.message.text()
+    assert window.stack.geometry() == before and not window.statusBar().isVisible()
+    box = pill.geometry()
+    assert page.rect().contains(box) and box.bottom() > page.height() - 40 and box.right() > page.width() // 2
+    assert box.height() < 40  # small
+
+    window.statusBar().clearMessage()
+    app.processEvents()
+    assert not pill.isVisible()
+
+    window.index_status.show_state({"running": True, "phase": "scanning", "done": 0, "todo": 0})
+    pill.refresh()
+    assert pill.isVisible() and window.index_status.stop.isVisible() and window.stack.geometry() == before
+    window.index_status.show_state({"running": False, "phase": "idle"})
+    pill.refresh()
+    assert not pill.isVisible()

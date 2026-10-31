@@ -7,8 +7,13 @@ the search model sorts a picture into one of several kinds. A photo goes on the 
 descriptions win clearly; it's listed under the kind of junk that fits it best.
 """
 
+import hashlib
+import json
+import os
+
 import numpy as np
 
+from .config import data_dir
 from .search import SearchIndex
 
 # (what the page calls it, descriptions of it)
@@ -69,26 +74,75 @@ KEEP = [
 SHARPNESS = 100.0  # how the search model turns likeness into odds (its training scale)
 JUNK_MIN = 0.6  # listed when the junk descriptions take at least this share of the odds
 
-_prompts = {}  # text model -> (vectors of every description, which kind each is: -1 for keep)
+CACHE = "declutter-phrases.npz"  # in the data folder: the descriptions as vectors, worked out once
+_prompts = {}  # what they were worked out for -> (vectors of every description, which kind each is: -1 keep)
 
 
-def _descriptions(text_model):
-    if id(text_model) not in _prompts:
-        vecs, kinds = [], []
-        for k, (_, phrases) in enumerate(JUNK):
-            vecs += [text_model.query(p) for p in phrases]
-            kinds += [k] * len(phrases)
-        vecs += [text_model.query(p) for p in KEEP]
-        kinds += [-1] * len(KEEP)
-        _prompts.clear()  # (one text model per run)
-        _prompts[id(text_model)] = (np.array(vecs, np.float32), np.array(kinds))
-    return _prompts[id(text_model)]
+def _kinds() -> np.ndarray:
+    return np.array([k for k, (_, phrases) in enumerate(JUNK) for _ in phrases] + [-1] * len(KEEP))
 
 
-def junk_odds(mat: np.ndarray, text_model) -> tuple[np.ndarray, np.ndarray]:
+def _work_out(text_model) -> np.ndarray:
+    phrases = [p for _, ps in JUNK for p in ps] + KEEP
+    return np.array([text_model.query(p) for p in phrases], np.float32)
+
+
+def _cache_key() -> str:
+    """Changes with the descriptions or the text model's file (so a new model works them out again)."""
+    from .ai.models import model_path
+
+    st = os.stat(model_path("clip_text.onnx"))
+    return hashlib.sha1(json.dumps([JUNK, KEEP, st.st_size, st.st_mtime]).encode()).hexdigest()
+
+
+def _descriptions(index: SearchIndex):
+    """The descriptions as vectors, and their kinds. Turning 55 descriptions into vectors takes the
+    text model a second or two, so for the real model they're kept in the data folder after the
+    first time; the model itself isn't even loaded after that."""
+    from .ai.clip import ClipText
+
+    model = index._text
+    if model is not None and not isinstance(model, ClipText):  # a stand-in (tests): not kept
+        if id(model) not in _prompts:
+            _prompts[id(model)] = (_work_out(model), _kinds())
+        return _prompts[id(model)]
+    try:
+        key = _cache_key()
+    except OSError:  # no model yet: it's downloaded first
+        key = None
+    if key and key in _prompts:
+        return _prompts[key]
+    path = data_dir() / CACHE
+    try:
+        with np.load(path) as kept:
+            if key and str(kept["key"]) == key:
+                _prompts[key] = (kept["vecs"].astype(np.float32), _kinds())
+                return _prompts[key]
+    except (OSError, KeyError, ValueError):
+        pass
+    vecs = _work_out(index.text_model())
+    key = key or _cache_key()
+    tmp = path.with_name(f"{CACHE}.{os.getpid()}.tmp.npz")
+    np.savez(tmp, key=np.array(key), vecs=vecs)
+    os.replace(tmp, path)
+    _prompts[key] = (vecs, _kinds())
+    return _prompts[key]
+
+
+def warm(index: SearchIndex):
+    """Get ready ahead of the first visit: the photos' vectors and the descriptions'. Only with the
+    text model already here: nothing is downloaded for it (the first visit does that)."""
+    from .ai.models import model_path
+
+    if model_path("clip_text.onnx").exists():
+        index.load_vectors()
+        _descriptions(index)
+
+
+def junk_odds(mat: np.ndarray, index: SearchIndex) -> tuple[np.ndarray, np.ndarray]:
     """For each search vector in mat: the share of the odds the junk descriptions take (0 to 1), and
     the kind of junk (index into JUNK) that fits it best."""
-    vecs, kinds = _descriptions(text_model)
+    vecs, kinds = _descriptions(index)
     if not len(mat):
         return np.zeros(0, np.float32), np.zeros(0, np.int64)
     logits = SHARPNESS * (mat @ vecs.T)
@@ -111,7 +165,7 @@ def find(index: SearchIndex, db) -> list[tuple[str, list[dict]]]:
     named = [r[0] for r in db.execute("SELECT DISTINCT photo_id FROM faces WHERE person_id IS NOT NULL")]
     keep &= ~np.isin(ids, named)
     sel = np.flatnonzero(keep)
-    score, kind = junk_odds(mat[sel], index.text_model())
+    score, kind = junk_odds(mat[sel], index)
     found = [[] for _ in JUNK]
     for i in np.argsort(-score, kind="stable"):
         if score[i] < JUNK_MIN:
