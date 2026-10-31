@@ -428,7 +428,9 @@ def test_recognizing_again_only_when_faces_or_names_changed(db, monkeypatch):
     faces or who they are makes it run again."""
     ran = []
     real = people.auto_assign
-    monkeypatch.setattr(people, "auto_assign", lambda d, write=True: (write and ran.append(1)) or real(d, write))
+    monkeypatch.setattr(
+        people, "auto_assign", lambda d, write=True, **k: (write and ran.append(1)) or real(d, write, **k)
+    )
     monkeypatch.setattr(people, "_assigned", {})
     a = add_faces(db, [1, 1, 1, 2, 2], seed=1)
     do(db, people.plan_name(db, a[:2], "Ann"))
@@ -447,3 +449,16 @@ def test_recognizing_again_only_when_faces_or_names_changed(db, monkeypatch):
     assert len(ran) == 3 and names(db)[new[0]] is None
     people.auto_assign_if_changed(db)
     assert len(ran) == 3
+
+
+def test_recognizing_stopped_partway_tags_nothing_and_runs_again(db, monkeypatch):
+    """An action wants the library while recognizing is under way: it stops at once, tags no one, and
+    isn't counted as done (so the next rescan does it)."""
+    monkeypatch.setattr(people, "_assigned", {})
+    a = add_faces(db, [1, 1, 1], seed=1)
+    do(db, people.plan_name(db, a[:2], "Ann"))
+    db.execute("UPDATE faces SET person_id = NULL WHERE id = ?", (a[2],))  # (naming recognized it: undo that)
+    db.commit()
+    assert people.auto_assign_if_changed(db, should_stop=lambda: True) == 0
+    assert names(db)[a[2]] is None and people._assigned == {}
+    assert people.auto_assign_if_changed(db) == 1 and names(db)[a[2]] == "Ann"

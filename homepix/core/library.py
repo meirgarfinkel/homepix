@@ -23,14 +23,16 @@ MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 MOTION_MAX = 4.0  # seconds: a video this short, taken at the same moment as a photo, is that photo's motion
 
 
-def scan_folder(root: Path):
+def scan_folder(root: Path, should_stop=lambda: False):
     """Every photo and video under root with its stat, plus what index_folder needs to tell a deleted photo from
     one that's out of reach: paths that couldn't be read (folders or files), the folders that were looked
     through, the empty ones among them (an unmounted drive's mount point looks just like one) and folders
-    marked to be ignored."""
+    marked to be ignored. None if should_stop() said to stop partway (checked in every folder)."""
     skip = data_dir().resolve()
     files, unreadable, seen, empty, ignored = {}, set(), set(), set(), set()
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: unreadable.add(os.path.normpath(e.filename))):
+        if should_stop():
+            return None
         if IGNORE_MARKER in filenames:
             ignored.add(dirpath)
             dirnames[:] = []
@@ -99,8 +101,13 @@ def index_folder(
     stop = should_stop or (lambda: False)
     report(info)
 
+    scanned = scan_folder(root, stop)
+    if scanned is None:  # stopped while looking: nothing changes (a half-seen folder isn't a reason to forget)
+        info.update(phase="done", stopped=True)
+        report(info)
+        return info
     db = open_db()
-    on_disk, unreadable, seen, empty, ignored = scan_folder(root)
+    on_disk, unreadable, seen, empty, ignored = scanned
     info["found"] = len(on_disk)
     prefix = folder_prefix(root)
     known = {
@@ -243,7 +250,7 @@ def _index_all(db, todo, want_faces, info, report, stop):
             if info["done"] % 25 == 0:
                 db.commit()
                 if want_faces and info["done"] % 200 == 0:
-                    info["tagged"] += auto_assign(db)  # recognize named people as we go
+                    info["tagged"] += auto_assign(db, should_stop=stop)  # recognize named people as we go
             rate = info["done"] / max(time.time() - start, 1e-6)
             info.update(rate=rate, eta=(len(todo) - info["done"]) / max(rate, 1e-6))
             report(info)
@@ -254,14 +261,18 @@ def _index_all(db, todo, want_faces, info, report, stop):
 def _after_indexing(db, prefix, want_faces, info, report, stop, deadline, changed: bool):
     """After indexing: recognize named people, read the details written in the files, work out how
     they look (for duplicates), sharpen thumbnails, and pair Live Photos with their clips."""
-    if want_faces:
-        info["tagged"] += auto_assign_if_changed(db)
-    redated = 0 if info.get("stopped") else read_details(db, prefix, stop)
-    if not info.get("stopped"):
+
+    def stopping():  # (checked before each step too: some take a moment to get going)
+        return bool(info.get("stopped")) or stop()
+
+    if want_faces and not stopping():
+        info["tagged"] += auto_assign_if_changed(db, stop)
+    redated = 0 if stopping() else read_details(db, prefix, stop)
+    if not stopping():
         from .duplicates import fill_looks
 
         fill_looks(db, prefix, stop)
-    if not info.get("stopped"):
+    if not stopping():
         began = time.time()
 
         def sharpened(done, todo):

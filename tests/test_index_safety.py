@@ -191,3 +191,22 @@ def test_model_hiccup_is_not_blamed_on_the_photo(pf, lib, monkeypatch):
     monkeypatch.setattr(library, "ClipImage", working)
     pf.index_folder(lib)
     assert rows(pf, lib)["p.jpg"]["clip"] is not None
+
+
+def test_stopped_while_looking_through_folders_forgets_nothing(pf, lib):
+    """Stopping partway through the folders (an action wants the library) changes nothing: the folders
+    not looked at yet don't count as emptied."""
+    for d in "abcdef":
+        for i in range(3):
+            photo(lib / d / f"{i}.jpg")
+    pf.index_folder(lib, want_faces=False)
+    seen = []
+
+    def stop():  # partway: after a couple of folders
+        seen.append(1)
+        return len(seen) > 3
+
+    info = pf.index_folder(lib, want_faces=False, should_stop=stop)
+    assert info["stopped"] and info["removed"] == 0
+    assert len(rows(pf, lib)) == 18
+    assert library.scan_folder(lib, lambda: True) is None
