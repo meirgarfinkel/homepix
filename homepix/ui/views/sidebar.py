@@ -16,6 +16,7 @@ ALL = "all"
 PEOPLE = "people"
 WHO = "who"  # unnamed faces to name
 DUPES = "duplicates"  # the duplicates review
+JUNK = "junk"  # photos that may be junk
 
 
 def person_place(person_id: int) -> str:
@@ -124,7 +125,7 @@ class CountDelegate(QStyledItemDelegate):
 
 
 class Sidebar(QTreeWidget):
-    chosen = Signal(str)  # ALL, PEOPLE, WHO, DUPES, a person_place, or a folder's path
+    chosen = Signal(str)  # ALL, PEOPLE, WHO, DUPES, JUNK, a person_place, or a folder's path
     menu_requested = Signal(str, QPoint)  # right-click on a folder or person: its place, and where (global)
 
     def __init__(self, parent=None):
@@ -175,6 +176,11 @@ class Sidebar(QTreeWidget):
             review.setToolTip(0, "Copies of the same photo or video, to review")
             self._style_count(review)
             self.addTopLevelItem(review)
+            junk = QTreeWidgetItem(["Possibly junk", ""])
+            junk.setData(0, PATH_ROLE, JUNK)
+            junk.setToolTip(0, "Ads, screenshots, documents and accidental shots, to clear out")
+            self._style_count(junk)
+            self.addTopLevelItem(junk)
         heading = QTreeWidgetItem(["FOLDERS", ""])
         heading.setFlags(Qt.ItemFlag.NoItemFlags)  # a label, not a place
         font = theme.font(11, QFont.Weight.Bold)

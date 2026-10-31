@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core import junk
 from ..core import people as known_people
 from ..core.config import FOLLOW_UP_FACES, data_dir
 from ..core.db import open_db
@@ -57,7 +58,7 @@ from .views.faces import PersonFaces, WhoView
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
-from .views.sidebar import ALL, DUPES, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
+from .views.sidebar import ALL, DUPES, JUNK, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
 from .views.timeline import MAX_TILE, MIN_TILE, Scrubber, TimelineView
 from .views.viewer import Viewer
 from .views.welcome import Welcome
@@ -69,24 +70,31 @@ def _folder_of(place):
 
 def shows_photos(place) -> bool:
     """Is it a place shown as a grid of photos (rather than a page of people or faces)?"""
-    return place == ALL or person_of(place) is not None or _folder_of(place) is not None
+    return place in (ALL, JUNK) or person_of(place) is not None or _folder_of(place) is not None
 
 
-def load_library(place):
+PAGE_TITLES = {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates", JUNK: "Possibly junk"}
+
+
+def load_library(place, index=None):
     """What the grid and the sidebar show: (months, {folder: count}, total photos, named people,
-    whether there are unnamed faces to ask about)."""
+    whether there are unnamed faces to ask about). index: the search index, for Possibly junk."""
     db = open_db()
     try:
         excluded = excluded_folders()
-        items = (
-            load_items(db, folder=_folder_of(place), person=person_of(place), excluded=excluded)
-            if shows_photos(place)
-            else []
-        )
+        if place == JUNK:  # a section for each kind of junk, most likely first
+            months = [Month("0000-00", [item_from_row(r) for r in rows], title) for title, rows in junk.find(index, db)]
+        else:
+            items = (
+                load_items(db, folder=_folder_of(place), person=person_of(place), excluded=excluded)
+                if shows_photos(place)
+                else []
+            )
+            months = group_by_month(items)
         counts = folder_counts(db)
         unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
         total = sum(n for f, n in counts.items() if not within(f, excluded))
-        return group_by_month(items), counts, total, named_people(db), bool(unnamed)
+        return months, counts, total, named_people(db), bool(unnamed)
     finally:
         db.close()
 
@@ -267,6 +275,7 @@ class MainWindow(QMainWindow):
         self.who = WhoView()
         self.who_count = ""  # groups to ask about, once worked out
         self.unnamed = False  # there are faces to ask about
+        self.junk_count = 0  # photos on Possibly junk, the last time it was shown
         self.person_faces = PersonFaces()
         self.dupes = DuplicatesView()
         self._faces_jobs = workers.Latest()  # the who groups, someone's faces, or a photo's
@@ -559,6 +568,13 @@ class MainWindow(QMainWindow):
         )
         m.addAction(
             self.add_action(
+                "Possibly junk",
+                lambda: self.show_place(JUNK),
+                tip="Ads, screenshots, documents and accidental shots, to clear out",
+            )
+        )
+        m.addAction(
+            self.add_action(
                 "Show faces in the viewer",
                 self.viewer.toggle_faces,
                 tip="Boxes around faces, with their names (N in the viewer)",
@@ -766,7 +782,7 @@ class MainWindow(QMainWindow):
     def reload(self, fresh: bool = False):
         """Load what's shown again (after indexing, or a folder was added or removed)."""
         self._fresh |= fresh
-        self._library.run(load_library, self._library_loaded, self.place)
+        self._library.run(load_library, self._library_loaded, self.place, self.search_index)
 
     def _library_loaded(self, res, err):
         if err is not None:
@@ -785,9 +801,12 @@ class MainWindow(QMainWindow):
             self.dedupe.count if total else None,
             excluded_folders(),
         )
+        if self.place == JUNK:
+            self.junk_count = sum(len(m.items) for m in months)
+        self.sidebar.set_count(JUNK, f"{self.junk_count:,}" if self.junk_count else "")
         pid = person_of(self.place) if person_of(self.place) is not None else faces_of(self.place)
         gone = (pid is not None and pid not in self.people_names) or (
-            not self.sidebar.select(self.place) and self.place not in (WHO, DUPES)
+            not self.sidebar.select(self.place) and self.place not in (WHO, DUPES, JUNK)
         )
         if gone:  # that folder or person is gone
             self.place = ALL
@@ -826,12 +845,14 @@ class MainWindow(QMainWindow):
             if fresh:
                 self.search()
             return
-        self.timeline.empty_text = (
-            "No photos here yet. HomePix is still looking through your folders."
-            if self.watcher.indexer.snapshot()["running"]
-            else "No photos here."
-        )
-        self.timeline.set_scrubber(True)
+        indexing = self.watcher.indexer.snapshot()["running"]
+        if self.place == JUNK:
+            self.timeline.empty_text = "Nothing looks like junk" + (" so far." if indexing else ".")
+        else:
+            self.timeline.empty_text = (
+                "No photos here yet. HomePix is still looking through your folders." if indexing else "No photos here."
+            )
+        self.timeline.set_scrubber(self.place != JUNK)  # (its sections are kinds of junk, not months)
         self.timeline.set_months(months, fresh=fresh)
         if self.files.select_after is not None:
             if self.timeline.current < 0 and self.timeline.items:
@@ -851,11 +872,7 @@ class MainWindow(QMainWindow):
             name = self.people_names.get(pid if pid is not None else fid, "Someone")
             title = name if pid is not None else f"{name}: faces"
         else:
-            title = (
-                {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates"}.get(self.place)
-                or Path(self.place).name
-                or self.place
-            )
+            title = PAGE_TITLES.get(self.place) or Path(self.place).name or self.place
         self.page_title.setText(title)
         self.page_back.setVisible(pid is not None and not self.query)
 
@@ -865,7 +882,7 @@ class MainWindow(QMainWindow):
         if pid is not None:
             where = f" of {self.people_names.get(pid, 'them')}"
         else:
-            where = "" if self.place in (ALL, PEOPLE) else f" in {Path(self.place).name}"
+            where = "" if self.place in (ALL, PEOPLE, JUNK) else f" in {Path(self.place).name}"
         return where
 
     def _count_text(self):
