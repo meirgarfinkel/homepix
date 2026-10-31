@@ -1,6 +1,7 @@
 """Starting the desktop app.
 
-Only one runs at a time: opening it again brings the open window forward. Started from the
+Only one runs at a time: opening it again brings the open window forward (showing the photo it was
+given, if any: "Open With > HomePix" in the file manager). Started from the
 applications menu (no terminal), its output goes to app.log in the data folder.
 `--self-test` checks the parts a build can lose (AI libraries, HEIC, Qt's image plugins, the
 window) and exits 0 if they all work.
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import QApplication
 from .. import __version__
 from ..core.config import data_dir
 from ..core.media import HEIF  # noqa: F401  (registers the HEIC reader before anything decodes)
+from .open_files import MIME_TYPES, given_files
 
 ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix-icon.png"
 
@@ -48,16 +50,19 @@ def main(argv=None):
 
     if self_test:
         return run_self_test(app)
-    server = single_instance()
+    files = given_files(app.arguments()[1:])
+    server = single_instance(files)
     if server is None:
-        return 0  # it was already open: that window has been brought forward
+        return 0  # it was already open: that window has been brought forward (and shown the files)
     add_menu_entry()
 
     from .main_window import MainWindow
 
     win = MainWindow()
-    server.newConnection.connect(lambda: (server.nextPendingConnection(), bring_forward(win)))
+    server.newConnection.connect(lambda: _listen(server.nextPendingConnection(), win))
     win.show()
+    if files:
+        win.opener.open(files)
     return app.exec()
 
 
@@ -69,14 +74,19 @@ def _server_name() -> str:
     return f"homepix-{getpass.getuser()}-{where}"
 
 
-def single_instance():
+def single_instance(files=()):
     """A local server other launches can find, or None if HomePix is already open (it's then
-    told to show itself)."""
+    told to show itself, and the files to open: one path per line)."""
     name = _server_name()
     probe = QLocalSocket()
     probe.connectToServer(name)
     if probe.waitForConnected(500):
+        if files:
+            probe.write("\n".join(files).encode())
+            probe.waitForBytesWritten(1000)
         probe.disconnectFromServer()
+        if probe.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+            probe.waitForDisconnected(1000)
         return None
     server = QLocalServer()
     if not server.listen(name):
@@ -85,16 +95,31 @@ def single_instance():
     return server
 
 
-def bring_forward(win):
-    if win.isMinimized():
-        win.showNormal()
-    win.show()
-    win.raise_()
-    win.activateWindow()
+def _listen(sock, win):
+    """Another launch: show the window, and open the files it was given (sent before it hangs up)."""
+    got = bytearray()
+
+    def read():
+        got.extend(bytes(sock.readAll()))
+
+    def done():
+        read()
+        sock.deleteLater()
+        paths = [p for p in got.decode(errors="replace").split("\n") if p]
+        if paths:
+            win.opener.open(paths)
+        else:
+            win.bring_forward()
+
+    sock.readyRead.connect(read)
+    sock.disconnected.connect(done)
+    if sock.state() == QLocalSocket.LocalSocketState.UnconnectedState:  # it hung up already
+        done()
 
 
 def add_menu_entry():
-    """Running as an AppImage: put HomePix in the applications menu (once, or after it moved)."""
+    """Running as an AppImage: put HomePix in the applications menu (once, or after it moved), saying
+    which files it opens, so the file manager offers it under "Open With"."""
     appimage = os.environ.get("APPIMAGE")
     if not appimage or not ICON.is_file():
         return
@@ -106,14 +131,28 @@ def add_menu_entry():
         text = (
             "[Desktop Entry]\nType=Application\nName=HomePix\n"
             "Comment=Browse, search and organize your photos\n"
-            f'Exec="{appimage}"\nIcon={icon}\nTerminal=false\n'
-            "Categories=Graphics;Photography;\nKeywords=photos;pictures;search;faces;\n"
+            f'Exec="{appimage}" %F\nIcon={icon}\nTerminal=false\n'
+            "Categories=Graphics;Photography;Viewer;\nKeywords=photos;pictures;search;faces;\n"
+            f"MimeType={';'.join(MIME_TYPES)};\n"
         )
         if not entry.exists() or entry.read_text() != text:
             entry.parent.mkdir(parents=True, exist_ok=True)
             entry.write_text(text)
+            _refresh_menu(entry.parent)
     except OSError as e:
         print(f"Couldn't add a menu entry: {e!r}", flush=True)
+
+
+def _refresh_menu(folder):
+    """Tell the desktop the menu entry changed (it reads which apps open what from a cache)."""
+    import contextlib
+    import shutil
+    import subprocess
+
+    tool = shutil.which("update-desktop-database")
+    if tool:
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run([tool, str(folder)], timeout=10, capture_output=True)
 
 
 # --- self-test ---------------------------------------------------------------------------------------

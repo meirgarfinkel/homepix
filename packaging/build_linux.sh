@@ -79,10 +79,11 @@ cat > "$APPDIR/homepix.desktop" <<'EOF'
 Type=Application
 Name=HomePix
 Comment=Find your photos by describing them
-Exec=HomePix
+Exec=HomePix %F
 Icon=homepix
 Terminal=false
-Categories=Graphics;Photography;
+Categories=Graphics;Photography;Viewer;
+MimeType=image/jpeg;image/png;image/webp;image/bmp;image/tiff;image/gif;image/heic;image/heif;image/x-adobe-dng;image/x-dcraw;video/mp4;video/quicktime;video/x-m4v;
 EOF
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
