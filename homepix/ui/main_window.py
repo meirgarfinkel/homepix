@@ -73,12 +73,12 @@ def shows_photos(place) -> bool:
     return place in (ALL, JUNK) or person_of(place) is not None or _folder_of(place) is not None
 
 
-PAGE_TITLES = {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates", JUNK: "Possibly junk"}
+PAGE_TITLES = {ALL: "All photos", PEOPLE: "People", WHO: "Who is this?", DUPES: "Duplicates", JUNK: "Declutter"}
 
 
 def load_library(place, index=None):
     """What the grid and the sidebar show: (months, {folder: count}, total photos, named people,
-    whether there are unnamed faces to ask about). index: the search index, for Possibly junk."""
+    whether there are unnamed faces to ask about). index: the search index, for Declutter."""
     db = open_db()
     try:
         excluded = excluded_folders()
@@ -275,7 +275,7 @@ class MainWindow(QMainWindow):
         self.who = WhoView()
         self.who_count = ""  # groups to ask about, once worked out
         self.unnamed = False  # there are faces to ask about
-        self.junk_count = 0  # photos on Possibly junk, the last time it was shown
+        self.junk_count = 0  # photos on Declutter, the last time it was shown
         self.person_faces = PersonFaces()
         self.dupes = DuplicatesView()
         self._faces_jobs = workers.Latest()  # the who groups, someone's faces, or a photo's
@@ -569,7 +569,7 @@ class MainWindow(QMainWindow):
         )
         m.addAction(
             self.add_action(
-                "Possibly junk",
+                "Declutter",
                 lambda: self.show_place(JUNK),
                 tip="Ads, screenshots, documents and accidental shots, to clear out",
             )
@@ -849,7 +849,7 @@ class MainWindow(QMainWindow):
             return
         indexing = self.watcher.indexer.snapshot()["running"]
         if self.place == JUNK:
-            self.timeline.empty_text = "Nothing looks like junk" + (" so far." if indexing else ".")
+            self.timeline.empty_text = "Nothing to declutter" + (" so far." if indexing else ".")
         else:
             self.timeline.empty_text = (
                 "No photos here yet. HomePix is still looking through your folders." if indexing else "No photos here."

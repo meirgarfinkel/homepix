@@ -1,4 +1,4 @@
-"""Possibly junk: photos the search model sees as ads, screenshots, documents or accidental shots,
+"""Declutter: photos the search model sees as ads, screenshots, documents or accidental shots,
 listed by kind; never photos with someone named in them."""
 
 import os
@@ -80,11 +80,11 @@ def test_the_possibly_junk_page(pf, lib, app):
         window.show_place(JUNK)
         wait_until(app, lambda: [it.id for it in window.timeline.items] == [flyer_id])
         assert window.timeline.months[0].title == "Ads and flyers"
-        assert window.page_title.text() == "Possibly junk"
+        assert window.page_title.text() == "Declutter"
         assert not window.timeline.scrubber.isVisibleTo(window)
         sidebar = {window.sidebar.topLevelItem(i).text(0): i for i in range(window.sidebar.topLevelItemCount())}
-        assert sidebar["Possibly junk"] == sidebar["Duplicates"] + 1  # right under Duplicates
-        assert window.sidebar.topLevelItem(sidebar["Possibly junk"]).text(1) == "1"
+        assert sidebar["Declutter"] == sidebar["Duplicates"] + 1  # right under Duplicates
+        assert window.sidebar.topLevelItem(sidebar["Declutter"]).text(1) == "1"
     finally:
         window.close()
 
