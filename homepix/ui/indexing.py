@@ -133,15 +133,16 @@ def describe(s: dict) -> str:
 
 
 class IndexStatus(QWidget):
-    """In the status bar: what indexing is doing, how far it got, and a button to stop it."""
+    """What indexing is doing, how far it got, and a button to stop it (in the status pill)."""
 
     def __init__(self, watcher: IndexWatcher, parent=None):
         super().__init__(parent)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 6, 0)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
         self.label = QLabel()
         self.bar = QProgressBar()
-        self.bar.setFixedWidth(160)
+        self.bar.setFixedSize(72, 4)
         self.bar.setTextVisible(False)
         self.stop = QToolButton()
         self.stop.setText("Stop")

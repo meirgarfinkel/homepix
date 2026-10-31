@@ -78,6 +78,9 @@ def test_the_possibly_junk_page(pf, lib, app):
     try:
         window.search_index._text = FakeText(flyer, others)
         window.show_place(JUNK)
+        # there at once, before its photos are found
+        assert window.stack.currentWidget() is window.timeline and window.page_title.text() == "Declutter"
+        assert window.timeline.items == [] and window.timeline.empty_text.startswith("Looking for photos")
         wait_until(app, lambda: [it.id for it in window.timeline.items] == [flyer_id])
         assert window.timeline.months[0].title == "Ads and flyers"
         assert window.page_title.text() == "Declutter"
@@ -130,3 +133,41 @@ def test_on_possibly_junk_a_click_ticks_a_photo(pf, lib, app, tmp_path, monkeypa
         assert not view.ticking
     finally:
         window.close()
+
+
+def test_the_descriptions_are_worked_out_once_and_kept(pf, tmp_path, monkeypatch):
+    """Turning the descriptions into vectors takes the real text model a second or two: it's done once
+    and kept in the data folder, and done again only if the model changes."""
+    from homepix.core.ai import clip, models
+
+    asked = []
+
+    class Model:  # stands in for the real text model
+        def query(self, phrase):
+            asked.append(phrase)
+            v = np.random.default_rng(len(phrase)).normal(size=512).astype(np.float32)
+            return v / np.linalg.norm(v)
+
+    model_file = tmp_path / "clip_text.onnx"
+    model_file.write_bytes(b"model")
+    monkeypatch.setattr(clip, "ClipText", Model)
+    monkeypatch.setattr(models, "model_path", lambda name: model_file)
+    monkeypatch.setattr(junk, "_prompts", {})
+    index = pf.SearchIndex()
+    loaded = []
+    index.text_model = lambda: loaded.append(1) or Model()
+
+    vecs, kinds = junk._descriptions(index)
+    n = len(asked)
+    assert n == len(kinds) == len(junk.KEEP) + sum(len(p) for _, p in junk.JUNK) and len(loaded) == 1
+    assert (pf.data_dir() / junk.CACHE).exists()
+
+    junk._prompts.clear()  # the next time the app opens
+    again, _ = junk._descriptions(index)
+    assert len(asked) == n and len(loaded) == 1  # read back: the model isn't even loaded
+    assert np.allclose(again, vecs)
+
+    junk._prompts.clear()
+    os.utime(model_file, (1, 1))  # a new model: worked out again
+    junk._descriptions(index)
+    assert len(asked) == 2 * n

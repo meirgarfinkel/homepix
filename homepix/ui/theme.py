@@ -228,9 +228,12 @@ QTreeWidget#sidebar::item:selected {{ background: {accentSoft}; color: {accentTe
 QTreeWidget#sidebar::branch {{ background: {side}; image: none; border-image: none; }}
 
 QWidget#infoBody, QScrollArea#info {{ background: {side}; border: none; }}
-QStatusBar {{ background: {side}; color: {muted}; border-top: 1px solid {border}; }}
-QStatusBar::item {{ border: none; }}
-QStatusBar QLabel {{ color: {muted}; }}
+QFrame#statusPill {{ background: {side}; border: 1px solid {border}; border-radius: 13px; }}
+QFrame#statusPill QLabel {{ color: {muted}; font-size: 12px; background: transparent; border: none; }}
+QFrame#statusPill QProgressBar {{ background: {border}; border: none; border-radius: 2px; }}
+QFrame#statusPill QProgressBar::chunk {{ background: {accent}; border-radius: 2px; }}
+QFrame#statusPill QToolButton {{ color: {muted}; font-size: 12px; border: none; border-radius: 9px; padding: 1px 7px; }}
+QFrame#statusPill QToolButton:hover {{ background: {hover}; color: {text}; }}
 QFrame#banner {{ background: {accentSoft}; border: none; border-bottom: 1px solid {border}; }}
 
 QPushButton {{ background: {raised}; color: {text}; border: 1px solid {border}; border-radius: 10px;
