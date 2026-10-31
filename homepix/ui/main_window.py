@@ -372,7 +372,6 @@ class MainWindow(QMainWindow):
         self.banner.forget_missing.connect(self._forget_missing)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
         self.watcher.library_changed.connect(self.reload)
-        self.watcher.library_changed.connect(lambda *_: self.opener.library_changed())
         self.watcher.state.connect(self._repaint_while_sharpening)
         self.timeline.menu_requested.connect(self.files.tile_menu)
         self.timeline.selection_changed.connect(self.files.update_enabled)
@@ -627,6 +626,8 @@ class MainWindow(QMainWindow):
 
             workers.run(load_copies, done, ids)
             return
+        if self.viewer.items and self.viewer.items[0].id is None:  # photos outside the library: as they were
+            return
         if self._viewer_folder is not None:  # a photo opened from the file manager: its folder again
             shown = self.viewer.items[self.viewer.index]
             workers.run(
@@ -762,6 +763,8 @@ class MainWindow(QMainWindow):
         if not v.show_faces or not 0 <= v.index < len(v.items):
             return
         photo_id = v.items[v.index].id
+        if photo_id is None:  # outside the library: nothing known about it
+            return
         self._viewer_faces.run(load_photo_faces, lambda res, err: err is None and v.set_faces(photo_id, res), photo_id)
 
     def _faces_toggled(self, on):

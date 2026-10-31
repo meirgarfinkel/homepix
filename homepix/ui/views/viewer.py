@@ -36,6 +36,11 @@ def decode(path: str, max_side: int, video: bool = False):
     return to_qimage(load_photo(Path(path), max_side)), full_side
 
 
+def _key(item):
+    """What tells photos apart: the id, or the path for one outside the library."""
+    return item.id if item.id is not None else item.path
+
+
 class Viewer(QWidget):
     closed = Signal()
     current_changed = Signal(int)  # global item index
@@ -75,7 +80,7 @@ class Viewer(QWidget):
             del self._images[key]
         for p in changed:
             del self._decoded[p]
-        same = 0 <= self.index < len(self.items) and 0 <= index < len(items) and items[index].id == self._shown_id
+        same = 0 <= self.index < len(self.items) and 0 <= index < len(items) and _key(items[index]) == self._shown_id
         self.go(index, keep_view=same and not changed)
 
     def go(self, index: int, keep_view: bool = False):
@@ -90,7 +95,7 @@ class Viewer(QWidget):
                 keep_view = True
         index = max(0, min(len(self.items) - 1, index))
         self.index = index
-        self._shown_id = self.items[index].id
+        self._shown_id = _key(self.items[index])
         if keep_view and self.zoom is not None:
             self._start_decode(index, FULL)
         if not keep_view:

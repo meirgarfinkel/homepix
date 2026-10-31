@@ -1,6 +1,8 @@
 """Opening a photo from outside: "Open With > HomePix" in the file manager, or a photo dropped on the
-app's icon. The photo is shown large, and the arrows go through the other photos in its folder. One
-that isn't in the library yet is looked for first (its folder is added, if the user agrees)."""
+app's icon. The photo is shown large, and the arrows go through the other photos in its folder.
+
+A photo that isn't in the library is shown just the same, straight from its folder: nothing is added
+to the library. HomePix knows nothing else about it (faces, details), so it can only be looked at."""
 
 import os
 
@@ -8,9 +10,8 @@ from PySide6.QtWidgets import QMessageBox
 
 from ..core.db import open_db
 from ..core.library import MEDIA_EXTS
-from ..core.settings import library_folders
-from ..core.timeline import load_items
-from ..core.util import within
+from ..core.timeline import Item, load_items
+from ..core.video import is_video
 from . import workers
 
 # what the applications menu says HomePix opens (the file manager offers it for these)
@@ -63,10 +64,36 @@ def folder_items(path: str):
     return None
 
 
+def loose_items(path: str):
+    """A photo the library doesn't have, and the photos and videos beside it, straight from the folder
+    (by name, as a file manager lists them). They have no id: nothing about them is in the library."""
+    folder = os.path.dirname(path)
+    items = []
+    with os.scandir(folder) as found:
+        for e in found:
+            if e.name.startswith(".") or os.path.splitext(e.name)[1].lower() not in MEDIA_EXTS:
+                continue
+            try:
+                st = e.stat()
+            except OSError:
+                continue
+            if e.is_file():
+                kind = "video" if is_video(e.path) else "photo"
+                items.append(Item(None, e.path, "0000-00-00 00:00:00", f"{st.st_size}-{st.st_mtime_ns}", kind))
+    items.sort(key=lambda it: os.path.basename(it.path).casefold())
+    at = [i for i, it in enumerate(items) if it.path == path]
+    return items, (at[0] if at else 0)
+
+
+def items_for(path: str):
+    """(items, index, in the library?) to show path among the others in its folder."""
+    found = folder_items(path)
+    return (*found, True) if found else (*loose_items(path), False)
+
+
 class Opener:
     def __init__(self, window):
         self.window = window
-        self.waiting = None  # a photo being looked for: opened when indexing finds it
 
     def open(self, paths):
         """Show the first of paths (more aren't opened at once: the arrows go through the folder)."""
@@ -75,39 +102,18 @@ class Opener:
             return
         path = paths[0]
         self.window.bring_forward()
-        workers.run(folder_items, lambda res, err: self._found(path, res, err), path)
-
-    def library_changed(self):
-        """Indexing found something: is it the photo waiting to be opened?"""
-        if self.waiting:
-            path = self.waiting
-            workers.run(
-                folder_items, lambda res, err: res and self.waiting == path and self._found(path, res, err), path
-            )
+        workers.run(items_for, lambda res, err: self._found(path, res, err), path)
 
     def _found(self, path, res, err):
         w = self.window
         if err is not None:
             QMessageBox.warning(w, "HomePix", f"Couldn't open {os.path.basename(path)}:\n{err}")
             return
-        if res is not None:
-            self.waiting = None
-            items, index = res
-            w.show_folder_in_viewer(os.path.dirname(path), items, index)
-            return
-        if self.waiting == path:
-            return  # still looking
-        name, folder = os.path.basename(path), os.path.dirname(path)
-        if within(folder, library_folders()):
-            self.waiting = path  # a new photo in a library folder: indexing will find it
-            w.statusBar().showMessage(f"Looking for {name} in your library...", 8000)
-            w.watcher.start()
-            return
-        ask = QMessageBox.question(
-            w,
-            "HomePix",
-            f"{name} isn't in your library.\n\nAdd its folder, {folder}, to your library? "
-            "HomePix will look through it and then show the photo.",
-        )
-        if ask == QMessageBox.StandardButton.Yes and w.add_library_folder(folder):
-            self.waiting = path
+        items, index, known = res
+        w.show_folder_in_viewer(os.path.dirname(path), items, index)
+        if not known:
+            w.statusBar().showMessage(
+                f"{os.path.basename(path)} isn't in your library, so it's only shown here: "
+                "nothing about it is kept, and it can't be changed from HomePix.",
+                10000,
+            )

@@ -58,23 +58,31 @@ def test_a_photo_in_the_library_opens_large_with_its_folder(window, pf, lib, app
     assert window.stack.currentWidget() is window.timeline
 
 
-def test_a_photo_outside_the_library_offers_to_add_its_folder(window, pf, lib, app, tmp_path, monkeypatch):
+def test_a_photo_outside_the_library_is_shown_without_adding_anything(window, pf, lib, app, tmp_path):
     photo(lib / "home.jpg")
     pf.add_folder(lib)
     pf.index_folder(lib, want_faces=False)
-    outside = photo(tmp_path / "Downloads" / "new.jpg")
-    asked = []
-
-    def yes(*a, **k):
-        asked.append(a[2])
-        return QtWidgets.QMessageBox.StandardButton.Yes
-
-    monkeypatch.setattr(QtWidgets.QMessageBox, "question", staticmethod(yes))
-    window.opener.open([str(outside)])
-    wait_until(app, lambda: window.stack.currentWidget() is window.viewer, timeout=30)
-    assert "isn't in your library" in asked[0]
-    assert str(tmp_path / "Downloads") in pf.library_folders()
-    assert window.viewer.items[window.viewer.index].path == str(outside)
+    window.reload()
+    wait_until(app, lambda: len(window.timeline.items) == 1)
+    downloads = tmp_path / "Downloads"
+    for name in ("b.jpg", "A.jpg", "c.png"):
+        photo(downloads / name)
+    (downloads / "notes.txt").write_text("not a photo")
+    window.opener.open([str(downloads / "b.jpg")])
+    wait_until(app, lambda: window.stack.currentWidget() is window.viewer)
+    v = window.viewer
+    assert [os.path.basename(it.path) for it in v.items] == ["A.jpg", "b.jpg", "c.png"]  # by name
+    assert v.items[v.index].path == str(downloads / "b.jpg")
+    assert "isn't in your library" in window.statusBar().currentMessage()
+    assert pf.library_folders() == [str(lib)]  # nothing added
+    assert window.files.targets() == []  # only looked at: no renaming, moving or deleting it
+    v.go(v.index + 1)
+    assert v.items[v.index].path == str(downloads / "c.png")
+    window.reload()  # the library changing meanwhile leaves it be
+    wait_until(app, lambda: len(window.timeline.items) == 1)
+    assert window.stack.currentWidget() is window.viewer and len(v.items) == 3
+    window.close_viewer()
+    assert window.stack.currentWidget() is window.timeline
 
 
 def test_a_second_launch_hands_its_photo_to_the_open_window(window, pf, lib, app):
