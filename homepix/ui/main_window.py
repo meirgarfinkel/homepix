@@ -372,6 +372,7 @@ class MainWindow(QMainWindow):
         self.watcher.state.connect(self._repaint_while_sharpening)
         self.timeline.menu_requested.connect(self.files.tile_menu)
         self.timeline.selection_changed.connect(self.files.update_enabled)
+        self.timeline.selection_changed.connect(lambda: self.timeline.ticking and self._count_text())
         self.sidebar.menu_requested.connect(self._folder_menu)
         QGuiApplication.clipboard().dataChanged.connect(self.files.update_enabled)
         self.ops.finished.connect(self._after_change)
@@ -841,6 +842,7 @@ class MainWindow(QMainWindow):
         if self.stack.currentWidget() in (self.welcome, self.people, self.who, self.person_faces, self.dupes):
             self._switch_to(self.timeline)
         fresh, self._fresh = self._fresh, False
+        self.timeline.ticking = self.place == JUNK and not self.query  # (clicks tick photos to clear out)
         if self.query:
             if fresh:
                 self.search()
@@ -886,7 +888,11 @@ class MainWindow(QMainWindow):
         return where
 
     def _count_text(self):
-        self._set_count(f"  {count_of(self.timeline.items)}{self._place_name()}")
+        text = f"  {count_of(self.timeline.items)}{self._place_name()}"
+        if self.timeline.ticking and self.timeline.items:
+            n = len(self.timeline.selected)
+            text += f"  ·  {n:,} ticked: Delete moves them to Trash" if n else "  ·  click photos to tick them"
+        self._set_count(text)
 
     def show_place(self, place: str):
         """Show all photos, the people page, one person's photos, or one folder (and those inside it)."""
@@ -1005,6 +1011,7 @@ class MainWindow(QMainWindow):
         where = self._place_name()
         self.timeline.empty_text = f"No photos{where} look like “{self.query}”."
         self.timeline.set_scrubber(False)
+        self.timeline.ticking = False
         self.timeline.set_months(sections, fresh=True)
         self._sync_viewer()
         self._set_count(f"  {n:,} match{'es' if n != 1 else ''} for “{self.query}”{where}  ({took:.2f} s)")

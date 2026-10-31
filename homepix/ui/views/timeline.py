@@ -66,6 +66,7 @@ class TimelineView(QAbstractScrollArea):
         self.current = -1
         self.selected = set()
         self._anchor = -1
+        self.ticking = False  # a click ticks or unticks a photo (as on Who is this?) instead of choosing it
         self.empty_text = ""
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -356,9 +357,12 @@ class TimelineView(QAbstractScrollArea):
     # --- input ---------------------------------------------------------------------------------------
 
     def set_current(self, i: int, mode: str = "only"):
-        """mode: 'only' selects just i, 'toggle' (Ctrl), 'range' (Shift), 'keep' leaves the selection."""
+        """mode: 'only' selects just i, 'toggle' (Ctrl), 'range' (Shift), 'keep' leaves the selection.
+        While ticking, 'only' is 'keep': going to a photo never changes what's ticked."""
         if not self.items:
             return
+        if self.ticking and mode == "only":
+            mode = "keep"
         i = max(0, min(len(self.items) - 1, i))
         if mode == "only":
             self.selected = {i}
@@ -387,24 +391,25 @@ class TimelineView(QAbstractScrollArea):
             return
         mods = e.modifiers()
         if i < 0:
-            if not mods:
+            if not mods and not self.ticking:  # (ticking: a click beside the photos keeps the ticks)
                 self.selected = set()
                 self.viewport().update()
                 self.selection_changed.emit()
             return
         if mods & Qt.KeyboardModifier.ShiftModifier:
             self.set_current(i, "range")
-        elif mods & Qt.KeyboardModifier.ControlModifier:
+        elif mods & Qt.KeyboardModifier.ControlModifier or self.ticking:
             self.set_current(i, "toggle")
         else:
             self.set_current(i, "only")
 
     def contextMenuEvent(self, e):
-        """Right-click a photo that isn't selected: it alone is chosen. On a selected one: all of them."""
+        """Right-click a photo that isn't selected: it alone is chosen (ticking: it's ticked as well). On a
+        selected one: all of them."""
         if e.reason() == e.Reason.Mouse:
             i = self.item_at(self.viewport().mapFromGlobal(e.globalPos()))
-            if i >= 0 and i not in self.selected:
-                self.set_current(i, "only")
+            if i >= 0 and i not in self.selected:  # (ticking: it's ticked too, and the menu is for all ticked)
+                self.set_current(i, "toggle" if self.ticking else "only")
         elif self.current >= 0:  # the menu key: at the current photo
             r = self.item_rect(self.current)
             self.menu_requested.emit(self.viewport().mapToGlobal(r.center()))
@@ -412,14 +417,19 @@ class TimelineView(QAbstractScrollArea):
         self.menu_requested.emit(e.globalPos())
 
     def selected_items(self) -> list:
-        """The selected photos in display order (or the current one if none are selected)."""
-        if self.selected:
+        """The selected photos in display order (or the current one if none are selected, unless
+        ticking: then only what's ticked, so unticking the last one leaves nothing to act on)."""
+        if self.selected or self.ticking:
             return [self.items[i] for i in sorted(self.selected)]
         return [self.items[self.current]] if 0 <= self.current < len(self.items) else []
 
     def mouseDoubleClickEvent(self, e):
         i = self.item_at(e.position().toPoint())
         if i >= 0 and e.button() == Qt.MouseButton.LeftButton:
+            if self.ticking and not e.modifiers():  # its first click ticked it: opening it isn't ticking
+                self.selected ^= {i}
+                self.viewport().update()
+                self.selection_changed.emit()
             self.activated.emit(i)
 
     def wheelEvent(self, e):
@@ -451,7 +461,7 @@ class TimelineView(QAbstractScrollArea):
         mode = (
             "range"
             if mods & Qt.KeyboardModifier.ShiftModifier
-            else ("keep" if mods & Qt.KeyboardModifier.ControlModifier else "only")
+            else ("keep" if mods & Qt.KeyboardModifier.ControlModifier or self.ticking else "only")
         )
         cur = max(0, self.current)
         per_page = max(1, self.viewport().height() // (self._cell + SPACING))
@@ -477,7 +487,7 @@ class TimelineView(QAbstractScrollArea):
         K, keys = Qt.Key, {}
         if self.current >= 0:
             keys.update(dict.fromkeys((K.Key_Return, K.Key_Enter), lambda: self.activated.emit(self.current)))
-            if ctrl:
+            if ctrl or self.ticking:
                 keys[K.Key_Space] = lambda: self.set_current(self.current, "toggle")
         if self.selected:
             keys[K.Key_Escape] = self._select_none
