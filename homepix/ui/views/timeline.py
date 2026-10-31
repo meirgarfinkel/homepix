@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QAbstractScrollArea, QToolTip, QWidget
+from PySide6.QtWidgets import QAbstractScrollArea, QRubberBand, QToolTip, QWidget
 
 from ...core.timeline import Month
 from .. import theme
@@ -67,9 +67,10 @@ class TimelineView(QAbstractScrollArea):
         self.selected = set()
         self._anchor = -1
         self.ticking = False  # a click ticks or unticks a photo (as on Who is this?) instead of choosing it
-        self._sweep = (
-            None  # ticking, while dragging across photos: tick or untick, where it began and is, what was ticked
-        )
+        # Ticking, while dragging: Who is this?'s way (Qt's list in multi-selection): the photos in the
+        # rectangle swept out each flip from what they were before the press, and the rectangle shows.
+        self._sweep = None  # {"from", "at": content points, "base": what was ticked before the press}
+        self._band = QRubberBand(QRubberBand.Shape.Rectangle, self.viewport())
         self._sweep_scroll = QTimer(self, interval=30)  # (dragged past the top or bottom: scroll on)
         self._sweep_scroll.timeout.connect(self._scroll_sweep)
         self.empty_text = ""
@@ -395,6 +396,9 @@ class TimelineView(QAbstractScrollArea):
         if e.button() != Qt.MouseButton.LeftButton:
             return
         mods = e.modifiers()
+        if self.ticking and not mods:  # a drag from here (on a photo or beside them) sweeps out a rectangle
+            at = self._content_point(e.position().toPoint())
+            self._sweep = {"from": at, "at": at, "base": set(self.selected)}
         if i < 0:
             if not mods and not self.ticking:  # (ticking: a click beside the photos keeps the ticks)
                 self.selected = set()
@@ -405,9 +409,6 @@ class TimelineView(QAbstractScrollArea):
             self.set_current(i, "range")
         elif mods & Qt.KeyboardModifier.ControlModifier or self.ticking:
             self.set_current(i, "toggle")
-            if self.ticking:  # dragging on from here ticks (or unticks) every photo it passes over
-                at = self._content_point(e.position().toPoint())
-                self._sweep = {"tick": i in self.selected, "from": at, "at": at, "base": set(self.selected)}
         else:
             self.set_current(i, "only")
 
@@ -431,6 +432,7 @@ class TimelineView(QAbstractScrollArea):
     def mouseReleaseEvent(self, e):
         self._sweep = None
         self._sweep_scroll.stop()
+        self._band.hide()
         super().mouseReleaseEvent(e)
 
     def _scroll_sweep(self):
@@ -444,18 +446,20 @@ class TimelineView(QAbstractScrollArea):
         self._sweep_to(QPoint(at.x(), at.y() + bar.value() - before))
 
     def _sweep_to(self, to: QPoint):
-        """The photos in the rectangle from where the drag began to this point (content coordinates) are
-        ticked (or unticked) on top of what was ticked before it began: dragging back lets them go."""
+        """The photos in the rectangle from where the drag began to this point (content coordinates) each
+        flip from what they were before the press; dragging back puts them back. The rectangle shows."""
         sweep = self._sweep
         sweep["at"] = to
         box = QRect(sweep["from"], to).normalized()
+        self._band.setGeometry(box.translated(0, -self.verticalScrollBar().value()))
+        self._band.show()
         hit = set()
         if self.rows:
             for k in range(self._row_at(box.top()), self._row_at(box.bottom()) + 1):
                 r = self.rows[k]
                 if r.start != -1:
                     hit.update(i for i in range(r.start, r.end) if self.item_rect(i).intersects(box))
-        selected = sweep["base"] | hit if sweep["tick"] else sweep["base"] - hit
+        selected = sweep["base"] ^ hit
         under = self.item_at(QPoint(to.x(), to.y() - self.verticalScrollBar().value()))
         if under >= 0 and under != self.current:
             self.current = under

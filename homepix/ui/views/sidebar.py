@@ -176,7 +176,7 @@ class Sidebar(QTreeWidget):
             review.setToolTip(0, "Copies of the same photo or video, to review")
             self._style_count(review)
             self.addTopLevelItem(review)
-            junk = QTreeWidgetItem(["Possibly junk", ""])
+            junk = QTreeWidgetItem(["Declutter", ""])
             junk.setData(0, PATH_ROLE, JUNK)
             junk.setToolTip(0, "Ads, screenshots, documents and accidental shots, to clear out")
             self._style_count(junk)

@@ -88,39 +88,46 @@ def test_layout_has_a_header_per_month_and_every_item_once(view):
 
 
 def test_ticking_by_dragging_across_photos(view):
-    """While ticking (as on Possibly junk): press on a photo and drag, and every photo in the rectangle
-    gets the state the first one got: ticked, or (starting on a ticked one) unticked."""
+    """While ticking (as on Declutter), as on Who is this?: press and drag (on a photo or beside them),
+    and every photo in the rectangle flips, ticked or unticked; the rectangle shows while dragging."""
     from PySide6.QtCore import QEvent, QPointF
     from PySide6.QtGui import QMouseEvent
 
     view.ticking = True
-    left = Qt.MouseButton.LeftButton
+    left, none = Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
 
     def at(i):
         return view.item_rect(i).translated(0, -view.verticalScrollBar().value()).center()
 
-    def drag(start, end):
-        QTest.mousePress(view.viewport(), left, Qt.KeyboardModifier.NoModifier, at(start))
-        p = QPointF(at(end))
-        move = QMouseEvent(
-            QEvent.Type.MouseMove,
-            p,
-            view.viewport().mapToGlobal(p),
-            Qt.MouseButton.NoButton,
-            left,
-            Qt.KeyboardModifier.NoModifier,
-        )
-        QApplication.sendEvent(view.viewport(), move)
-        QTest.mouseRelease(view.viewport(), left, Qt.KeyboardModifier.NoModifier, at(end))
+    def move(p):
+        p = QPointF(p)
+        e = QMouseEvent(QEvent.Type.MouseMove, p, view.viewport().mapToGlobal(p), Qt.MouseButton.NoButton, left, none)
+        QApplication.sendEvent(view.viewport(), e)
+
+    def drag(start, *through):
+        QTest.mousePress(view.viewport(), left, none, start)
+        for p in through:
+            move(p)
+        shown = view._band.isVisible()
+        QTest.mouseRelease(view.viewport(), left, none, through[-1])
+        assert shown and not view._band.isVisible()  # the rectangle shows while dragging, not after
 
     assert view.cols == 3
-    drag(0, 4)  # first row's first two, and the second's
+    drag(at(0), at(4))  # the first two of the first row, and of the second
     assert view.selected == {0, 1, 3, 4}
-    drag(1, 2)  # starting on a ticked one unticks
-    assert view.selected == {0, 3, 4}
+    drag(at(1), at(2))  # each flips: 1 unticked, 2 ticked
+    assert view.selected == {0, 2, 3, 4}
+    drag(at(4), at(8), at(4))  # dragging back puts them back: only 4 flips
+    assert view.selected == {0, 2, 3}
+    beside = QPoint(view.viewport().width() - 5, at(6).y())  # right of the last column
+    drag(beside, at(7))
+    assert view.selected == {0, 2, 3, 7, 8}
+
     view.ticking = False
-    drag(5, 7)  # not ticking: a drag doesn't tick
-    assert view.selected == {5}
+    QTest.mousePress(view.viewport(), left, none, at(5))
+    move(at(7))
+    QTest.mouseRelease(view.viewport(), left, none, at(7))
+    assert view.selected == {5} and not view._band.isVisible()  # not ticking: a drag doesn't tick
 
 
 def test_click_ctrl_and_shift_select(view):
