@@ -183,7 +183,6 @@ def run_self_test(app) -> int:
 
         import cv2  # noqa: F401
         import onnxruntime  # noqa: F401
-        import tokenizers  # noqa: F401
         from PIL import Image
 
         from ..core.ai import ClipImage, ClipText, Faces, model_path

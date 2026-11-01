@@ -2,7 +2,6 @@ numpy>=1.24
 pillow>=10.0
 onnxruntime>=1.17
 opencv-python-headless>=4.8
-tokenizers>=0.15
 # The app's window: Qt's core modules only (no web engine, no QML).
 # 6.12.0 miscounts references in QPainter calls and crashes the app (tests/test_ui.py checks for it)
 PySide6-Essentials==6.11.3

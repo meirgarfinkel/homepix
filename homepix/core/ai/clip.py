@@ -5,6 +5,7 @@ from PIL import Image
 
 from ..config import CLIP_SIZE
 from ..util import unit_vectors
+from .clip_tokens import ClipTokenizer
 from .models import _ort_session, _pick_output, ensure_models, model_path
 
 
@@ -33,18 +34,14 @@ class ClipText:
     """Turns a search phrase into the same kind of vector."""
 
     def __init__(self):
-        from tokenizers import Tokenizer
-
         ensure_models(["clip_text.onnx", "clip_tokenizer.json"])
-        self.tok = Tokenizer.from_file(str(model_path("clip_tokenizer.json")))
-        self.tok.no_padding()
-        self.tok.no_truncation()
+        self.tok = ClipTokenizer(model_path("clip_tokenizer.json"))
         self.sess = _ort_session(model_path("clip_text.onnx"))
         self.inputs = self.sess.get_inputs()
         self.out = _pick_output(self.sess, "text_embeds")
 
     def embed(self, text: str) -> np.ndarray:
-        ids = self.tok.encode(text).ids
+        ids = self.tok.encode(text)
         if len(ids) > 77:
             ids = ids[:76] + [ids[-1]]  # keep the end-of-text token
         mask = [1] * len(ids) + [0] * (77 - len(ids))
