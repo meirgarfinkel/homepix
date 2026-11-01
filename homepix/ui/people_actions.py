@@ -42,7 +42,7 @@ class PeopleActions:
         )
 
     def ask_and_name(self, face_ids, title="Who is this?", current=""):
-        name = ask_name(self.w, title, "Their name: someone already named, or someone new.", self._all_names(), current)
+        name = ask_name(self.w, title, "Their name:", self._all_names(), current)
         if name and name != current:
             self.name(face_ids, name)
 
@@ -68,7 +68,7 @@ class PeopleActions:
         name = ask_name(
             self.w,
             "Rename",
-            f"A new name for {old}. If it's someone else's name, they become one person.",
+            f"A new name for {old}:",
             [n for n in self._all_names() if n != old],
             old,
         )
@@ -98,8 +98,7 @@ class PeopleActions:
         answer = QMessageBox.question(
             self.w,
             "Forget",
-            f"Forget {name}?\n\nTheir faces become unnamed again. The photos aren't touched, "
-            "and Undo brings them back.",
+            f"Forget {name}?\n\nTheir faces become unnamed. Undo brings them back.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )
@@ -113,10 +112,7 @@ class PeopleActions:
         answer = QMessageBox.warning(
             self.w,
             "Start faces over",
-            "Forget every face found and everyone you named, and look through your photos for faces again?"
-            "\n\nThe photos aren't touched, and search, dates and everything else stay. This can't be undone "
-            "(a copy of the database is kept in the backups folder first). Finding the faces again takes a "
-            "while, in the background; then name people on Who is this?.",
+            "Forget all faces and names, and find faces again?\n\nYour photos aren't touched. This can't be undone.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Reset,
             QMessageBox.StandardButton.Cancel,
         )

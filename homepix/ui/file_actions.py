@@ -139,18 +139,18 @@ class FileActions:
             db.close()
         desktop.copy_files(paths, cut)
         self._status(
-            f"{'Cut' if cut else 'Copied'} {count_of(items)}. Paste them into a folder here or in your file manager.",
+            f"{'Cut' if cut else 'Copied'} {count_of(items)}.",
             6000,
         )
 
     def paste_into(self, folder):
         if not folder:
-            self._status("Choose a folder in the sidebar to paste into.", 5000)
+            self._status("Pick a folder to paste into.", 5000)
             return
         paths, cut = desktop.clipboard_files()
         paths = [os.path.abspath(p) for p in paths if os.path.isfile(p)]
         if not paths:
-            self._status("There are no files to paste. Copy some first, here or in your file manager.", 6000)
+            self._status("Nothing to paste.", 6000)
             return
         if not within(folder, library_folders()):
             return
@@ -212,8 +212,7 @@ class FileActions:
             QMessageBox.information(
                 self.w,
                 "HomePix",
-                f"{folder} isn't in your library.\n\nHomePix moves and copies photos only within your "
-                "library folders (see Settings). To put copies somewhere else, use Export.",
+                f"{folder} isn't in your library. To copy photos elsewhere, use Export.",
             )
             return
         paths, n, name = [it.path for it in items], count_of(items), os.path.basename(folder) or folder

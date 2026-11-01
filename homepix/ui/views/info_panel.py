@@ -71,7 +71,7 @@ class InfoPanel(QScrollArea):
         self._id = photo_id
         if photo_id is None:
             self.head.hide()
-            self.label.setText(f"<p style='color:{_colour('muted')}'>Select a photo to see its details.</p>")
+            self.label.setText(f"<p style='color:{_colour('muted')}'>Select a photo.</p>")
             return
         self._count = count
         self._latest.run(_load_info, self._show_info, photo_id)
@@ -106,14 +106,11 @@ class InfoPanel(QScrollArea):
         self.head.show()
         head = ""
         if self._count > 1:
-            head += (
-                f"<p style='color:{muted}; margin:0 0 14px 0'>{self._count:,} photos selected; "
-                "this is the last one clicked.</p>"
-            )
+            head += f"<p style='color:{muted}; margin:0 0 14px 0'>{self._count:,} photos selected.</p>"
         if info.get("offline"):
-            head += f"<p style='color:{danger}'>The file can't be reached right now (is its drive connected?).</p>"
+            head += f"<p style='color:{danger}'>Can't reach this file. Is its drive plugged in?</p>"
         if info.get("error"):
-            head += f"<p style='color:{danger}'>This file couldn't be read: {e(info['error'])}</p>"
+            head += f"<p style='color:{danger}'>Can't read this file: {e(info['error'])}</p>"
         if info.get("description"):
             head += f"<p>{e(info['description']).replace(chr(10), '<br>')}</p>"
         day, _, time = nice_date(info["taken"]).partition(" at ")

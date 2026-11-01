@@ -465,7 +465,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(_spacer(0, stretch=True))
         self.search_box = SearchBox()
         self.search_box.setObjectName("search")
-        self.search_box.setPlaceholderText("Search your photos: a dog on the beach, a red car...")
+        self.search_box.setPlaceholderText("Search photos")
         self.search_box.setToolTip("Ctrl+F")
         self.search_box.setMinimumWidth(380)
         self.search_box.setMaximumWidth(560)
@@ -547,7 +547,7 @@ class MainWindow(QMainWindow):
             self.add_action(
                 "Tidy the library...",
                 self.organizer.tidy,
-                tip="Name every file by when it was taken, in its year's folder",
+                tip="Rename files by date, in year folders",
             )
         )
         m.addAction(self.add_action("Organize a folder...", lambda: self.organizer.choose_folder(self.open_folder())))
@@ -571,14 +571,14 @@ class MainWindow(QMainWindow):
             self.add_action(
                 "Declutter",
                 lambda: self.show_place(JUNK),
-                tip="Ads, screenshots, documents and accidental shots, to clear out",
+                tip="Photos you may not need",
             )
         )
         m.addAction(
             self.add_action(
                 "Show faces in the viewer",
                 self.viewer.toggle_faces,
-                tip="Boxes around faces, with their names (N in the viewer)",
+                tip="Show names on faces",
             )
         )
         m.addSeparator()
@@ -586,7 +586,7 @@ class MainWindow(QMainWindow):
             self.add_action(
                 "Start faces over...",
                 self.naming.start_over,
-                tip="Forget every face and name, and look for the faces again",
+                tip="Forget all faces and names",
             )
         )
 
@@ -680,20 +680,14 @@ class MainWindow(QMainWindow):
         if path in excluded:
             menu.addAction("Include in library again", lambda: self._exclude(path, False))
         elif not within(path, excluded):  # (not inside one already left out)
-            ex = menu.addAction("Exclude from library", lambda: self._exclude(path, True))
-            ex.setToolTip(
-                "Hide its photos from All photos, people and search. Nothing is deleted, and "
-                "opening the folder still shows them."
-            )
+            menu.addAction("Exclude from library", lambda: self._exclude(path, True))
         menu.exec(pos)
 
     def _exclude(self, path, excluded: bool):
         set_excluded(path, excluded)
         name = Path(path).name
         self.statusBar().showMessage(
-            f"{name} is left out of All photos, people and search. Right-click it to include it again."
-            if excluded
-            else f"{name} is back in the library.",
+            f"{name} is now hidden." if excluded else f"{name} is back in the library.",
             8000,
         )
         self.reload()
@@ -774,7 +768,7 @@ class MainWindow(QMainWindow):
         self.settings.setValue("viewer/faces", "true" if on else "false")
         self._load_viewer_faces()
         if on:
-            self.statusBar().showMessage("Click a face to name it, or to say it's someone else. N hides them.", 8000)
+            self.statusBar().showMessage("Click a face to name it.", 8000)
 
     def _open_face_photo(self, face):
         self.open_photo(face["photo_id"])
@@ -890,9 +884,7 @@ class MainWindow(QMainWindow):
         if self.place == JUNK:
             self.timeline.empty_text = "Nothing to declutter" + (" so far." if indexing else ".")
         else:
-            self.timeline.empty_text = (
-                "No photos here yet. HomePix is still looking through your folders." if indexing else "No photos here."
-            )
+            self.timeline.empty_text = "Looking for photos..." if indexing else "No photos here."
         self.timeline.set_scrubber(self.place != JUNK)  # (its sections are kinds of junk, not months)
         self.timeline.set_months(months, fresh=fresh)
         if self.files.select_after is not None:
@@ -930,7 +922,7 @@ class MainWindow(QMainWindow):
         text = f"  {count_of(self.timeline.items)}{self._place_name()}"
         if self.timeline.ticking and self.timeline.items:
             n = len(self.timeline.selected)
-            text += f"  ·  {n:,} ticked: Delete moves them to Trash" if n else "  ·  click photos to tick them"
+            text += f"  ·  {n:,} ticked" if n else ""
         self._set_count(text)
 
     def show_place(self, place: str):
@@ -1015,9 +1007,7 @@ class MainWindow(QMainWindow):
         answer = QMessageBox.question(
             self,
             "Remove missing photos",
-            f"Remove the {n:,} photos that can't be found from HomePix?\n\nOnly do this if they were "
-            "deleted on purpose. If they're on a drive that's unplugged, plug it in instead. No files are "
-            "touched either way.",
+            f"Remove {n:,} missing photos from HomePix?\n\nIf they're on an unplugged drive, plug it in instead.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )

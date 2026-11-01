@@ -19,6 +19,7 @@ from ..core.settings import load_settings, save_settings
 
 FONT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix" / "ui" / "fonts"
 FAMILY = "Plus Jakarta Sans"
+WORD_SPACE = 0.14  # extra room between words, as a share of the text size
 MODES = {"dark": "Dark", "light": "Light", "system": "Match the system"}
 
 TOKENS = {
@@ -83,6 +84,7 @@ def font(px: float, weight=QFont.Weight.Normal) -> QFont:
     f = QFont(FAMILY)
     f.setPointSizeF(px * 0.75)
     f.setWeight(weight)
+    f.setWordSpacing(WORD_SPACE * px)  # the font's own spaces are narrow: words ran together
     return f
 
 
@@ -131,9 +133,11 @@ def apply(app, m: str | None = None):
 
 class _Popups(QObject):
     """Rounds the corners of menus and dropdown lists (their windows need a see-through background
-    for that), and lets a dropdown's rows take the style sheet's padding."""
+    for that), and lets a dropdown's rows take the style sheet's padding. Hover tips are turned off."""
 
     def eventFilter(self, obj, e):
+        if e.type() == QEvent.Type.ToolTip:
+            return True  # no hover tips anywhere
         if e.type() == QEvent.Type.Polish:
             if isinstance(obj, QMenu):
                 obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -198,7 +202,7 @@ QToolTip {{ background: {raised}; color: {text}; border: 1px solid {border}; pad
 QMainWindow::separator {{ background: {border}; width: 1px; height: 1px; }}
 
 QToolBar#main {{ background: {bg}; border: none; border-bottom: 1px solid {border}; padding: 0 14px;
-                 spacing: 6px; }}
+                 spacing: 14px; }}
 QToolBar#main QToolButton {{ background: transparent; border: none; border-radius: 19px; min-width: 38px;
                              min-height: 38px; padding: 0; color: {text}; }}
 QToolBar#main QToolButton[label="true"] {{ padding: 0 14px; font-weight: 600; }}

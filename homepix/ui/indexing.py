@@ -114,7 +114,7 @@ def time_left(seconds: float) -> str:
 def describe(s: dict) -> str:
     """What the indexer is doing, in a few words for the status bar."""
     if s["phase"] == "elsewhere":
-        return "Another HomePix window is updating the library."
+        return "Another HomePix window is updating."
     if not s["running"]:
         return ""
     if s["phase"] == "loading":

@@ -37,12 +37,9 @@ def summary(plan) -> str:
 
 def preview(plan, folders, title, parent):
     n = len(plan.changes)
-    note = (
-        "Each is named by when it was taken, in its year's folder. Nothing changes until you "
-        "choose Organize, and Undo takes it all back."
-    )
+    note = "Nothing changes until you choose Organize."
     if plan.not_ready:
-        note += f" {plan.not_ready:,} files are still being indexed and are left for now."
+        note += f" {plan.not_ready:,} files are skipped for now (still being checked)."
     rows = [(relative(c.src, folders), relative(c.dst, folders), _why_text(c.why), c.src) for c in plan.changes]
     return ChangesDialog(
         title,
@@ -90,7 +87,7 @@ class Organizer:
             QMessageBox.information(
                 self.w,
                 "Organize",
-                f"{scope} isn't in the library. Only the library's folders are organized; add it in Settings first.",
+                f"{scope} isn't in your library. Add it in Settings first.",
             )
             return
         self._looking = True

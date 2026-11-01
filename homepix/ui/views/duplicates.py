@@ -315,7 +315,7 @@ class DuplicatesView(QWidget):
         lay.addWidget(self.hint)
         row = QHBoxLayout()
         self.trash_button = QPushButton("Move extras to Trash...")
-        self.trash_button.setToolTip("Each group keeps the copy marked Keep. Skipped groups are left as they are.")
+        self.trash_button.setToolTip("Each group keeps its marked copy.")
         self.apart_button = QPushButton("Not duplicates")
         self.apart_button.setToolTip("Never offer these as duplicates again")
         for b in (self.trash_button, self.apart_button):
@@ -350,11 +350,7 @@ class DuplicatesView(QWidget):
         return [g for g in groups if not self.is_skipped(g)] + [g for g in groups if self.is_skipped(g)]
 
     def _refresh(self):
-        self.list.empty_text = (
-            "No duplicates found yet."
-            if self.pending
-            else "No duplicates. Every photo and video here is the only one of its kind."
-        )
+        self.list.empty_text = "No duplicates found yet." if self.pending else "No duplicates found."
         self.list.first_skipped = next((i for i, g in enumerate(self.groups) if self.is_skipped(g)), None)
         self.list.model().set_groups(self.groups)
         self.list.viewport().update()
@@ -457,25 +453,15 @@ class DuplicatesView(QWidget):
                 f"{len(deciding):,} group{'s' if len(deciding) != 1 else ''} of duplicates, "
                 f"{extras:,} extra cop{'ies' if extras != 1 else 'y'}" + (f", {skipped:,} skipped" if skipped else "")
             )
-        hint = (
-            "The copy with the ring is kept (the one with the most pixels, then the biggest file); the "
-            "dimmed ones are the extras. Click a copy to keep it instead. Not sure yet? Skip for now puts "
-            "the group at the end, to decide later. Double-click to compare them large "
-            "(← → to switch, ↑ ↓ for other duplicates, K to keep). "
-            "Select groups (Ctrl-click the space beside them) to act on just those."
-        )
+        hint = "The ringed copy is kept. Click another to keep it instead."
         if self.pending:
-            hint = f"Still looking at {self.pending:,} photos (after indexing): more may turn up. " + hint
+            hint = f"Still checking {self.pending:,} photos. " + hint
         self.hint.setText(hint)
         which = f" ({len(chosen):,} selected)" if chosen else ""
         self.trash_button.setText(f"Move extras to Trash{which}...")
         self.trash_button.setEnabled(bool(chosen or deciding))
         self.apart_button.setEnabled(bool(chosen))
-        self.apart_button.setToolTip(
-            "Never offer the selected groups as duplicates again"
-            if chosen
-            else "Select the groups that aren't duplicates first"
-        )
+        self.apart_button.setToolTip("Don't show these groups again" if chosen else "Select some groups first")
 
     def stop(self):
         self.loader.stop()

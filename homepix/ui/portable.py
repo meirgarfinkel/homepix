@@ -84,9 +84,7 @@ def ask_use_copy(parent, root: str, meta: dict) -> bool:
         f"It was saved on {when}, with {meta['photos']:,} photos"
         + (f" and {people:,} {'person' if people == 1 else 'people'} named" if people else "")
         + ".\n\n"
-        "Use it to bring back the faces and names, search and duplicate choices, without looking through "
-        "every photo again.\n\nStart fresh instead and HomePix looks through the photos from the "
-        "beginning (the library found is kept in the folder)."
+        "Use it to bring back faces, names and search."
     )
     use = box.addButton("Use it", QMessageBox.ButtonRole.AcceptRole)
     box.addButton("Start fresh", QMessageBox.ButtonRole.RejectRole)
@@ -121,7 +119,7 @@ def offer(window, roots, then=None):
         if not chosen:
             finish()
             return
-        window.statusBar().showMessage("Bringing in your library: faces, names and search...")
+        window.statusBar().showMessage("Bringing in your library...")
 
         def done(got, err):
             if err is not None:

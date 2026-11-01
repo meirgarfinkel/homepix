@@ -34,7 +34,7 @@ def bad_name(name: str):
     if "/" in name or os.sep in name or "\0" in name:
         return "A name can't contain a slash."
     if name.startswith("."):
-        return "A name starting with a dot would hide the file."
+        return "A name can't start with a dot."
     if name in (".", ".."):
         return "That name is taken by the system."
     return None
@@ -173,9 +173,7 @@ class FileOps(QObject):
 
         def done(notes, err):
             if err is not None:
-                QMessageBox.warning(
-                    self.window, "HomePix", f"Couldn't finish what was being done to your files last time:\n{err}"
-                )
+                QMessageBox.warning(self.window, "HomePix", f"Couldn't finish the last change:\n{err}")
             elif notes:
                 self.finished.emit("Finished what was interrupted last time: " + "; ".join(notes))
 

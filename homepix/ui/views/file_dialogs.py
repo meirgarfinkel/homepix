@@ -93,7 +93,7 @@ class BatchRenameDialog(_Dialog):
         self.lay.addWidget(self.edit)
         self.lay.addWidget(help_)
         self.lay.addWidget(self.preview)
-        note = QLabel("Each keeps its own extension. A name that's taken gets _1, _2, ...")
+        note = QLabel("Taken names get _1, _2, ...")
         note.setStyleSheet("color: palette(placeholder-text)")
         self.lay.addWidget(note)
         self.finish_layout()
@@ -125,7 +125,7 @@ class ExportDialog(_Dialog):
         super().__init__(f"Export {count:,} file{'s' if count != 1 else ''}", parent)
         self.settings = settings
         self.original = QRadioButton("The original files, as they are")
-        self.smaller = QRadioButton("Smaller JPEGs, for sharing (videos are copied as they are)")
+        self.smaller = QRadioButton("Smaller JPEGs, for sharing")
         group = QButtonGroup(self)
         group.addButton(self.original)
         group.addButton(self.smaller)
