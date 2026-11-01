@@ -14,22 +14,34 @@ _relay = None
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-job")
 
 
-def run(fn, callback, *args):
-    """Run fn(*args) on a worker thread, then callback(result, error) on the UI thread.
-    error is None on success, else the exception (and result None)."""
+def _job(fn, callback, args):
+    """The work, then its result to the UI thread. Made there: the relay delivers on its thread."""
     global _relay
     if _relay is None:
         _relay = _Relay()
         _relay.done.connect(lambda cb, res, err: cb(res, err))
+    relay = _relay
 
     def job():
         try:
             res, err = fn(*args), None
         except Exception as e:  # handed to the callback, which decides what to show
             res, err = None, e
-        _relay.done.emit(callback, res, err)
+        relay.done.emit(callback, res, err)
 
-    return _pool.submit(job)
+    return job
+
+
+def run(fn, callback, *args):
+    """Run fn(*args) on a worker thread, then callback(result, error) on the UI thread.
+    error is None on success, else the exception (and result None)."""
+    return _pool.submit(_job(fn, callback, args))
+
+
+def run_apart(fn, callback, *args):
+    """Like run, on a thread of its own that doesn't hold up the shared ones or quitting
+    (for long downloads)."""
+    threading.Thread(target=_job(fn, callback, args), daemon=True).start()
 
 
 class Latest:

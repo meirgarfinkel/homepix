@@ -1,5 +1,6 @@
-"""Install updates (the ⋯ menu): if GitHub has a newer HomePix, download it and install it the way
-this copy was installed. Otherwise say this is the latest version."""
+"""Updates. At startup, a newer HomePix on GitHub is downloaded quietly and a bar offers to restart
+into it. Install updates (the File menu) does the same on request, or says this is the latest version.
+Each kind of copy is updated the way it was installed."""
 
 import os
 import shutil
@@ -23,9 +24,45 @@ class Updater:
     def __init__(self, window):
         self.w = window
         self.busy = False
+        self.ready = None  # (kind, version, file) downloaded at startup, waiting for a restart
+        window.update_bar.restart.connect(self.install_ready)
+
+    def check_quietly(self):
+        """At startup: download a newer HomePix without asking, then show the bar. Quiet on failure."""
+        kind = updates.how_installed()
+        if kind is None or self.busy:
+            return
+        self.busy = True
+        workers.run(updates.latest_release, lambda rel, err: self._checked_quietly(kind, rel, err))
+
+    def _checked_quietly(self, kind, release, err):
+        asset = None if err is not None else updates.file_for(release, kind)
+        if asset is None or not updates.newer(release):
+            self.busy = False
+            return
+        version = release["tag_name"].lstrip("vV")
+        dest = _fresh_folder() / asset["name"]
+
+        def done(finished, err):
+            self.busy = False
+            if finished and err is None:
+                self.ready = (kind, version, dest)
+                self.w.update_bar.offer(version)
+
+        workers.run_apart(updates.download, done, asset, dest)
+
+    def install_ready(self):
+        if self.ready and not self.busy:
+            self.w.update_bar.hide()
+            self.busy = True
+            self._install(*self.ready, ask=False)
 
     def check(self):
+        if self.ready:
+            self.install_ready()
+            return
         if self.busy:
+            self.w.statusBar().showMessage("Getting the update...", 4000)
             return
         kind = updates.how_installed()
         if kind is None:
@@ -49,10 +86,7 @@ class Updater:
         self._download(kind, release["tag_name"].lstrip("vV"), asset)
 
     def _download(self, kind, version, asset):
-        folder = data_dir() / "updates"
-        shutil.rmtree(folder, ignore_errors=True)  # an older download (or a broken one)
-        folder.mkdir(exist_ok=True)
-        dest = folder / asset["name"]
+        dest = _fresh_folder() / asset["name"]
         dlg = QProgressDialog(f"Downloading HomePix {version}...", "Cancel", 0, 100, self.w)
         dlg.setWindowTitle("Updates")
         dlg.setWindowModality(Qt.WindowModality.WindowModal)
@@ -75,27 +109,30 @@ class Updater:
             else:
                 self.busy = False
 
-        workers.run(updates.download, done, asset, dest, relay.moved.emit, lambda: bool(stop))
+        workers.run_apart(updates.download, done, asset, dest, relay.moved.emit, lambda: bool(stop))
 
     # --- installing ---------------------------------------------------------------------------------
 
-    def _install(self, kind, version, path):
-        if kind == "windows":  # the installer replaces this copy, so it goes; the new one opens at the end
-            os.startfile(str(path))  # noqa: S606 (our own downloaded, checked installer)
+    def _install(self, kind, version, path, ask=True):
+        if kind == "windows":  # the installer closes this copy, updates quietly and opens the new one
+            os.startfile(str(path), arguments=WINDOWS_QUIET)  # noqa: S606 (our own downloaded, checked installer)
             self.w.close()
             return
         if kind == "appimage":
-            workers.run(_replace_appimage, lambda res, err: self._installed(version, err), str(path))
+            workers.run(_replace_appimage, lambda res, err: self._installed(version, err, ask=ask), str(path))
         else:
-            workers.run(_install_deb, lambda res, err: self._installed(version, err, res, path), str(path))
+            workers.run(_install_deb, lambda res, err: self._installed(version, err, res, path, ask), str(path))
 
-    def _installed(self, version, err, how=None, path=None):
+    def _installed(self, version, err, how=None, path=None, ask=True):
         self.busy = False
         if how == "no pkexec":  # no password prompt here: the software installer does it
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
             return
         if err is not None:
             QMessageBox.warning(self.w, "Updates", f"Couldn't install the update:\n{err}")
+            return
+        if not ask:  # they pressed Restart to update
+            restart(self.w)
             return
         answer = QMessageBox.question(
             self.w,
@@ -106,6 +143,17 @@ class Updater:
         )
         if answer == QMessageBox.StandardButton.Yes:
             restart(self.w)
+
+
+# the Windows installer, run from the app: no questions, a progress bar, HomePix opens again after
+WINDOWS_QUIET = "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /relaunch=1"
+
+
+def _fresh_folder():
+    folder = data_dir() / "updates"
+    shutil.rmtree(folder, ignore_errors=True)  # an older download (or a broken one)
+    folder.mkdir(exist_ok=True)
+    return folder
 
 
 def _replace_appimage(new):
