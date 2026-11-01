@@ -192,6 +192,18 @@ def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
     assert row(db, clip)["kind"] == "motion"  # still its photo's clip
 
 
+def test_a_tidied_name_follows_its_new_date_into_its_years_folder(home, lib):
+    pf, db = home
+    p = make_photo(lib / "2022" / "2022_04_01_07_32_31.jpg", exif={0x9003: "2022:04:01 07:32:31"})
+    other = make_photo(lib / "2022" / "Beach day.jpg", exif={0x9003: "2022:04:01 07:32:31"})
+    index(pf, lib)
+    edit_and_run(db, fo, [p, other], md.Edit(date=dt.datetime(2023, 5, 6, 8, 9, 0)))
+    assert (lib / "2023" / "2023_05_06_08_09_00.jpg").exists() and not p.exists()
+    assert other.exists()  # a name of its own is left as it is
+    fo.undo(db)
+    assert p.exists() and not (lib / "2023" / "2023_05_06_08_09_00.jpg").exists()
+
+
 def test_setting_a_date_on_a_photo_with_none(home, lib):
     pf, db = home
     p = make_photo(lib / "a.png")
@@ -375,22 +387,24 @@ def test_editing_details_of_several_from_the_dialog(window, lib, app, monkeypatc
     assert all(d.keywords == ["trip"] for d in found.values())
 
 
-def test_moving_the_date_of_several(window, app, monkeypatch):
+def test_setting_the_time_of_several_keeps_their_days(window, app, monkeypatch):
+    from PySide6.QtCore import QTime
+
     from homepix.ui.views import details_dialogs
 
     w = window
     w.timeline.select_all()
-    before = sorted(it.taken for it in w.timeline.items)
+    days = sorted(it.taken[:10] for it in w.timeline.items)
 
-    def shift(dlg):
-        dlg.hours.setValue(-2)
+    def set_time(dlg):
+        assert not dlg.buttons.button(dlg.buttons.StandardButton.Save).isEnabled()  # nothing changed yet
+        dlg.time.setTime(QTime(9, 30))
         return True
 
-    monkeypatch.setattr(details_dialogs.DateDialog, "exec", shift)
+    monkeypatch.setattr(details_dialogs.DateDialog, "exec", set_time)
     w.photo.date.trigger()
-    wait_until(app, lambda: not w.ops.busy and sorted(it.taken for it in w.timeline.items) != before)
-    after = sorted(it.taken for it in w.timeline.items)
-    assert after == [(dt.datetime.fromisoformat(t) - dt.timedelta(hours=2)).isoformat(sep=" ") for t in before]
+    wait_until(app, lambda: not w.ops.busy and all(it.taken.endswith("09:30:00") for it in w.timeline.items))
+    assert sorted(it.taken[:10] for it in w.timeline.items) == days  # each kept its own day
 
 
 def test_rotating_in_the_viewer_shows_it_turned(window, app):

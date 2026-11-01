@@ -5,24 +5,25 @@ import datetime as dt
 import os
 import re
 
-from PySide6.QtCore import QDateTime, Qt
+from PySide6.QtCore import QDate, Qt, QTime
+from PySide6.QtGui import QTextCharFormat
 from PySide6.QtWidgets import (
-    QButtonGroup,
-    QDateTimeEdit,
+    QCalendarWidget,
+    QDateEdit,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
+    QGridLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
-    QRadioButton,
-    QSpinBox,
+    QTimeEdit,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
 )
 
+from ...core import dates
 from ...core.metadata import Edit
 
 
@@ -117,54 +118,50 @@ class DetailsDialog(QDialog):
 
 
 class DateDialog(QDialog):
-    """Set the date and time, or move them by some hours (a camera's clock was wrong, or set to
-    another time zone)."""
+    """Set the date and the time. With several photos, only what's changed is set: change just the
+    date and each keeps its own time (and the other way round)."""
 
     def __init__(self, items, parent=None):
         super().__init__(parent)
         n = len(items)
         self.setWindowTitle("Date and time" if n == 1 else f"Date and time of {n:,} photos")
+        self.setMinimumWidth(360)
         self.items = items
         first = self._taken(items[0]) or dt.datetime.now().replace(second=0, microsecond=0)
-        self.set_to = QRadioButton("Set to:" if n == 1 else "Set all of them to:")
-        self.shift = QRadioButton("Move by:")
-        group = QButtonGroup(self)
-        group.addButton(self.set_to)
-        group.addButton(self.shift)
-        self.when = QDateTimeEdit(QDateTime(first))
-        self.when.setDisplayFormat("yyyy-MM-dd  HH:mm:ss")
-        self.when.setCalendarPopup(True)
-        self.days, self.hours, self.minutes = QSpinBox(), QSpinBox(), QSpinBox()
-        for box, top, unit in ((self.days, 36500, " days"), (self.hours, 23, " h"), (self.minutes, 59, " min")):
-            box.setRange(-top, top)
-            box.setSuffix(unit)
-        shift_row = QHBoxLayout()
-        for w in (self.days, self.hours, self.minutes):
-            shift_row.addWidget(w)
-        shift_row.addStretch()
-        form = QFormLayout()
-        form.addRow(self.set_to, self.when)
-        form.addRow(self.shift, shift_row)
-        self.preview = QLabel()
-        self.preview.setWordWrap(True)
-        self.preview.setStyleSheet("color: palette(placeholder-text)")
+        self.date = QDateEdit(QDate(first.year, first.month, first.day))
+        self.date.setDisplayFormat("d MMMM yyyy")
+        self.date.setCalendarPopup(True)
+        cal = self.date.calendarWidget()
+        cal.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        plain = QTextCharFormat()
+        plain.setForeground(cal.palette().text())
+        for day in (Qt.DayOfWeek.Saturday, Qt.DayOfWeek.Sunday):
+            cal.setWeekdayTextFormat(day, plain)  # weekends in the same colour as other days
+        self.time = QTimeEdit(QTime(first.hour, first.minute))
+        self.time.setDisplayFormat("HH:mm")
+        self.changed = set()  # "date", "time": what was changed
+        self.date.dateChanged.connect(lambda _: self._changed("date"))
+        self.time.timeChanged.connect(lambda _: self._changed("time"))
+        form = QGridLayout()
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        for row, (label, field) in enumerate((("Date", self.date), ("Time", self.time))):
+            form.addWidget(QLabel(label), row, 0, Qt.AlignmentFlag.AlignVCenter)
+            form.addWidget(field, row, 1)
+        form.setColumnStretch(1, 1)
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(20, 18, 20, 16)
+        lay.setSpacing(14)
         lay.addLayout(form)
-        lay.addWidget(self.preview)
-        if n > 1:
-            note = QLabel("Move keeps their spacing; Set gives all the same time.")
-            note.setWordWrap(True)
-            lay.addWidget(note)
+        self.note = QLabel()
+        self.note.setObjectName("hint")
+        self.note.setWordWrap(True)
+        lay.addWidget(self.note)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         lay.addWidget(self.buttons)
-        (self.set_to if n == 1 else self.shift).setChecked(True)
-        for w in (self.days, self.hours, self.minutes):
-            w.valueChanged.connect(lambda _: (self.shift.setChecked(True), self._update_preview()))
-        self.when.dateTimeChanged.connect(lambda _: (self.set_to.setChecked(True), self._update_preview()))
-        group.buttonToggled.connect(lambda *_: self._update_preview())
-        self._update_preview()
+        self._update()
 
     @staticmethod
     def _taken(item):
@@ -173,45 +170,40 @@ class DateDialog(QDialog):
         except ValueError:
             return None
 
-    def time_shift(self) -> dt.timedelta:
-        return dt.timedelta(days=self.days.value(), hours=self.hours.value(), minutes=self.minutes.value())
+    def _changed(self, what):
+        self.changed.add(what)
+        self._update()
 
-    def _update_preview(self):
-        lines = []
-        for it in self.items[:3]:
+    def _update(self):
+        n = len(self.items)
+        if n > 1:
+            self.note.setText("Only what you change is set. The rest stays as each photo has it.")
+        elif any(dates.ORGANIZED.match(os.path.splitext(os.path.basename(it.path))[0]) for it in self.items):
+            self.note.setText("Its name follows the date, so it's renamed to match.")
+        self.note.setVisible(bool(self.note.text()))
+        self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(bool(self.changed))
+
+    def new_dates(self) -> list:
+        """[(item, its new date and time)] for the photos this changes."""
+        day = self.date.date().toPython()
+        clock = self.time.time().toPython()
+        out = []
+        for it in self.items:
             old = self._taken(it)
-            new = (
-                self.when.dateTime().toPython()
-                if self.set_to.isChecked()
-                else (old + self.time_shift() if old else None)
-            )
-            shown = old.strftime("%Y-%m-%d %H:%M") if old else "no date"
-            lines.append(
-                f"{os.path.basename(it.path)}: {shown} → {new:%Y-%m-%d %H:%M}"
-                if new
-                else f"{os.path.basename(it.path)}: {shown} (left as it is)"
-            )
-        if len(self.items) > 3:
-            lines.append("...")
-        self.preview.setText("\n".join(lines))
-        ok = self.set_to.isChecked() or bool(self.time_shift())
-        self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(ok)
-
-    def edit(self) -> Edit:
-        if self.set_to.isChecked():
-            return Edit(date=self.when.dateTime().toPython().replace(microsecond=0))
-        return Edit(shift=self.time_shift())
+            d = day if "date" in self.changed or old is None else old.date()
+            keep_time = "time" not in self.changed and old is not None
+            t = old.time().replace(microsecond=0) if keep_time else clock.replace(second=0)
+            new = dt.datetime.combine(d, t)
+            if new != old:
+                out.append((it, new))
+        return out
 
     def describe(self) -> str:
-        """For Undo: "Set the date of 3 photos" or "Move 3 photos by -3 h"."""
-        if self.set_to.isChecked():
-            return f"{self.when.dateTime().toPython():%Y-%m-%d %H:%M}"
-        parts = [
-            f"{v:+d}{u}"
-            for v, u in ((self.days.value(), " days"), (self.hours.value(), " h"), (self.minutes.value(), " min"))
-            if v
-        ]
-        return " ".join(parts)
+        """For Undo: "2024-07-01 09:30", or for several what was set."""
+        day, clock = self.date.date().toPython(), self.time.time().toPython()
+        if len(self.items) == 1 or self.changed == {"date", "time"}:
+            return f"{day:%Y-%m-%d} {clock:%H:%M}"
+        return f"{day:%Y-%m-%d}" if "date" in self.changed else f"{clock:%H:%M}"
 
 
 class AllDetailsDialog(QDialog):

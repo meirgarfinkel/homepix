@@ -635,9 +635,10 @@ class Scrubber(QWidget):
 
     def paintEvent(self, e):
         v = self.view
+        p = QPainter(self)
+        p.fillRect(self.rect(), theme.color("rail"))  # the faintest shade: apart from the photos
         if not v.months:
             return
-        p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         scale = self._scale()
         muted, accent = theme.color("muted"), theme.color("accent")
