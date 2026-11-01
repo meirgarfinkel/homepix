@@ -221,6 +221,19 @@ def test_windows_lists_and_restores_what_goes_to_the_recycle_bin(tmp_path, monke
     assert not os.path.exists(os.path.join(os.path.dirname(dest), "$I" + os.path.basename(dest)[2:]))
 
 
+@pytest.mark.skipif(sys.platform != "darwin" or not os.environ.get("CI"), reason="the real Trash, on a test Mac")
+def test_a_mac_moves_it_to_the_finders_trash_and_restores_it(tmp_path, monkeypatch):
+    from homepix.core import trash
+
+    monkeypatch.delenv("HOMEPIX_FREEDESKTOP_TRASH")
+    f = photo(tmp_path / "homepix-trash-test.jpg")
+    data = f.read_bytes()
+    went = trash.send(f, trash.reserve(f))
+    assert not f.exists() and os.path.exists(went) and "/.Trash" in went
+    trash.restore(went, f)
+    assert f.read_bytes() == data and not os.path.exists(went)
+
+
 def test_undo_redo_and_new_work_clears_redo(home, lib):
     pf, db = home
     make(pf, lib, ["a.jpg", "b.jpg"])
@@ -327,6 +340,7 @@ KILLER = textwrap.dedent("""
     fileops.rename_noreplace = die_soon(fileops.rename_noreplace)
     fileops.move_file = die_soon(fileops.move_file)
     fileops.copy_file = die_soon(fileops.copy_file)
+    fileops.trashcan.send = die_soon(fileops.trashcan.send)
     db = open_db()
     names = sorted(n for n in os.listdir(lib) if n.endswith(".jpg"))
     paths = [os.path.join(lib, n) for n in names]

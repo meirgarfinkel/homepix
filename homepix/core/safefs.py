@@ -1,9 +1,10 @@
 """Moving and copying files so that an existing file is never overwritten.
 
 A plain rename silently replaces whatever is at the destination (that's how the Sep 2026 pipeline
-lost 511 photos). Here every rename refuses to: on Linux with renameat2(RENAME_NOREPLACE), which
-the kernel does in one step; where a filesystem doesn't support that, by hard-linking (which also
-fails on an existing name) and, as a last resort (some USB drives' filesystems), by checking first.
+lost 511 photos). Here every rename refuses to: with renameat2(RENAME_NOREPLACE) on Linux and
+renamex_np(RENAME_EXCL) on a Mac, which the system does in one step; where a filesystem doesn't
+support that, by hard-linking (which also fails on an existing name) and, as a last resort (some USB
+drives' filesystems), by checking first.
 Copies go to a hidden partial file, are flushed to disk, and only then take their real name.
 """
 
@@ -13,15 +14,34 @@ import os
 import shutil
 import sys
 
-_RENAME_NOREPLACE = 1
+_RENAME_NOREPLACE = 1  # Linux
+_RENAME_EXCL = 4  # Mac
 _AT_FDCWD = -100
 _libc = None
-if sys.platform.startswith("linux"):
-    try:
+try:
+    if sys.platform.startswith("linux"):
         _libc = ctypes.CDLL(None, use_errno=True)
         _libc.renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    except (OSError, AttributeError):
-        _libc = None
+    elif sys.platform == "darwin":
+        _libc = ctypes.CDLL(None, use_errno=True)
+        _libc.renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+except (OSError, AttributeError):
+    _libc = None
+
+
+def _rename_once(src: bytes, dst: bytes) -> int:
+    """The system's own no-replace rename: 0, or the error number."""
+    if sys.platform == "darwin":
+        ok = _libc.renamex_np(src, dst, _RENAME_EXCL) == 0
+    else:
+        ok = _libc.renameat2(_AT_FDCWD, src, _AT_FDCWD, dst, _RENAME_NOREPLACE) == 0
+    return 0 if ok else ctypes.get_errno()
+
+
+def path_key(path) -> str:
+    """A path as the system compares it: Windows and Macs (normally) ignore upper and lower case."""
+    key = os.path.normcase(path)
+    return key.lower() if sys.platform == "darwin" else key
 
 
 def rename_noreplace(src, dst):
@@ -32,12 +52,12 @@ def rename_noreplace(src, dst):
         os.rename(src, dst)  # Windows never replaces an existing file here
         return
     if _libc is not None:
-        if _libc.renameat2(_AT_FDCWD, os.fsencode(src), _AT_FDCWD, os.fsencode(dst), _RENAME_NOREPLACE) == 0:
+        e = _rename_once(os.fsencode(src), os.fsencode(dst))
+        if e == 0:
             return
-        e = ctypes.get_errno()
         if e == errno.EEXIST:
             raise FileExistsError(e, os.strerror(e), dst)
-        if e not in (errno.EINVAL, errno.ENOSYS, errno.ENOTSUP):
+        if e not in (errno.EINVAL, errno.ENOSYS, errno.ENOTSUP, errno.EOPNOTSUPP):
             raise OSError(e, os.strerror(e), src)
     try:  # the filesystem can't do it in one step: a hard link also refuses an existing name
         os.link(src, dst)

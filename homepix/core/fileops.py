@@ -34,7 +34,7 @@ from . import dates, duplicates, metadata, people
 from . import trash as trashcan
 from .db import columns
 from .media import IMAGE_EXTS
-from .safefs import copy_file, free_name, move_file, rename_noreplace
+from .safefs import copy_file, free_name, move_file, path_key, rename_noreplace
 from .thumbs import thumbs_dir
 from .util import quick_hash
 from .video import VIDEO_EXTS
@@ -223,8 +223,8 @@ def plan_moves(pairs, freed=()) -> list[dict]:
     file in the same operation, or going to the Trash first: freed) gets _1, _2, ...; files already
     where they're wanted are left out."""
     # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
-    srcs = {os.path.normcase(os.path.abspath(s)) for s, d in pairs if os.path.abspath(s) != os.path.abspath(d)}
-    srcs |= {os.path.normcase(os.path.abspath(p)) for p in freed}
+    srcs = {path_key(os.path.abspath(s)) for s, d in pairs if os.path.abspath(s) != os.path.abspath(d)}
+    srcs |= {path_key(os.path.abspath(p)) for p in freed}
     planned, steps = set(), []
     for src, dst in pairs:
         src, dst = os.path.abspath(src), os.path.abspath(dst)
@@ -233,7 +233,7 @@ def plan_moves(pairs, freed=()) -> list[dict]:
         folder, name = os.path.split(dst)
         stem, ext = os.path.splitext(name)
         n, candidate = 0, dst
-        while (key := os.path.normcase(candidate)) in planned or (os.path.lexists(candidate) and key not in srcs):
+        while (key := path_key(candidate)) in planned or (os.path.lexists(candidate) and key not in srcs):
             n += 1
             candidate = os.path.join(folder, f"{stem}_{n}{ext}")
         planned.add(key)
@@ -499,10 +499,10 @@ class _Op:
     def trash_in_the_way(self) -> set:
         """Trash that makes room for a move (a copy kept instead takes its original's place): first.
         Returns those steps' ids."""
-        room = {os.path.normcase(r["dst"]) for r in self.rows if r["action"] == "move" and r["dst"]}
+        room = {path_key(r["dst"]) for r in self.rows if r["action"] == "move" and r["dst"]}
         early = set()
         for r in self.rows:
-            if r["action"] != "trash" or os.path.normcase(r["src"]) not in room:
+            if r["action"] != "trash" or path_key(r["src"]) not in room:
                 continue
             early.add(r["id"])
             dst = self._reserve(r)
@@ -510,7 +510,7 @@ class _Op:
                 continue
             self.db.commit()
             try:
-                rename_noreplace(r["src"], dst)
+                dst = trashcan.send(r["src"], dst)
             except OSError as e:
                 trashcan.unreserve(dst)
                 self.skipped(r, e.strerror or str(e))
@@ -608,7 +608,7 @@ class _Op:
         elif action == "trash":
             dst = trashing.pop(r["id"])["dst"]
             try:
-                rename_noreplace(r["src"], dst)
+                dst = trashcan.send(r["src"], dst)
             except BaseException:
                 trashcan.unreserve(dst)
                 raise
@@ -675,7 +675,9 @@ def recover(db) -> list[str]:
                 else:
                     _mark_skipped(db, r, "interrupted before it was done")
             elif action == "trash":
-                if dst and os.path.lexists(dst) and not os.path.lexists(src):
+                # (on a Mac, where macOS names it in the Trash, gone from its folder is enough)
+                went = trashcan.mac() or (dst and os.path.lexists(dst))
+                if went and not os.path.lexists(src):
                     _mark_finished(db, r)
                     fixed += 1
                 else:
@@ -774,7 +776,7 @@ def inverse(db, op_id: int) -> list[dict]:
         freed=[s for a, s, _, _ in out if a == "trash"],
     )
     # a place a move empties first (restores come after moves) is free for a restore
-    vacated = {os.path.normcase(m["src"]) for m in moves} - {os.path.normcase(m["dst"]) for m in moves}
+    vacated = {path_key(m["src"]) for m in moves} - {path_key(m["dst"]) for m in moves}
     others = []
     taken = {}
     for a, s, d, before in out:
@@ -783,7 +785,7 @@ def inverse(db, op_id: int) -> list[dict]:
         elif a == "restore":
             folder = os.path.dirname(d)
             mine = taken.setdefault(folder, set())
-            free = os.path.normcase(d) in vacated and os.path.basename(d) not in mine
+            free = path_key(d) in vacated and os.path.basename(d) not in mine
             name = os.path.basename(d) if free else free_name(folder, os.path.basename(d), mine)
             taken[folder].add(name)
             others.append({"action": "restore", "src": s, "dst": os.path.join(folder, name), "before": before})

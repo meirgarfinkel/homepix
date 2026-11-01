@@ -7,6 +7,9 @@ own Trash (.Trash/<uid> or .Trash-<uid> at its top), so it's never copied across
 On Windows it's the Recycle Bin, the same way: each drive has one (X:\$Recycle.Bin\<user's SID>), where
 a deleted file is renamed to $R<tag>.<ext> beside a small $I<tag>.<ext> saying where it came from, so
 Explorer can show and restore it too.
+
+On a Mac it's the Finder's Trash, through macOS itself (so the Finder's Put Back works). macOS picks
+the name in the Trash as the file goes, so a reserved name there is only a guess until then.
 """
 
 import datetime as dt
@@ -16,6 +19,7 @@ import secrets
 import stat
 import string
 import struct
+import sys
 import time
 import urllib.parse
 from pathlib import Path
@@ -75,6 +79,8 @@ def reserve(path) -> str:
     """Choose the file's name in the Trash and reserve it by making its info file (exclusively, so
     two deletions never pick the same name). Returns the path it's to be moved to."""
     path = Path(os.path.abspath(path))
+    if mac():
+        return str(Path.home() / ".Trash" / path.name)
     if os.name == "nt":
         return _reserve_recycled(path)
     folder, top = trash_for(path)
@@ -100,10 +106,20 @@ def reserve(path) -> str:
 def unreserve(trashed):
     """Remove a trashed file's info file (after restoring it, or if trashing it failed)."""
     t = Path(trashed)
+    if mac():
+        return
     if os.name == "nt":
         (t.parent / f"$I{t.name[2:]}").unlink(missing_ok=True)
     else:
         (t.parent.parent / "info" / f"{t.name}.trashinfo").unlink(missing_ok=True)
+
+
+def send(path, reserved) -> str:
+    """Move a file to the Trash, at the name reserve() gave it. Returns where it went."""
+    if mac():
+        return _mac_trash(os.fspath(path))
+    rename_noreplace(path, reserved)
+    return os.fspath(reserved)
 
 
 def restore(trashed, dst):
@@ -200,3 +216,50 @@ def _reserve_recycled(path: Path) -> str:
     with os.fdopen(fd, "wb") as f:  # version 2 (Windows 10 and later): size, date, then the path
         f.write(struct.pack("<qqqi", 2, path.stat().st_size, when, len(original)) + original.encode("utf-16-le"))
     return str(folder / f"$R{tag}{ext}")
+
+
+# --- Mac: the Finder's Trash -------------------------------------------------------------------------
+
+
+def mac() -> bool:
+    """On a Mac (tests there use the freedesktop Trash in a folder of their own instead)."""
+    return sys.platform == "darwin" and not os.environ.get("HOMEPIX_FREEDESKTOP_TRASH")
+
+
+def _mac_trash(path: str) -> str:
+    """[NSFileManager trashItemAtURL:resultingItemURL:error:], called through the Objective-C runtime."""
+    import ctypes
+    import ctypes.util
+
+    objc = ctypes.CDLL(ctypes.util.find_library("objc"))
+    ctypes.CDLL("/System/Library/Frameworks/Foundation.framework/Foundation")
+    objc.objc_getClass.restype = objc.sel_registerName.restype = ctypes.c_void_p
+    objc.objc_getClass.argtypes = objc.sel_registerName.argtypes = [ctypes.c_char_p]
+    objc.objc_autoreleasePoolPush.restype = ctypes.c_void_p
+    objc.objc_autoreleasePoolPop.argtypes = [ctypes.c_void_p]
+    address = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
+
+    def send(restype, obj, selector, argtypes=(), *args):  # each call with its exact types (Apple Silicon)
+        fn = ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)(address)
+        return fn(obj, objc.sel_registerName(selector), *args)
+
+    def text(ns) -> str:
+        return send(ctypes.c_char_p, ns, b"UTF8String").decode() if ns else ""
+
+    ID, OUT = ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)
+
+    pool = objc.objc_autoreleasePoolPush()
+    try:
+        cls = objc.objc_getClass
+        name = send(ID, cls(b"NSString"), b"stringWithUTF8String:", [ctypes.c_char_p], path.encode())
+        url = send(ID, cls(b"NSURL"), b"fileURLWithPath:", [ID], name)
+        manager = send(ID, cls(b"NSFileManager"), b"defaultManager")
+        went, err = ctypes.c_void_p(), ctypes.c_void_p()
+        selector = b"trashItemAtURL:resultingItemURL:error:"
+        ok = send(ctypes.c_bool, manager, selector, [ID, OUT, OUT], url, ctypes.byref(went), ctypes.byref(err))
+        if not ok:
+            why = text(send(ID, err, b"localizedDescription")) if err.value else ""
+            raise TrashError(why or "macOS couldn't move it to the Trash")
+        return text(send(ID, went, b"path")) if went.value else str(Path.home() / ".Trash")
+    finally:
+        objc.objc_autoreleasePoolPop(pool)

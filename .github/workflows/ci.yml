@@ -64,3 +64,20 @@ jobs:
         run: |
           $env:HOMEPIX_EXIFTOOL_DIR = "$PWD\build\exiftool"
           pytest -v --timeout 120
+
+  test-mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          brew install exiftool
+          pip install -r requirements.txt pytest pytest-timeout
+      - name: Tests
+        run: pytest -v --timeout 120

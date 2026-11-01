@@ -10,6 +10,8 @@ Nothing is uploaded anywhere. The only network access is a one-time download of 
   <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePixSetup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-0A7DAD?style=for-the-badge" height="44"></a>
   &nbsp;
   <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.deb"><img alt="Download for Linux" src="https://img.shields.io/badge/Download_for_Linux-13212C?style=for-the-badge" height="44"></a>
+  &nbsp;
+  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.dmg"><img alt="Download for Mac" src="https://img.shields.io/badge/Download_for_Mac-555555?style=for-the-badge" height="44"></a>
 </p>
 
 Free, and nothing else to install.
@@ -17,6 +19,14 @@ Free, and nothing else to install.
 **Windows 10 and 11:** double-click the downloaded `HomePixSetup.exe`. If Windows says it protected your PC (the installer isn't signed by a paid certificate), click **More info**, then **Run anyway**. HomePix then appears in the Start menu, and no administrator password is needed.
 
 **Linux** (Ubuntu, Linux Mint, Pop!_OS, Debian and others like them): double-click the downloaded `HomePix.deb`. It opens in your software installer: click **Install** and type your password. HomePix then appears in your applications menu.
+
+**Mac** (Apple Silicon, M1 or newer, with macOS 14 Sonoma or newer):
+
+1. Double-click the downloaded `HomePix.dmg`, and drag **HomePix** onto the **Applications** folder beside it. (Install updates works only for a copy in Applications.)
+2. Open HomePix from Applications (or Launchpad). The first time, macOS says it can't check HomePix for harmful software, because HomePix isn't paid-signed by Apple: click **Done** (or **OK**).
+3. Open **System Settings**, then **Privacy & Security**, scroll down to where it mentions HomePix, and click **Open Anyway**. Confirm with your password or Touch ID.
+
+After that, HomePix opens normally, like any other app. macOS asks this once, not again after updates.
 
 **Other Linux** (Fedora, Arch and the rest): download [HomePix-x86_64.AppImage](https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix-x86_64.AppImage) instead. Right-click it, choose **Properties**, and turn on **Allow executing file as program** (Linux asks this once for anything downloaded). Then double-click it. The first time, it adds **HomePix** to your applications menu. It needs no installing, so it also works where you can't install software.
 
@@ -40,21 +50,21 @@ What's in it:
 - **Info** (I): description, keywords, when it was taken and where that date came from, camera, size, place, people, folder.
 - **Which date:** the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the rule the library's `YYYY_MM_DD_HH_MM_SS` names were made by, so a photo shows on the day its name says.
 - **Details written into the photos** (the Photo menu, or right-click): description, keywords and location (Ctrl+I), for one photo or many at once; date and time, set or moved by some hours for a batch whose camera clock was wrong (Ctrl+Shift+D), and a file named by its date is renamed to its new one; rotate (Ctrl+R, Ctrl+Shift+R) and flip, without re-saving the picture; and every detail a file holds (Alt+Enter). They're written the standard way (XMP and EXIF, using the bundled ExifTool), so other photo apps see them too, and the file's modified time is kept. A Live Photo's clip gets its photo's new date. Undo works for all of it, and the people found in a photo stay named.
-- **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete; the Recycle Bin on Windows), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
+- **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete; the Recycle Bin on Windows; on a Mac, the Finder's Trash, where Put Back works), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
 - **Organizing** (the File menu, or right-click a folder): *Tidy the library* or *Organize a folder* names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. A year folder's own subfolders are left alone (`2022/Trip/`).
 - **Duplicates** (in the sidebar, or the View menu): copies of the same photo or video, side by side, the one to keep marked (the most pixels, then the biggest file; click another to keep it instead). Exact copies are the same bytes; near ones look the same (resized or saved again), checked by both a picture fingerprint and the search model. Shots of a burst are never called duplicates. Move the extras to the Trash, for the groups you select or all of them, after a preview; say a group isn't duplicates and it's never offered again; or **Skip for now** to leave it for later (skipped groups wait at the end, under *Skipped for now*, even after closing the app).
 - **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, HomePix finishes the job next time it opens, with no photo lost or doubled.
-- **Taking your library along:** each library folder holds a copy of everything HomePix knows about its photos, in a hidden `.homepix` folder: the people you named and their faces, search, duplicate choices and folders left out. It's updated a few seconds after each change and when the app closes. Copy the folder to another computer (or a new one, Linux or Windows), add it in HomePix there, and choose **Use it**: everything comes back without looking through every photo again. Photos are found by their content, so it doesn't matter where the folder ends up, or if files were renamed since. Not carried along: the undo history, and thumbnails (made again as needed). Two computers working on the same folder at the same time don't merge: the copy saved last wins.
+- **Taking your library along:** each library folder holds a copy of everything HomePix knows about its photos, in a hidden `.homepix` folder: the people you named and their faces, search, duplicate choices and folders left out. It's updated a few seconds after each change and when the app closes. Copy the folder to another computer (or a new one, Linux, Windows or Mac), add it in HomePix there, and choose **Use it**: everything comes back without looking through every photo again. Photos are found by their content, so it doesn't matter where the folder ends up, or if files were renamed since. Not carried along: the undo history, and thumbnails (made again as needed). Two computers working on the same folder at the same time don't merge: the copy saved last wins.
 - **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
-- **Menus:** File, Edit, Photo and View are under the **⋯** button at the top right. Their shortcuts work anywhere in the window.
+- **Menus:** File, Edit, Photo and View are under the **⋯** button at the top right. Their shortcuts work anywhere in the window. On a Mac, shortcuts written here with Ctrl use ⌘ instead.
 
 Every change to who's who is undoable like a file operation.
 
-If the app misbehaves, its log is in `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`).
+If the app misbehaves, its log is in `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`; Mac: `~/Library/Application Support/homepix/app.log`).
 
 ## Where things are stored
 
-`~/.local/share/homepix/` on Linux, `%LOCALAPPDATA%\homepix` on Windows (change it with the `HOMEPIX_HOME` environment variable):
+`~/.local/share/homepix/` on Linux, `%LOCALAPPDATA%\homepix` on Windows, `~/Library/Application Support/homepix` on a Mac (change it with the `HOMEPIX_HOME` environment variable):
 
 - `homepix.db`: one SQLite file holding everything it learned (about 1–2 KB per photo)
 - `models/`: the downloaded AI models
@@ -98,7 +108,8 @@ Constants in `homepix/core/config.py`:
 - Photos are center-cropped to a square for search, so things at the far edges of wide panoramas can be missed.
 - RAW camera files other than DNG aren't supported yet; DNG photos are shown from the preview inside them.
 - HEIC photos can be rotated but not flipped, and WebP files can't have details written into them with the ExifTool that comes with older Linux versions (the bundled one can).
-- From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (the downloads bundle their own).
+- From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (on a Mac: `brew install exiftool`; the downloads bundle their own).
+- The Mac version runs on Apple Silicon Macs only (M1 or newer), not older Intel Macs. It's tested automatically on GitHub's Macs, but has had less use than the Windows and Linux versions.
 - On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so HomePix won't delete them.
 - Very small faces in big group photos are often missed or not recognized (small faces are read from the full-size photo, which helps when it has the pixels).
 

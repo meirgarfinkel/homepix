@@ -18,6 +18,7 @@ _SAFE = tempfile.mkdtemp(prefix="homepix-tests-")
 os.environ["HOMEPIX_HOME"] = os.path.join(_SAFE, "data")
 os.environ["XDG_DATA_HOME"] = os.path.join(_SAFE, "share")
 os.environ["HOMEPIX_RECYCLE_BIN"] = os.path.join(_SAFE, "recycle")  # (Windows) never the real Recycle Bin
+os.environ["HOMEPIX_FREEDESKTOP_TRASH"] = "1"  # (Mac) a Trash folder of the test's own, not the Finder's
 
 
 class FakeClip:

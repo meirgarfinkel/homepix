@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -120,6 +121,8 @@ class Updater:
             return
         if kind == "appimage":
             workers.run(_replace_appimage, lambda res, err: self._installed(version, err, ask=ask), str(path))
+        elif kind == "mac":
+            workers.run(_replace_mac_app, lambda res, err: self._installed(version, err, ask=ask), str(path))
         else:
             workers.run(_install_deb, lambda res, err: self._installed(version, err, res, path, ask), str(path))
 
@@ -168,6 +171,45 @@ def _replace_appimage(new):
         os.remove(new)
 
 
+def mac_bundle() -> Path:
+    """The HomePix.app this copy runs from (its program is HomePix.app/Contents/MacOS/HomePix)."""
+    return Path(sys.executable).resolve().parents[2]
+
+
+def _replace_mac_app(dmg):
+    """Copy HomePix.app out of the downloaded disk image, then swap it in for this one (a running app
+    can be replaced; the new one starts on restart)."""
+    here = mac_bundle()
+    if here.suffix != ".app":
+        raise OSError("this copy isn't inside HomePix.app.")
+    if "/AppTranslocation/" in here.as_posix() or here.as_posix().startswith("/Volumes/"):
+        raise OSError("drag HomePix into the Applications folder first, and open it from there.")
+    mount = Path(dmg).parent / "mounted"
+    new, old = here.with_name(here.name + ".new"), here.with_name(here.name + ".old")
+    mount.mkdir(exist_ok=True)
+    subprocess.run(
+        ["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount), dmg],
+        check=True,
+        capture_output=True,
+    )
+    try:
+        shutil.rmtree(new, ignore_errors=True)
+        r = subprocess.run(["ditto", str(mount / "HomePix.app"), str(new)], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise OSError(r.stderr.strip() or f"couldn't copy the new HomePix into {here.parent}.")
+    finally:
+        subprocess.run(["hdiutil", "detach", "-quiet", str(mount)], capture_output=True)
+    shutil.rmtree(old, ignore_errors=True)
+    os.rename(here, old)
+    try:
+        os.rename(new, here)
+    except OSError:
+        os.rename(old, here)  # put this one back
+        raise
+    shutil.rmtree(old, ignore_errors=True)
+    os.remove(dmg)
+
+
 def _install_deb(path):
     """Install the .deb: Linux asks for the password, then apt installs it. 'no pkexec' if there's no
     way to ask for it here (the software installer is opened instead)."""
@@ -186,6 +228,9 @@ def _install_deb(path):
 
 def restart(window):
     """Start the new copy once this one has gone (one HomePix runs at a time), then close."""
-    app = os.environ.get("APPIMAGE") or sys.executable
-    QProcess.startDetached("sh", ["-c", 'sleep 1; exec "$0"', app])
+    if sys.platform == "darwin":  # opened the Mac way, as the app (with its Dock icon)
+        QProcess.startDetached("sh", ["-c", 'sleep 1; exec open -n "$0"', str(mac_bundle())])
+    else:
+        app = os.environ.get("APPIMAGE") or sys.executable
+        QProcess.startDetached("sh", ["-c", 'sleep 1; exec "$0"', app])
     window.close()
