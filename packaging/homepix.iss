@@ -97,11 +97,12 @@ Filename: "{app}\HomePix.exe"; Description: "Open HomePix now"; Flags: nowait po
 ; after an update from inside the app (setup /SILENT /relaunch=1), open HomePix again
 Filename: "{app}\HomePix.exe"; Flags: nowait; Check: Relaunch
 
+
+; Your photos, index and names live in %LOCALAPPDATA%\homepix and are kept on uninstall,
+; so reinstalling picks up where you left off.
+
 [Code]
 function Relaunch: Boolean;
 begin
   Result := ExpandConstant('{param:relaunch|0}') = '1';
 end;
-
-; Your photos, index and names live in %LOCALAPPDATA%\homepix and are kept on uninstall,
-; so reinstalling picks up where you left off.
