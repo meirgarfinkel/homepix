@@ -2,7 +2,7 @@
 ; Installs for the current user only, so no administrator password is needed.
 
 #define AppName "HomePix"
-#define AppVersion "1.0.2"
+#define AppVersion "1.0.3"
 
 [Setup]
 AppId={{8B6C7A51-3E2D-4F7B-9C1A-6D5E4F3A2B10}
