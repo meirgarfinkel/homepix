@@ -2,11 +2,13 @@
 # Runs the AppImage's self-test inside a fresh container of another Linux distribution, set up
 # like a normal desktop (graphics, fonts, X libraries) but with nothing else installed.
 #   bash packaging/smoke_test.sh debian:12 [HomePix-x86_64.AppImage] [models folder]
+# Given HomePix.deb instead (Debian and Ubuntu only), it installs that the way the software installer
+# does (which also checks everything it depends on can be found) and tests the installed app.
 # With a models folder (holding the downloaded AI models), it also checks the AI runs.
 set -euo pipefail
 
 IMAGE="$1"
-APPIMAGE="$(readlink -f "${2:-HomePix-x86_64.AppImage}")"
+APP="$(readlink -f "${2:-HomePix-x86_64.AppImage}")"
 MODELS="${3:-}"
 ENGINE="${CONTAINER_ENGINE:-$(command -v podman || command -v docker || true)}"
 
@@ -29,26 +31,38 @@ case "$IMAGE" in
 esac
 SETUP="$(echo "$SETUP" | tr -s ' \n' ' ')"
 
+if [[ "$APP" == *.deb ]]; then
+  INSTALL="apt-get install -y -qq /tmp/HomePix.deb >/dev/null"  # as root, like the software installer
+  MOUNT=(-v "$APP:/tmp/HomePix.deb:ro")
+  PREP="true"
+  CMD="homepix"
+else  # from a copy, as people run it; it extracts itself (containers have no FUSE)
+  INSTALL="true"
+  MOUNT=(-v "$APP:/HomePix.AppImage:ro")
+  PREP="cp /HomePix.AppImage . && chmod +x HomePix.AppImage"
+  CMD="env APPIMAGE_EXTRACT_AND_RUN=1 ./HomePix.AppImage"
+fi
+
 MOUNT_MODELS=()
 if [ -n "$MODELS" ]; then
   MOUNT_MODELS=(-v "$(readlink -f "$MODELS"):/models:ro")
 fi
 
-# Runs as an ordinary user, the way people run it, from a copy (the AppImage extracts itself:
-# containers have no FUSE).
-"$ENGINE" run --rm -v "$APPIMAGE:/HomePix.AppImage:ro" "${MOUNT_MODELS[@]}" "$IMAGE" bash -c "
+# Runs as an ordinary user, the way people run it.
+"$ENGINE" run --rm "${MOUNT[@]}" "${MOUNT_MODELS[@]}" "$IMAGE" bash -c "
   set -e
   $SETUP
+  $INSTALL
   useradd -m tester
   su tester -c '
     set -e
     cd ~
     mkdir -p data/models
     [ -d /models ] && cp /models/* data/models/
-    cp /HomePix.AppImage . && chmod +x HomePix.AppImage
+    $PREP
     echo \"== $IMAGE (glibc \$(ldd --version | head -1 | grep -o \"[0-9.]*\$\"))\"
-    HOMEPIX_HOME=~/data APPIMAGE_EXTRACT_AND_RUN=1 timeout 180 \
-      xvfb-run -a ./HomePix.AppImage --self-test 2>&1 | tee log.txt | grep -E \"SELF-TEST|rror\" || true
+    HOMEPIX_HOME=~/data timeout 180 \
+      xvfb-run -a $CMD --self-test 2>&1 | tee log.txt | grep -E \"SELF-TEST|rror\" || true
     grep -q \"SELF-TEST OK\" log.txt || { echo \"--- full log\"; cat log.txt; exit 1; }
   '
 "
