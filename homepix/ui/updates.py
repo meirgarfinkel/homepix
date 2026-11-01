@@ -182,7 +182,7 @@ def _replace_mac_app(dmg):
     here = mac_bundle()
     if here.suffix != ".app":
         raise OSError("this copy isn't inside HomePix.app.")
-    if "/AppTranslocation/" in str(here) or str(here).startswith("/Volumes/"):
+    if "/AppTranslocation/" in here.as_posix() or here.as_posix().startswith("/Volumes/"):
         raise OSError("drag HomePix into the Applications folder first, and open it from there.")
     mount = Path(dmg).parent / "mounted"
     new, old = here.with_name(here.name + ".new"), here.with_name(here.name + ".old")
