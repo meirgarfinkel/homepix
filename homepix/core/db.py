@@ -15,7 +15,7 @@ import numpy as np
 
 from .config import data_dir, db_file
 
-VERSION = 12
+VERSION = 13
 
 TABLES = {
     "photos": """CREATE TABLE photos (
@@ -127,7 +127,12 @@ def _to_12(db):
         _rebuild(db, table)
 
 
-UPGRADES = {11: _to_12}  # version: the step that brings it up to the next one
+def _to_13(db):
+    """Names like 2026-10-01_09-09 now give their time too: dates taken from names are read again."""
+    db.execute("UPDATE photos SET details_done=0 WHERE taken_source='filename'")
+
+
+UPGRADES = {11: _to_12, 12: _to_13}  # version: the step that brings it up to the next one
 
 
 def migrate(db: sqlite3.Connection, path):

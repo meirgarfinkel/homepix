@@ -73,6 +73,8 @@ def test_dates_in_file_names():
     assert date_in_name("VID_20230528_230700.mp4") == dt.datetime(2023, 5, 28, 23, 7)
     assert date_in_name("Screenshot 2026-01-18 at 14-54-55.png") == dt.datetime(2026, 1, 18, 14, 54, 55)
     assert date_in_name("IMG_2023-05-28.jpg") == dt.datetime(2023, 5, 28)
+    assert date_in_name("2026-10-01_09-09.png") == dt.datetime(2026, 10, 1, 9, 9)  # hours and minutes
+    assert date_in_name("IMG_20240101_1234.jpg") == dt.datetime(2024, 1, 1)  # 1234: a number, not a time
     assert is_placeholder(date_in_name("2023_01_01_00_00_00.jpg"))  # a placeholder: only the year's likely right
     assert date_in_name("IMG_4411.MOV") is None
 
