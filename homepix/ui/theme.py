@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QProxyStyle, QStyle, QStyledItemDelegate
+from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QComboBox, QMenu, QProxyStyle, QStyle, QStyledItemDelegate
 
 from ..core.settings import load_settings, save_settings
 
@@ -38,6 +38,7 @@ TOKENS = {
         "hover": "rgba(22,26,31,0.06)",
         "hoverStrong": "rgba(22,26,31,0.10)",
         "danger": "#C0392B",
+        "rail": "rgba(22,26,31,0.025)",  # the years beside the photos
     },
     "dark": {
         "bg": "#0E1014",
@@ -54,6 +55,7 @@ TOKENS = {
         "hover": "rgba(231,234,238,0.06)",
         "hoverStrong": "rgba(231,234,238,0.12)",
         "danger": "#F0776A",
+        "rail": "rgba(231,234,238,0.03)",
     },
 }
 
@@ -128,7 +130,7 @@ def apply(app, m: str | None = None):
     if not hasattr(app, "_popups"):
         app._popups = _Popups(app)
         app.installEventFilter(app._popups)
-    app.setStyleSheet(style_sheet(dict(_tokens, arrow=_arrow_file())))
+    app.setStyleSheet(style_sheet(dict(_tokens, arrow=_arrow_file(), arrowUp=_arrow_file("up"))))
     signals.changed.emit()
 
 
@@ -152,11 +154,15 @@ class _FlatStyle(QProxyStyle):
             return ic
         if sp == QStyle.StandardPixmap.SP_LineEditClearButton:  # the x in a search field
             return icon("clear", "muted")
+        if sp in (QStyle.StandardPixmap.SP_ArrowLeft, QStyle.StandardPixmap.SP_ArrowBack):  # e.g. a calendar's
+            return icon("back")
+        if sp in (QStyle.StandardPixmap.SP_ArrowRight, QStyle.StandardPixmap.SP_ArrowForward):
+            return icon("forward")
         return super().standardIcon(sp, option, widget)
 
     def styleHint(self, hint, option=None, widget=None, data=None):
-        if hint == QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons:
-            return 0
+        if hint in (QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons, QStyle.StyleHint.SH_UnderlineShortcut):
+            return 0  # no icons on buttons; no underlined letters (Alt+letter still works)
         return super().styleHint(hint, option, widget, data)
 
 
@@ -172,6 +178,8 @@ class _Popups(QObject):
                 obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
                 obj.setWindowFlag(Qt.WindowType.FramelessWindowHint)
                 obj.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint)
+            elif isinstance(obj, QAbstractSpinBox) and not getattr(obj, "calendarPopup", lambda: False)():
+                obj.lineEdit().setTextMargins(10, 0, 0, 0)  # the style sheet's padding is lost beside its arrows
             elif isinstance(obj, QComboBox) and type(obj.itemDelegate()) is not QStyledItemDelegate:
                 obj.setItemDelegate(QStyledItemDelegate(obj))
         return False
@@ -180,14 +188,14 @@ class _Popups(QObject):
 _arrows = None  # a folder for the dropdown arrows, which a style sheet can only take as files
 
 
-def _arrow_file() -> str:
+def _arrow_file(name: str = "down") -> str:
     global _arrows
     if _arrows is None:
         _arrows = Path(tempfile.mkdtemp(prefix="homepix-look-"))
         atexit.register(shutil.rmtree, _arrows, True)
-    path = _arrows / f"down-{'dark' if _dark else 'light'}.png"
+    path = _arrows / f"{name}-{'dark' if _dark else 'light'}.png"
     if not path.exists():
-        _pixmap("down", color("muted"), 14, 2.0).save(str(path))
+        _pixmap(name, color("muted"), 14, 2.0).save(str(path))
     return path.as_posix()
 
 
@@ -246,6 +254,7 @@ QLineEdit#search:focus {{ border-color: {accent}; background: {bg}; }}
 QWidget#pageHeader {{ background: {bg}; }}
 QLabel#pageTitle {{ font-size: 26px; font-weight: 700; }}
 QLabel#pageCount {{ color: {muted}; }}
+QLabel#hint {{ color: {muted}; }}
 QToolButton#pageBack {{ border: none; border-radius: 16px; padding: 4px 12px 4px 6px; color: {muted};
                         font-weight: 600; }}
 QToolButton#pageBack:hover {{ background: {hover}; color: {text}; }}
@@ -284,6 +293,38 @@ QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDateTimeEdit, QComboBox {{
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus, QDateTimeEdit:focus, QComboBox:focus {{
     border-color: {accent}; }}
 QComboBox {{ padding: 8px 12px; min-width: 120px; combobox-popup: 0; }}
+QDateTimeEdit {{ padding: 8px 12px; }}
+QDateEdit::drop-down {{ border: none; width: 32px; subcontrol-position: center right; }}
+QDateEdit::down-arrow {{ image: url("{arrow}"); width: 14px; height: 14px; }}
+QAbstractSpinBox {{ padding: 8px 4px 8px 2px; }}
+QRadioButton {{ spacing: 8px; }}
+QRadioButton::indicator {{ width: 14px; height: 14px; border-radius: 9px; border: 2px solid {muted};
+    background: transparent; }}
+QRadioButton::indicator:hover {{ border-color: {text}; }}
+QRadioButton::indicator:checked {{ border: 5px solid {accent}; width: 8px; height: 8px; background: {raised}; }}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{ subcontrol-origin: padding; width: 24px;
+    border: none; background: transparent; }}
+QAbstractSpinBox::up-button {{ subcontrol-position: top right; margin-top: 3px; }}
+QAbstractSpinBox::down-button {{ subcontrol-position: bottom right; margin-bottom: 3px; }}
+QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{ background: {hover};
+    border-radius: 6px; }}
+QAbstractSpinBox::up-arrow {{ image: url("{arrowUp}"); width: 12px; height: 12px; }}
+QAbstractSpinBox::down-arrow {{ image: url("{arrow}"); width: 12px; height: 12px; }}
+QAbstractSpinBox::up-arrow:disabled, QAbstractSpinBox::up-arrow:off,
+QAbstractSpinBox::down-arrow:disabled, QAbstractSpinBox::down-arrow:off {{ image: none; }}
+QDateEdit {{ padding: 8px 12px; }}
+QPushButton:default:disabled {{ background: {side}; color: {muted}; border-color: {border}; }}
+QCalendarWidget QWidget {{ alternate-background-color: {raised}; }}
+QCalendarWidget {{ background: {raised}; border: 1px solid {border}; border-radius: 12px; }}
+QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {raised}; border-radius: 12px; padding: 4px; }}
+QCalendarWidget QToolButton {{ color: {text}; font-weight: 600; padding: 6px 10px; }}
+QCalendarWidget QToolButton::menu-indicator {{ image: none; width: 0; }}
+QCalendarWidget QToolButton#qt_calendar_prevmonth, QCalendarWidget QToolButton#qt_calendar_nextmonth {{
+    qproperty-iconSize: 16px; }}
+QCalendarWidget QSpinBox {{ padding: 2px 6px; }}
+QCalendarWidget QAbstractItemView {{ background: {raised}; color: {text}; outline: 0; border: none;
+    selection-background-color: {accent}; selection-color: {accentInk}; }}
+QCalendarWidget QAbstractItemView:disabled {{ color: {muted}; }}
 QComboBox:hover {{ border-color: {border}; }}
 QComboBox::drop-down {{ border: none; width: 32px; subcontrol-position: center right; }}
 QComboBox::down-arrow {{ image: url("{arrow}"); width: 14px; height: 14px; }}
@@ -327,7 +368,7 @@ QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::su
 # --- icons -------------------------------------------------------------------------------------------
 
 
-def _draw_icon(name: str, p: QPainter):
+def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon)
     """On a 24 × 24 grid, in the pen already set."""
     if name == "sidebar":
         p.drawRoundedRect(QRectF(3.5, 5, 17, 14), 3, 3)
@@ -353,6 +394,16 @@ def _draw_icon(name: str, p: QPainter):
         path = QPainterPath(QPointF(14.5, 6))
         path.lineTo(8.5, 12)
         path.lineTo(14.5, 18)
+        p.drawPath(path)
+    elif name == "up":
+        path = QPainterPath(QPointF(7, 14))
+        path.lineTo(12, 9)
+        path.lineTo(17, 14)
+        p.drawPath(path)
+    elif name == "forward":
+        path = QPainterPath(QPointF(9.5, 6))
+        path.lineTo(15.5, 12)
+        path.lineTo(9.5, 18)
         p.drawPath(path)
     elif name == "question":
         p.drawEllipse(QPointF(12, 12), 8.5, 8.5)

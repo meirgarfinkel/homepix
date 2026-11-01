@@ -87,12 +87,22 @@ class PhotoActions:
         dlg = DateDialog(items, self.w)
         if not dlg.exec():
             return
-        edit, what, how = dlg.edit(), count_of(items), dlg.describe()
-        if edit.date is not None:
-            summary, past = f"Set the date of {what} to {how}", f"Set the date of {what} to {how}"
-        else:
-            summary, past = f"Move the date of {what} by {how}", f"Moved the date of {what} by {how}"
-        self._run_edit(items, edit, summary, past)
+        by_date = {}
+        for it, when in dlg.new_dates():
+            by_date.setdefault(when, []).append(it.path)
+        if not by_date:
+            return
+        what, how = count_of(items), dlg.describe()
+
+        def plan(db):
+            steps, cant = [], []
+            for when, paths in by_date.items():
+                more, why = files.plan_details(db, paths, metadata.Edit(date=when))
+                steps += more
+                cant += why
+            return steps, cant
+
+        self.w.ops.run("details", f"Set the date of {what} to {how}", f"Set the date of {what} to {how}", plan)
 
     def edit_details(self):
         items = self._editable_items()

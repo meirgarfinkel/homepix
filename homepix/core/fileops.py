@@ -332,8 +332,9 @@ def plan_rename(db, renames) -> list[dict]:
 
 def plan_details(db, paths, edit: "metadata.Edit"):
     """Steps that write edit into each file, and [(path, why)] for those it can't be written to.
-    Changing the date changes a Live Photo's clip's date too, so they stay together; and a file named
-    by its date (2022_04_01_07_32_31.jpg) is renamed to its new one, so the two never disagree."""
+        Changing the date changes a Live Photo's clip's date too, so they stay together; and a file named
+        by its date (2022_04_01_07_32_31.jpg) is renamed to its new one, so the two never disagree (and
+    moved to the new year's folder, if it was in its year's). Other names are left as they are."""
     paths = with_companions(db, paths) if edit.touches_date() else [os.path.abspath(p) for p in paths]
     found, steps, cant = {}, [], []
     for i in range(0, len(paths), 200):
@@ -365,9 +366,21 @@ def plan_details(db, paths, edit: "metadata.Edit"):
             new = s["before"]["new"]
             when = dates.parse(new.get("ExifIFD:DateTimeOriginal") or new.get("QuickTime:CreateDate"))
             if when is not None and dates.ORGANIZED.match(stem):
-                renames.append((s["src"], os.path.join(os.path.dirname(s["src"]), when.strftime(dates.FORMAT) + ext)))
+                renames.append(
+                    (s["src"], os.path.join(_year_folder(s["src"], when), when.strftime(dates.FORMAT) + ext))
+                )
         steps = plan_moves(renames) + steps  # moves go first anyway; each write follows its file (see run)
     return steps, cant
+
+
+def _year_folder(path, when) -> str:
+    """Where a file named by its date goes: its folder, or, if that's the year folder tidying put it
+    in (2022/2022_04_01_...), the new year's folder beside it."""
+    folder = os.path.dirname(path)
+    year = os.path.basename(path)[:4]
+    if os.path.basename(folder) == year and str(when.year) != year:
+        return os.path.join(os.path.dirname(folder), str(when.year))
+    return folder
 
 
 def pattern_names(pattern: str, items) -> list[str]:
