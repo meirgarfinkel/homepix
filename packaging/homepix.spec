@@ -16,6 +16,7 @@ excludes = [
     "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets", "PySide6.QtPrintSupport", "PySide6.QtXml",
     "PySide6.QtConcurrent", "PySide6.QtDesigner", "PySide6.QtUiTools", "PySide6.QtHelp",
     "PySide6.QtSvg", "PySide6.QtSvgWidgets",
+    "yaml",  # numpy only uses it to print its build settings
 ]
 
 a = Analysis(
