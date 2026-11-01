@@ -42,6 +42,11 @@ def test_the_file_for_each_kind_of_install(tmp_path):
     assert updates.file_for(rel, "windows") is None
 
 
+def test_a_mac_updates_from_the_disk_image(tmp_path):
+    rel = release(tmp_path, "v2.0.0", "HomePix.dmg")
+    assert updates.file_for(rel, "mac")["name"] == "HomePix.dmg"
+
+
 def test_a_download_is_checked(tmp_path):
     rel = release(tmp_path, "v2.0.0", "HomePix.deb", b"x" * 3000)
     seen = []
@@ -119,6 +124,49 @@ def test_a_deb_is_installed_with_the_password_prompt(window, app, said, monkeypa
     wait_until(app, lambda: said)
     assert ran[0][:4] == ["/usr/bin/pkexec", "apt-get", "install", "-y"] and ran[0][4].endswith("HomePix.deb")
     assert said == ["HomePix 9.0.0 is installed. Restart now?"]
+
+
+def test_a_mac_app_is_swapped_for_the_one_in_the_disk_image(window, app, said, monkeypatch, tmp_path):
+    import shutil
+
+    from homepix.ui import updates as ui_updates
+
+    here = tmp_path / "Applications" / "HomePix.app"
+    (here / "Contents").mkdir(parents=True)
+    (here / "Contents" / "version").write_text("old")
+    ran = []
+
+    def run(cmd, **k):  # hdiutil and ditto, as a Mac does them
+        ran.append(cmd[:2])
+        if cmd[:2] == ["hdiutil", "attach"]:
+            inside = ui_updates.Path(cmd[cmd.index("-mountpoint") + 1]) / "HomePix.app" / "Contents"
+            inside.mkdir(parents=True)
+            (inside / "version").write_text("new")
+        elif cmd[0] == "ditto":
+            shutil.copytree(cmd[1], cmd[2])
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(ui_updates, "mac_bundle", lambda: here)
+    monkeypatch.setattr(ui_updates.subprocess, "run", run)
+    monkeypatch.setattr(updates, "how_installed", lambda: "mac")
+    monkeypatch.setattr(updates, "latest_release", lambda: release(tmp_path, "v9.0.0", "HomePix.dmg"))
+    window.updater.check()
+    wait_until(app, lambda: said)
+    assert said == ["HomePix 9.0.0 is installed. Restart now?"]
+    assert (here / "Contents" / "version").read_text() == "new"
+    assert sorted(os.listdir(here.parent)) == ["HomePix.app"]  # nothing left beside it
+    assert ran == [["hdiutil", "attach"], ["ditto", ran[1][1]], ["hdiutil", "detach"]]
+
+
+def test_a_mac_app_opened_from_the_disk_image_asks_to_be_moved_first(window, app, said, monkeypatch, tmp_path):
+    from homepix.ui import updates as ui_updates
+
+    monkeypatch.setattr(ui_updates, "mac_bundle", lambda: ui_updates.Path("/Volumes/HomePix/HomePix.app"))
+    monkeypatch.setattr(updates, "how_installed", lambda: "mac")
+    monkeypatch.setattr(updates, "latest_release", lambda: release(tmp_path, "v9.0.0", "HomePix.dmg"))
+    window.updater.check()
+    wait_until(app, lambda: said)
+    assert "Applications folder first" in said[0]
 
 
 def test_at_startup_a_newer_version_is_downloaded_then_offered(window, app, said, monkeypatch, tmp_path):

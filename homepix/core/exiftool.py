@@ -2,8 +2,8 @@
 
 Starting ExifTool (a Perl program) takes about a quarter of a second, so one copy is started on first
 use and kept open (-stay_open), and each request is a few milliseconds. The bundled app ships its own
-copy with its own Perl (on Windows, ExifTool's official Windows build); from source, HOMEPIX_EXIFTOOL
-or the system's exiftool is used.
+copy with its own Perl (on Windows, ExifTool's official Windows build; on a Mac, ExifTool alone, run by
+the Perl every Mac has); from source, HOMEPIX_EXIFTOOL or the system's exiftool is used.
 """
 
 import json
@@ -27,7 +27,8 @@ def bundled() -> Path | None:
     if not here:
         return None
     here = Path(here)
-    return here if (here / "run.pl").is_file() or (here / "exiftool.exe").is_file() else None
+    found = any((here / name).is_file() for name in ("run.pl", "exiftool.exe", "exiftool"))
+    return here if found else None
 
 
 def command() -> list[str]:
@@ -37,6 +38,8 @@ def command() -> list[str]:
     if b := bundled():
         if (b / "exiftool.exe").is_file():
             return [str(b / "exiftool.exe")]
+        if not (b / "perl" / "bin" / "perl").is_file():  # a Mac: its own Perl
+            return ["/usr/bin/perl", str(b / "exiftool")]
         return [str(b / "perl" / "bin" / "perl"), str(b / "run.pl")]
     found = shutil.which("exiftool")
     if found:

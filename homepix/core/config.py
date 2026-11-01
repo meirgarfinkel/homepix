@@ -1,6 +1,7 @@
 """Settings you might want to tune, and where HomePix keeps its data."""
 
 import os
+import sys
 from pathlib import Path
 
 WORK_SIZE = 1024  # photos are decoded at most this big (faster, less RAM)
@@ -37,6 +38,8 @@ def data_dir() -> Path:
         base = Path(os.environ["HOMEPIX_HOME"]).expanduser()
     elif os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "homepix"
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support" / "homepix"
     else:
         xdg = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
         base = Path(xdg) / "homepix"

@@ -11,15 +11,22 @@ from .. import __version__
 
 LATEST = "https://api.github.com/repos/meirgarfinkel/homepix/releases/latest"
 # the file each kind of install updates from
-FILES = {"windows": "HomePixSetup.exe", "deb": "HomePix.deb", "appimage": "HomePix-x86_64.AppImage"}
+FILES = {
+    "windows": "HomePixSetup.exe",
+    "deb": "HomePix.deb",
+    "appimage": "HomePix-x86_64.AppImage",
+    "mac": "HomePix.dmg",
+}
 
 
 def how_installed() -> str | None:
-    """'windows', 'deb', 'appimage', or None (running from the source code)."""
+    """'windows', 'deb', 'appimage', 'mac', or None (running from the source code)."""
     if not getattr(sys, "frozen", False):
         return None
     if sys.platform == "win32":
         return "windows"
+    if sys.platform == "darwin":
+        return "mac"
     if os.environ.get("APPIMAGE"):
         return "appimage"
     return "deb" if sys.executable.startswith("/opt/homepix/") else None

@@ -1,6 +1,6 @@
-# PyInstaller recipe for HomePix (used by build_linux.sh and build_windows.bat).
+# PyInstaller recipe for HomePix (used by build_linux.sh, build_windows.bat and build_mac.sh).
 # Produces a folder dist/HomePix/ containing the app and everything it needs, including its own
-# copy of Python and Qt. The AI models are downloaded on first run.
+# copy of Python and Qt (on a Mac, dist/HomePix.app too). The AI models are downloaded on first run.
 import os
 import sys
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(SPECPATH).parent
 WINDOWS = sys.platform == "win32"
 LINUX = sys.platform.startswith("linux")
+MAC = sys.platform == "darwin"
 
 # Things that get pulled in by accident and only add size.
 excludes = [
@@ -19,10 +20,14 @@ excludes = [
     "yaml",  # numpy only uses it to print its build settings
 ]
 
+datas = [(str(ROOT / "homepix-icon.png"), "."), (str(ROOT / "homepix/ui/fonts"), "homepix/ui/fonts")]
+if MAC:  # ExifTool goes in here, so it's signed with the rest (elsewhere it's copied in after)
+    datas.append((os.environ["EXIFTOOL_BUNDLE"], "exiftool"))
+
 a = Analysis(
     [str(ROOT / "homepix_app.py")],
     pathex=[str(ROOT)],
-    datas=[(str(ROOT / "homepix-icon.png"), "."), (str(ROOT / "homepix/ui/fonts"), "homepix/ui/fonts")],
+    datas=datas,
     hiddenimports=["PySide6.QtNetwork"],
     excludes=excludes,
     noarchive=False,
@@ -101,3 +106,22 @@ exe = EXE(
     upx=False,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="HomePix", upx=False)
+
+if MAC:
+    import re
+
+    version = re.search(r'__version__ = "(.+?)"', (ROOT / "homepix" / "__init__.py").read_text()).group(1)
+    app = BUNDLE(
+        coll,
+        name="HomePix.app",
+        icon=str(ROOT / "homepix-icon.png"),  # made into a Mac icon (with Pillow)
+        bundle_identifier="io.github.meirgarfinkel.homepix",
+        version=version,
+        info_plist={
+            "CFBundleDisplayName": "HomePix",
+            "CFBundleShortVersionString": version,
+            "LSMinimumSystemVersion": "14.0",
+            "NSHighResolutionCapable": True,
+            "LSApplicationCategoryType": "public.app-category.photography",
+        },
+    )

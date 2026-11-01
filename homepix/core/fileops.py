@@ -510,7 +510,7 @@ class _Op:
                 continue
             self.db.commit()
             try:
-                rename_noreplace(r["src"], dst)
+                dst = trashcan.send(r["src"], dst)
             except OSError as e:
                 trashcan.unreserve(dst)
                 self.skipped(r, e.strerror or str(e))
@@ -608,7 +608,7 @@ class _Op:
         elif action == "trash":
             dst = trashing.pop(r["id"])["dst"]
             try:
-                rename_noreplace(r["src"], dst)
+                dst = trashcan.send(r["src"], dst)
             except BaseException:
                 trashcan.unreserve(dst)
                 raise
@@ -675,7 +675,9 @@ def recover(db) -> list[str]:
                 else:
                     _mark_skipped(db, r, "interrupted before it was done")
             elif action == "trash":
-                if dst and os.path.lexists(dst) and not os.path.lexists(src):
+                # (on a Mac, where macOS names it in the Trash, gone from its folder is enough)
+                went = trashcan.mac() or (dst and os.path.lexists(dst))
+                if went and not os.path.lexists(src):
                     _mark_finished(db, r)
                     fixed += 1
                 else:
