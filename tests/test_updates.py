@@ -98,7 +98,9 @@ def test_an_appimage_replaces_itself_with_the_new_one(window, app, said, monkeyp
     window.updater.check()
     wait_until(app, lambda: said)
     assert said == ["HomePix 9.0.0 is installed. Restart now?"]
-    assert old.read_bytes() == b"new HomePix" and os.stat(old).st_mode & stat.S_IXUSR
+    assert old.read_bytes() == b"new HomePix"
+    if os.name != "nt":  # Windows files have no run permission
+        assert os.stat(old).st_mode & stat.S_IXUSR
 
 
 def test_a_deb_is_installed_with_the_password_prompt(window, app, said, monkeypatch, tmp_path):
