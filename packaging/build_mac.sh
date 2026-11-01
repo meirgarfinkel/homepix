@@ -66,6 +66,7 @@ mkdir -p "$BUILD/selftest"
 rm -f "$BUILD/selftest/app.log"
 if ! HOMEPIX_HOME="$BUILD/selftest" "$APP/Contents/MacOS/HomePix" --self-test; then
   cat "$BUILD/selftest/app.log" 2>/dev/null || true
+  echo "OpenCV's files in the app:"; find "$APP" -path "*cv2*" -maxdepth 4 | head -20
   echo "The self-test failed: see above."
   exit 1
 fi

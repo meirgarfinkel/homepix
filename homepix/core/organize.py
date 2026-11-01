@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from . import dates
 from .fileops import companions
+from .safefs import path_key
 from .util import within
 
 UNSORTED = "Unsorted"
@@ -170,14 +171,14 @@ def _groups(db, files) -> list:
 def _with_free_names(moving) -> list:
     """The changes, each group under its name or, where that's taken, the first free numbered one."""
     # (names compared as the system does: on Windows IMG.JPG and img.jpg are one name)
-    leaving = {os.path.normcase(src) for g in moving for src, _, _ in g.members}
+    leaving = {path_key(src) for g in moving for src, _, _ in g.members}
     planned, changes = set(), []
     for g in moving:
         n = 0
         while True:
             stem = g.base if n == 0 else f"{_numbered_base(g.base)}_{n}"
             targets = g.paths(stem)
-            keys = [os.path.normcase(t) for t in targets]
+            keys = [path_key(t) for t in targets]
             free = all(
                 k not in planned and (k in leaving or not os.path.lexists(t))
                 for k, t in zip(keys, targets, strict=True)

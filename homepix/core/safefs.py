@@ -38,6 +38,12 @@ def _rename_once(src: bytes, dst: bytes) -> int:
     return 0 if ok else ctypes.get_errno()
 
 
+def path_key(path) -> str:
+    """A path as the system compares it: Windows and Macs (normally) ignore upper and lower case."""
+    key = os.path.normcase(path)
+    return key.lower() if sys.platform == "darwin" else key
+
+
 def rename_noreplace(src, dst):
     """Rename src to dst on the same filesystem. Raises FileExistsError if dst exists, and OSError
     with errno EXDEV if they're on different filesystems."""

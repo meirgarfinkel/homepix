@@ -1,5 +1,6 @@
 """What's different on a Mac, checked on every system (the Mac test machine runs everything else)."""
 
+import os
 import sys
 
 from homepix.core import config, exiftool, trash
@@ -7,7 +8,6 @@ from homepix.core import config, exiftool, trash
 
 def test_a_mac_keeps_its_data_in_application_support(monkeypatch, tmp_path):
     monkeypatch.delenv("HOMEPIX_HOME")
-    monkeypatch.setattr(config.os, "name", "posix")
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(config.Path, "home", lambda: tmp_path)
     assert config.data_dir() == tmp_path / "Library" / "Application Support" / "homepix"
@@ -24,8 +24,7 @@ def test_a_macs_exiftool_runs_on_the_macs_own_perl(monkeypatch, tmp_path):
 def test_on_a_mac_the_system_names_the_file_in_the_trash(monkeypatch, tmp_path):
     monkeypatch.delenv("HOMEPIX_FREEDESKTOP_TRASH")
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(trash.os, "name", "posix")
-    monkeypatch.setattr(trash, "_mac_trash", lambda path: f"/Users/me/.Trash/{path.rsplit('/', 1)[-1]} 2")
+    monkeypatch.setattr(trash, "_mac_trash", lambda path: f"/Users/me/.Trash/{os.path.basename(path)} 2")
     f = tmp_path / "a.jpg"
     f.write_bytes(b"x")
     guess = trash.reserve(f)

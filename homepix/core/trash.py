@@ -79,10 +79,10 @@ def reserve(path) -> str:
     """Choose the file's name in the Trash and reserve it by making its info file (exclusively, so
     two deletions never pick the same name). Returns the path it's to be moved to."""
     path = Path(os.path.abspath(path))
-    if os.name == "nt":
-        return _reserve_recycled(path)
     if mac():
         return str(Path.home() / ".Trash" / path.name)
+    if os.name == "nt":
+        return _reserve_recycled(path)
     folder, top = trash_for(path)
     name, n = path.name, 1
     while True:
@@ -239,32 +239,27 @@ def _mac_trash(path: str) -> str:
     objc.objc_autoreleasePoolPop.argtypes = [ctypes.c_void_p]
     address = ctypes.cast(objc.objc_msgSend, ctypes.c_void_p).value
 
-    def send(restype, obj, selector, *args):  # each call with its exact types (needed on Apple Silicon)
-        argtypes = [ctypes.c_void_p, ctypes.c_void_p] + [type(a) for a in args]
-        fn = ctypes.CFUNCTYPE(restype, *argtypes)(address)
+    def send(restype, obj, selector, argtypes=(), *args):  # each call with its exact types (Apple Silicon)
+        fn = ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)(address)
         return fn(obj, objc.sel_registerName(selector), *args)
 
     def text(ns) -> str:
         return send(ctypes.c_char_p, ns, b"UTF8String").decode() if ns else ""
 
+    ID, OUT = ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)
+
     pool = objc.objc_autoreleasePoolPush()
     try:
         cls = objc.objc_getClass
-        name = send(ctypes.c_void_p, cls(b"NSString"), b"stringWithUTF8String:", ctypes.c_char_p(path.encode()))
-        url = send(ctypes.c_void_p, cls(b"NSURL"), b"fileURLWithPath:", ctypes.c_void_p(name))
-        manager = send(ctypes.c_void_p, cls(b"NSFileManager"), b"defaultManager")
+        name = send(ID, cls(b"NSString"), b"stringWithUTF8String:", [ctypes.c_char_p], path.encode())
+        url = send(ID, cls(b"NSURL"), b"fileURLWithPath:", [ID], name)
+        manager = send(ID, cls(b"NSFileManager"), b"defaultManager")
         went, err = ctypes.c_void_p(), ctypes.c_void_p()
-        ok = send(
-            ctypes.c_bool,
-            manager,
-            b"trashItemAtURL:resultingItemURL:error:",
-            ctypes.c_void_p(url),
-            ctypes.byref(went),
-            ctypes.byref(err),
-        )
+        selector = b"trashItemAtURL:resultingItemURL:error:"
+        ok = send(ctypes.c_bool, manager, selector, [ID, OUT, OUT], url, ctypes.byref(went), ctypes.byref(err))
         if not ok:
-            why = text(send(ctypes.c_void_p, err, b"localizedDescription")) if err.value else ""
+            why = text(send(ID, err, b"localizedDescription")) if err.value else ""
             raise TrashError(why or "macOS couldn't move it to the Trash")
-        return text(send(ctypes.c_void_p, went, b"path")) if went.value else str(Path.home() / ".Trash")
+        return text(send(ID, went, b"path")) if went.value else str(Path.home() / ".Trash")
     finally:
         objc.objc_autoreleasePoolPop(pool)

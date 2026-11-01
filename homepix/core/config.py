@@ -36,10 +36,10 @@ def data_dir() -> Path:
     """Where the database, models and thumbnails live."""
     if os.environ.get("HOMEPIX_HOME"):
         base = Path(os.environ["HOMEPIX_HOME"]).expanduser()
-    elif os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "homepix"
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support" / "homepix"
+    elif os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "homepix"
     else:
         xdg = os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share")
         base = Path(xdg) / "homepix"

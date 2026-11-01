@@ -29,6 +29,7 @@ a = Analysis(
     pathex=[str(ROOT)],
     datas=datas,
     hiddenimports=["PySide6.QtNetwork"],
+    runtime_hooks=[str(ROOT / "packaging" / "mac_cv2_hook.py")] if MAC else [],
     excludes=excludes,
     noarchive=False,
 )
