@@ -412,3 +412,24 @@ def test_size_slider_jumps_to_a_click_and_drags_from_there(app):
     assert s.value() > low  # the click goes on as a drag
     QTest.mouseRelease(s, _Qt.MouseButton.LeftButton, pos=QPoint(120, s.height() // 2))
     s.close()
+
+
+def test_message_boxes_and_buttons_use_the_apps_flat_icons(app):
+    """No glossy system icons: message boxes get the app's own line icons, buttons and menus none."""
+    from PySide6.QtWidgets import QStyle
+
+    from homepix.ui import theme
+
+    theme.apply(app, "dark")
+    style = app.style()
+    assert style.styleHint(QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons) == 0
+    assert app.testAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus)
+    accent = theme.color("accent").rgb()
+    img = style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxQuestion).pixmap(32, 32).toImage()
+    colours = {
+        img.pixelColor(x, y).rgb()
+        for x in range(img.width())
+        for y in range(img.height())
+        if img.pixelColor(x, y).alpha() == 255
+    }
+    assert colours == {accent}  # one flat colour, the app's accent

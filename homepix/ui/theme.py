@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
-from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QStyledItemDelegate
+from PySide6.QtWidgets import QApplication, QComboBox, QMenu, QProxyStyle, QStyle, QStyledItemDelegate
 
 from ..core.settings import load_settings, save_settings
 
@@ -120,7 +120,8 @@ def apply(app, m: str | None = None):
     else:
         _dark = m == "dark"
     _tokens = TOKENS["dark" if _dark else "light"]
-    app.setStyle("Fusion")
+    app.setStyle(_FlatStyle("Fusion"))
+    app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus)  # e.g. the system's Cut/Copy/Paste ones
     app.setPalette(palette())
     if _fonts_loaded():
         app.setFont(font(13))
@@ -129,6 +130,34 @@ def apply(app, m: str | None = None):
         app.installEventFilter(app._popups)
     app.setStyleSheet(style_sheet(dict(_tokens, arrow=_arrow_file())))
     signals.changed.emit()
+
+
+class _FlatStyle(QProxyStyle):
+    """Fusion, with the app's own flat icons in message boxes in place of the system's glossy ones,
+    and no icons on dialog buttons (Yes, No, OK, Cancel...)."""
+
+    BOX_ICONS = {
+        QStyle.StandardPixmap.SP_MessageBoxQuestion: ("question", "accent"),
+        QStyle.StandardPixmap.SP_MessageBoxInformation: ("info", "accent"),
+        QStyle.StandardPixmap.SP_MessageBoxWarning: ("warning", "danger"),
+        QStyle.StandardPixmap.SP_MessageBoxCritical: ("error", "danger"),
+    }
+
+    def standardIcon(self, sp, option=None, widget=None):
+        if sp in self.BOX_ICONS:
+            name, colour = self.BOX_ICONS[sp]
+            ic = QIcon()
+            for px in (32, 48):
+                ic.addPixmap(_pixmap(name, color(colour), px))
+            return ic
+        if sp == QStyle.StandardPixmap.SP_LineEditClearButton:  # the x in a search field
+            return icon("clear", "muted")
+        return super().standardIcon(sp, option, widget)
+
+    def styleHint(self, hint, option=None, widget=None, data=None):
+        if hint == QStyle.StyleHint.SH_DialogButtonBox_ButtonsHaveIcons:
+            return 0
+        return super().styleHint(hint, option, widget, data)
 
 
 class _Popups(QObject):
@@ -325,6 +354,25 @@ def _draw_icon(name: str, p: QPainter):
         path.lineTo(8.5, 12)
         path.lineTo(14.5, 18)
         p.drawPath(path)
+    elif name == "question":
+        p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
+        path = QPainterPath(QPointF(9.6, 9.7))
+        path.cubicTo(9.6, 6.6, 14.6, 6.6, 14.6, 9.6)
+        path.cubicTo(14.6, 11.6, 12, 11.7, 12, 13.6)
+        p.drawPath(path)
+        p.drawPoint(QPointF(12, 16.6))
+    elif name == "warning":
+        path = QPainterPath(QPointF(12, 4.5))
+        path.lineTo(20.5, 19)
+        path.lineTo(3.5, 19)
+        path.closeSubpath()
+        p.drawPath(path)
+        p.drawLine(QPointF(12, 10), QPointF(12, 13.5))
+        p.drawPoint(QPointF(12, 16.3))
+    elif name == "error":
+        p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
+        p.drawLine(QPointF(12, 7.5), QPointF(12, 12.8))
+        p.drawPoint(QPointF(12, 16.2))
     elif name == "search":
         p.drawEllipse(QPointF(10.5, 10.5), 6, 6)
         p.drawLine(QPointF(15, 15), QPointF(19.5, 19.5))
