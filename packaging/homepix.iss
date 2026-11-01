@@ -25,6 +25,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ; tell Explorer about the file types below (Open with > HomePix)
 ChangesAssociations=yes
+; an update (Install updates in the app) closes the running HomePix first
+CloseApplications=force
 
 [Tasks]
 Name: "desktopicon"; Description: "Put a shortcut on the desktop"
@@ -92,6 +94,14 @@ Root: HKA; Subkey: "Software\HomePix\Capabilities\FileAssociations"; ValueType: 
 
 [Run]
 Filename: "{app}\HomePix.exe"; Description: "Open HomePix now"; Flags: nowait postinstall skipifsilent
+; after an update from inside the app (setup /SILENT /relaunch=1), open HomePix again
+Filename: "{app}\HomePix.exe"; Flags: nowait; Check: Relaunch
+
+[Code]
+function Relaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;
 
 ; Your photos, index and names live in %LOCALAPPDATA%\homepix and are kept on uninstall,
 ; so reinstalling picks up where you left off.

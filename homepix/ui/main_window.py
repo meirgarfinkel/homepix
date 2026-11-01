@@ -63,6 +63,7 @@ from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
 from .views.sidebar import ALL, DUPES, JUNK, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
 from .views.timeline import MAX_TILE, MIN_TILE, Scrubber, TimelineView
+from .views.update_bar import UpdateBar
 from .views.viewer import Viewer
 from .views.welcome import Welcome
 
@@ -290,6 +291,7 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(w)
         self.stack.setCurrentWidget(self.timeline)
         self.banner = Banner()
+        self.update_bar = UpdateBar()
         self.page_header = QWidget()
         self.page_header.setObjectName("pageHeader")
         head = QHBoxLayout(self.page_header)
@@ -313,6 +315,7 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(central)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
+        lay.addWidget(self.update_bar)
         lay.addWidget(self.banner)
         lay.addWidget(self.page_header)
         lay.addWidget(self.stack, 1)
@@ -404,6 +407,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
         QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
         QTimer.singleShot(3000, lambda: workers.run(junk.warm, lambda res, err: None, self.search_index))  # Declutter
+        QTimer.singleShot(8000, self.updater.check_quietly)  # a newer HomePix: get it, then offer a restart
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
