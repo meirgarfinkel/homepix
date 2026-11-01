@@ -54,6 +54,7 @@ from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
 from .status_pill import StatusPill
 from .thumbs import ThumbLoader
+from .updates import Updater
 from .views.banner import Banner
 from .views.duplicates import DuplicatesView
 from .views.faces import PersonFaces, WhoView
@@ -330,6 +331,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         self.files = FileActions(self)
         self.opener = Opener(self)
+        self.updater = Updater(self)
         self.photo = PhotoActions(self)
         self._build_menus()
         self.index_status = IndexStatus(self.watcher)
@@ -551,6 +553,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.add_action("Organize a folder...", lambda: self.organizer.choose_folder(self.open_folder())))
         m.addSeparator()
         m.addAction(self.settings_action)
+        m.addAction(self.add_action("Install updates...", self.updater.check))
         m.addSeparator()
         m.addAction(self.add_action("Quit", self.close, [QKeySequence.StandardKey.Quit]))
         bar.addMenu(self.files.menu(self))
