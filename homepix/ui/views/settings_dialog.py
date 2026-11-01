@@ -33,10 +33,7 @@ class SettingsDialog(QDialog):
         self.resize(600, 460)
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("<b>Library folders</b>"))
-        note = QLabel(
-            "HomePix shows and searches the photos in these folders and the folders inside "
-            "them. It changes files only when you ask (and Edit > Undo takes a change back)."
-        )
+        note = QLabel("The folders HomePix shows and searches.")
         note.setWordWrap(True)
         lay.addWidget(note)
         self.list = QListWidget()
@@ -117,9 +114,7 @@ class SettingsDialog(QDialog):
         answer = QMessageBox.question(
             self,
             "Remove folder",
-            f"Take {folder} out of the library?\n\nIts photos will no longer show in HomePix, and what it "
-            "learned about them (for search, and who is in them) is forgotten. The files themselves "
-            "aren't touched.",
+            f"Remove {folder} from the library?\n\nYour files aren't touched.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )

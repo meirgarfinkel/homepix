@@ -21,12 +21,7 @@ class Welcome(QWidget):
         font.setWeight(QFont.Weight.DemiBold)
         title.setFont(font)
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        text = QLabel(
-            "Choose the folders where you keep your photos. HomePix looks through them in "
-            "the background so you can browse and search them. It never changes your files."
-        )
-        text.setWordWrap(True)
-        text.setMaximumWidth(460)
+        text = QLabel("Pick the folders with your photos.")
         text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(title)
         lay.addWidget(text, 0, Qt.AlignmentFlag.AlignHCenter)

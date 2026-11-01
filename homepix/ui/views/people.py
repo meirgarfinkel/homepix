@@ -193,6 +193,6 @@ class PeopleView(QListWidget):
             p.drawText(
                 self.viewport().rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                "No one has been named yet.\nFaces appear here once photos with people are found.",
+                "No one named yet.",
             )
             p.end()

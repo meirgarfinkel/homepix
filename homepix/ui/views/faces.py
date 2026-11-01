@@ -244,11 +244,7 @@ class PersonFaces(QWidget):
         self.person = None
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
-        self.hint = QLabel(
-            "The least like the rest come first. Click the faces that aren't them to tick "
-            "them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the front); "
-            "double-click a face to see its photo."
-        )
+        self.hint = QLabel("Tick the faces that aren't them.")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         self.grid = FaceGrid()
@@ -471,11 +467,7 @@ class WhoView(QWidget):
         if self.follow:
             who = self.follow["name"]
             self.title.setText(f"Is this {who}?")
-            self.hint.setText(
-                f"{len(group)} faces that might be {who} too, the most alike first. Tick the ones "
-                f"that are {who} and press Enter; The rest aren't {who} also says the others "
-                "aren't, so they're not asked about as them again. Skip goes on to the groups."
-            )
+            self.hint.setText(f"Tick the ones that are {who}, then press Enter.")
             return
         self.title.setText("Who is this?" if group or self.waiting_for else "No one to ask about")
         if not group:
@@ -484,11 +476,7 @@ class WhoView(QWidget):
         after = f"{n - 1:,} more group{'s' if n != 2 else ''} after this" if n > 1 else "the last group"
         tier, like = group[0].get("tier", NEW), group[0].get("like")
         seems = {NEW: "Someone new? ", MAYBE: f"Might be {like}. ", KNOWN: f"Looks like {like}. "}.get(tier, "")
-        self.hint.setText(
-            f"{seems}{len(group)} faces that look alike; {after}. Click the faces of the same person "
-            "to tick them (Ctrl+A ticks them all; Most like ticked brings their look-alikes to the "
-            "front); double-click to see its photo."
-        )
+        self.hint.setText(f"{seems}Tick the faces of one person and type their name. {after.capitalize()}.")
 
     def _selected(self):
         return self.grid.selected_faces()

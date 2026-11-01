@@ -113,7 +113,7 @@ def test_on_possibly_junk_a_click_ticks_a_photo(pf, lib, app, tmp_path, monkeypa
             r = view.item_rect(i).translated(0, -view.verticalScrollBar().value())
             QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, r.center())
 
-        assert view.ticking and view.selected == set() and "click photos to tick them" in window.count_label.text()
+        assert view.ticking and view.selected == set() and "ticked" not in window.count_label.text()
         click(0)
         click(1)
         assert view.selected == {0, 1} and "2 ticked" in window.count_label.text()

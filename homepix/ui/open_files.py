@@ -113,7 +113,6 @@ class Opener:
         w.show_folder_in_viewer(os.path.dirname(path), items, index)
         if not known:
             w.statusBar().showMessage(
-                f"{os.path.basename(path)} isn't in your library, so it's only shown here: "
-                "nothing about it is kept, and it can't be changed from HomePix.",
+                f"{os.path.basename(path)} isn't in your library: view only.",
                 10000,
             )

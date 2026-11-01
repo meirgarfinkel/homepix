@@ -167,7 +167,7 @@ class Sidebar(QTreeWidget):
         if people is not None:
             group = QTreeWidgetItem(["People", f"{people:,}" if people else ""])
             group.setData(0, PATH_ROLE, PEOPLE)
-            group.setToolTip(0, "Everyone you've named, and Who is this? to name more")
+            group.setToolTip(0, "People you've named")
             self._style_count(group)
             self.addTopLevelItem(group)
         if dupes is not None:
@@ -178,7 +178,7 @@ class Sidebar(QTreeWidget):
             self.addTopLevelItem(review)
             junk = QTreeWidgetItem(["Declutter", ""])
             junk.setData(0, PATH_ROLE, JUNK)
-            junk.setToolTip(0, "Ads, screenshots, documents and accidental shots, to clear out")
+            junk.setToolTip(0, "Photos you may not need")
             self._style_count(junk)
             self.addTopLevelItem(junk)
         heading = QTreeWidgetItem(["FOLDERS", ""])

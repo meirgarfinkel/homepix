@@ -62,7 +62,7 @@ class DetailsDialog(QDialog):
         self.description.setFixedHeight(90)
         desc = _common(d.description for d in ds)
         if desc is None:
-            self.description.setPlaceholderText("Different in each photo. Type here to give them all this one.")
+            self.description.setPlaceholderText("Different in each. Type to set them all.")
         else:
             self.description.setPlainText(desc)
             self.description.setPlaceholderText("What's happening, who's there...")
@@ -75,17 +75,13 @@ class DetailsDialog(QDialog):
         self.keywords = QLineEdit(", ".join(self.common_words))
         self.keywords.setPlaceholderText("e.g. holiday, beach (separated by commas)")
         if n > 1 and any(d.keywords for d in ds):
-            self.keywords.setToolTip("The keywords all of them have. Others stay as they are.")
+            self.keywords.setToolTip("Keywords they all share.")
         self.keywords.textEdited.connect(lambda: self._touched.add("keywords"))
         form.addRow("Keywords:", self.keywords)
 
         place = _common(d.gps for d in ds)
         self.place = QLineEdit("" if not place else f"{place[0]:.6f}, {place[1]:.6f}")
-        self.place.setPlaceholderText(
-            "Different in each"
-            if place is None and n > 1
-            else "latitude, longitude (e.g. 31.778, 35.235); empty for none"
-        )
+        self.place.setPlaceholderText("Different in each" if place is None and n > 1 else "e.g. 31.778, 35.235")
         self.place.textEdited.connect(lambda: self._touched.add("place"))
         form.addRow("Location:", self.place)
 
@@ -101,7 +97,7 @@ class DetailsDialog(QDialog):
 
     def accept(self):
         if "place" in self._touched and parse_place(self.place.text()) is None:
-            self.error.setText("The location should be a latitude and a longitude, like 31.778, 35.235.")
+            self.error.setText("Type a location like 31.778, 35.235.")
             return
         super().accept()
 
@@ -156,7 +152,7 @@ class DateDialog(QDialog):
         lay.addLayout(form)
         lay.addWidget(self.preview)
         if n > 1:
-            note = QLabel("Moving keeps the time between them; setting gives every one the same time.")
+            note = QLabel("Move keeps their spacing; Set gives all the same time.")
             note.setWordWrap(True)
             lay.addWidget(note)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)

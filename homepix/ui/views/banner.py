@@ -15,7 +15,7 @@ class Banner(QFrame):
         self.label = QLabel()
         self.label.setWordWrap(True)
         self.button = QPushButton("They were deleted, remove them")
-        self.button.setToolTip("Take them out of HomePix. No files are touched.")
+        self.button.setToolTip("No files are touched.")
         self.button.clicked.connect(self.forget_missing)
         lay.addWidget(self.label, 1)
         lay.addWidget(self.button)
@@ -31,9 +31,6 @@ class Banner(QFrame):
             self.label.setText(error)
             self.button.hide()
         elif missing:
-            self.label.setText(
-                f"{missing:,} photo{'s' if missing != 1 else ''} HomePix knew about can't be found right "
-                "now. They're kept in case a drive is unplugged or a folder is out of reach."
-            )
+            self.label.setText(f"{missing:,} photo{'s' if missing != 1 else ''} can't be found. Is a drive unplugged?")
             self.button.show()
         self.setVisible(bool(error or missing))

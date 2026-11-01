@@ -63,8 +63,7 @@ class PhotoActions:
             QMessageBox.information(
                 self.w,
                 "HomePix",
-                "Changing details needs ExifTool, which isn't installed. "
-                "On Debian or Ubuntu: sudo apt install libimage-exiftool-perl",
+                "This needs ExifTool. On Ubuntu: sudo apt install libimage-exiftool-perl",
             )
             return []
         return items
