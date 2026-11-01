@@ -386,7 +386,7 @@ def test_the_info_panel_says_when_it_was_taken(pf, lib, app):
     panel = InfoPanel()
     panel.show_photo(pid)
     wait_until(app, lambda: "Taken" in panel.label.text())
-    text = panel.label.text()
+    text = panel.label.text().replace("&nbsp;", " ")
     assert "Friday, April 1, 2022<br>07:32:31" in text and "written in the photo (EXIF)" in text
     panel.close()
 
@@ -433,3 +433,10 @@ def test_message_boxes_and_buttons_use_the_apps_flat_icons(app):
         if img.pixelColor(x, y).alpha() == 255
     }
     assert colours == {accent}  # one flat colour, the app's accent
+
+
+def test_long_paths_wrap_in_the_info_panel():
+    from homepix.ui.views.info_panel import breakable
+
+    assert breakable(r"C:\Users\me\Pictures").replace("\u200b", "") == r"C:\Users\me\Pictures"
+    assert r"\​Users\​" in breakable(r"C:\Users\me")  # a place to wrap after each \

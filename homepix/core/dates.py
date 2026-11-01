@@ -25,6 +25,8 @@ from .video import is_video, video_meta
 _NAME_DATES = [
     (re.compile(r"(19|20)(\d{2})-(\d{2})-(\d{2}) at (\d{2})[-.](\d{2})[-.](\d{2})"), True),  # macOS screenshots
     (re.compile(r"(19|20)(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})[-_.\s]+(\d{2})[-_.:]?(\d{2})[-_.:]?(\d{2})"), True),
+    # 2026-10-01_09-09: hours and minutes, no seconds (a separator between them, so a number isn't one)
+    (re.compile(r"(19|20)(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})[-_.\s]+(\d{2})[-_.:h](\d{2})(?![\d:.-]\d)"), True),
     (re.compile(r"(19|20)(\d{2})[-_.]?(\d{2})[-_.]?(\d{2})(?!\d)"), False),
 ]
 _SRGB = dt.datetime(1998, 2, 9, 6, 49)  # the sRGB colour profile's own date

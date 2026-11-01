@@ -13,6 +13,15 @@ from .. import theme, workers
 from .timeline import video_length
 
 
+def breakable(text: str) -> str:
+    """Escaped, with places to wrap after each \\ / _ - . so a long path or file name wraps inside
+    the panel (a line can't otherwise break after a Windows \\)."""
+    out = html.escape(text)
+    for ch in "\\/_-.":
+        out = out.replace(ch, ch + "\u200b")
+    return out
+
+
 def _load_info(photo_id):
     db = open_db()
     try:
@@ -97,12 +106,12 @@ class InfoPanel(QScrollArea):
             if value:
                 extra = f"<br><span style='color:{muted}'>{e(note)}</span>" if note else ""
                 rows.append(
-                    f"<tr><td width='84' style='color:{muted}; padding: 0 8px 10px 0'>{e(name)}</td>"
+                    f"<tr><td width='76' style='color:{muted}; padding: 0 10px 10px 0'>{e(name)}</td>"
                     f"<td style='padding-bottom: 10px'>{value}{extra}</td></tr>"
                 )
 
         video = info.get("kind") == "video"
-        self.head.setText(f"<p style='font-size:14px; font-weight:700; margin:0'>{e(info['name'])}</p>")
+        self.head.setText(f"<p style='font-size:14px; font-weight:700; margin:0'>{breakable(info['name'])}</p>")
         self.head.show()
         head = ""
         if self._count > 1:
@@ -114,7 +123,9 @@ class InfoPanel(QScrollArea):
         if info.get("description"):
             head += f"<p>{e(info['description']).replace(chr(10), '<br>')}</p>"
         day, _, time = nice_date(info["taken"]).partition(" at ")
-        row("Taken", e(day) + (f"<br>{e(time)}" if time else ""), info.get("date_source"))
+        weekday, comma, rest = day.partition(", ")  # "Thursday", "October 1, 2026": that part stays on one line
+        day = e(weekday + comma) + e(rest).replace(" ", "&nbsp;") if comma else e(day)
+        row("Taken", day + (f"<br>{e(time)}" if time else ""), info.get("date_source"))
         row("Keywords", e(", ".join(info.get("keywords", []))))
         if info.get("duration"):
             row("Length", e(video_length(info["duration"])))
@@ -134,8 +145,8 @@ class InfoPanel(QScrollArea):
                 f"{lat:.5f}, {lon:.5f}<br><a href='{url}' style='color:{_colour('accentText')}'>Open map</a>",
             )
         row("People", e(", ".join(info["people"])))
-        row("Folder", e(info["folder"]))
-        self.label.setText(head + "<table cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>")
+        row("Folder", breakable(info["folder"]))
+        self.label.setText(head + "<table width='100%' cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>")
 
 
 def _colour(name: str) -> str:

@@ -171,3 +171,15 @@ def test_real_database_upgrades_without_loss(pf):
     assert db.execute("PRAGMA user_version").fetchone()[0] == dbmod.VERSION
     assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     print("photos, faces, named faces, people, operations, steps, apart:", tuple(before))
+
+
+def test_dates_from_names_are_read_again(pf):
+    """Names give hours and minutes now (2026-10-01_09-09): those dates are worked out again."""
+    make_db(
+        pf,
+        V11 + "UPDATE photos SET taken_source='filename', details_done=1 WHERE id=1;"
+        "UPDATE photos SET taken_source='exif', details_done=1 WHERE id=2;",
+    )
+    db = pf.open_db()
+    done = dict(db.execute("SELECT id, details_done FROM photos").fetchall())
+    assert done == {1: 0, 2: 1}
