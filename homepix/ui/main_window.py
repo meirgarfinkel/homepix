@@ -249,6 +249,8 @@ class SearchBox(QLineEdit):
 
 
 class MainWindow(QMainWindow):
+    closing = Signal()  # the window is closing (the app quits after it)
+
     def __init__(self, index: bool = True):
         """index: look for new photos in the background (off for the self-test)."""
         super().__init__()
@@ -1152,9 +1154,11 @@ class MainWindow(QMainWindow):
             self.info.show_photo(None)
 
     def closeEvent(self, e):
+        self.closing.emit()
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("state", self.saveState())
         self.settings.setValue("tile", self.timeline.tile)
+        self.settings.sync()  # written now: the app quits without waiting
         self.watcher.shutdown()
         self.loader.stop()
         self.dupes.stop()

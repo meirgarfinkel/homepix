@@ -101,7 +101,7 @@ class FileOps(QObject):
             finished(res, err)
             self.history_changed.emit()
 
-        workers.run(job, after)
+        workers.run(job, after, must_finish=True)
 
     def run(self, kind: str, summary: str, past: str, plan):
         """plan(db) -> steps (from core.fileops), worked out with the library to ourselves. summary is

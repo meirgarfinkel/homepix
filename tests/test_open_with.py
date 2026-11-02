@@ -108,6 +108,40 @@ def test_a_second_launch_hands_its_photo_to_the_open_window(window, pf, lib, app
     server.close()
 
 
+def test_a_launch_waits_for_a_copy_that_is_closing_then_opens(app):
+    import subprocess
+    import sys
+    import time
+
+    from homepix.ui import app as app_module
+
+    closing = app_module.single_instance()  # a copy still finishing up: it never answers
+    assert closing is not None
+    launch = (
+        "import sys; from PySide6.QtCore import QCoreApplication; a = QCoreApplication([]); "
+        "from homepix.ui.app import single_instance; sys.exit(0 if single_instance() is None else 1)"
+    )
+    second = subprocess.Popen([sys.executable, "-c", launch])
+    end = time.time() + 5
+    while time.time() < end and second.poll() is None:
+        app.processEvents()
+        time.sleep(0.05)
+    assert second.poll() is None  # not given up: it waits for the closing copy to go
+    closing.close()
+    wait_until(app, lambda: second.poll() is not None, timeout=10)
+    assert second.returncode == 1  # then it opens itself
+
+
+def test_closing_the_window_lets_a_new_launch_open_at_once(app):
+    from homepix.ui import app as app_module
+
+    server = app_module.single_instance()
+    win = open_window(app)
+    win.closing.connect(server.close)
+    win.close()
+    assert not server.isListening()
+
+
 def test_the_windows_installer_offers_homepix_for_every_kind_it_reads():
     from pathlib import Path
 
@@ -118,3 +152,20 @@ def test_the_windows_installer_offers_homepix_for_every_kind_it_reads():
     for ext in MEDIA_EXTS | IMAGE_EXTS | {".heic", ".heif"}:
         assert f"Software\\Classes\\{ext}\\OpenWithProgids" in iss, ext
         assert f'SupportedTypes"; ValueType: string; ValueName: "{ext}"' in iss, ext
+
+
+def test_quitting_waits_for_a_file_change_but_not_long_for_other_work():
+    import threading
+    import time
+
+    from homepix.ui import workers
+
+    slow, change = threading.Event(), threading.Event()
+    workers.run(lambda: slow.wait(30), lambda res, err: None)  # e.g. a long background job
+    workers.run(lambda: (time.sleep(0.5), change.set()), lambda res, err: None, must_finish=True)
+    start = time.time()
+    assert workers.wait_idle(0.2) is False  # the background job is left behind...
+    assert change.is_set()  # ...but the file change finished first
+    assert time.time() - start < 5
+    slow.set()
+    assert workers.wait_idle(5)
