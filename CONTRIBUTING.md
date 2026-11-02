@@ -29,6 +29,16 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 `HOMEPIX_HOME=/some/folder` points the app (and the tests) at a separate library, so you can try things
 without touching your own.
 
+## Tuning
+
+Constants in `homepix/core/config.py`:
+
+- `MATCH_STRICTNESS`: raise it if unrelated photos show up as search matches; lower it if real matches end up under "possibly related". `NEAR_STRICTNESS` and `MAX_NEAR` control the "possibly related" section.
+- `CLUSTER_SIM`: raise it if different people end up in one group; lower it if one person is split across many groups.
+- `ASSIGN_SIM`, `ASSIGN_MARGIN`: how sure it must be before auto-tagging a named person (compared with the faces you named).
+- `ASSIGN_MIN_PX`: faces smaller than this are never auto-tagged.
+- `MIN_FACE_PX`: ignore faces smaller than this (tiny background faces are hard to recognize).
+
 ## Branches
 
 - **`main`** always works. Nobody pushes to it directly; changes arrive through pull requests that
@@ -45,8 +55,8 @@ without touching your own.
 
 | Workflow | Runs on | Does |
 |---|---|---|
-| `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests; required for merging into `main` |
-| `Build HomePix` (`.github/workflows/build.yml`) | every pull request; version tags; by hand from the Actions tab | builds the AppImage in AlmaLinux 9 and self-tests it on six distros, and the Windows installer. A pull request's build saves no files on GitHub; a tag's publishes a GitHub Release with both and then deletes its copies; one started by hand keeps them, to download |
+| `CI` (`.github/workflows/ci.yml`) | every push, every branch | lint (same checks as the pre-push hook) and tests on Linux, Windows and Mac; required for merging into `main` |
+| `Build HomePix` (`.github/workflows/build.yml`) | every pull request; version tags; by hand from the Actions tab | builds the AppImage and .deb in AlmaLinux 9 and self-tests them on six distros, the Windows installer and the Mac disk image. A pull request's build saves no files on GitHub; a tag's publishes a GitHub Release with all of them and then deletes its copies; one started by hand keeps them, to download |
 
 ## Releasing
 
@@ -57,4 +67,4 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-The build workflow then publishes the release with the AppImage and installer attached.
+Bump `__version__` in `homepix/__init__.py` and `AppVersion` in `packaging/homepix.iss` first (the app's update check compares them with the newest release). The build workflow then publishes the release with the Windows installer, Mac disk image, AppImage and .deb attached.
