@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="264" height="56" viewBox="0 0 264 56" role="img" aria-label="Download for Linux">
+  <title>Download for Linux</title>
+  <rect width="264" height="56" rx="28" fill="#0A7DAD"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(28 17)">
+    <path d="M11 2v13"/><path d="M5.5 9.5L11 15l5.5-5.5"/><path d="M3 20h16"/>
+  </g>
+  <text x="62" y="34.5" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="600">Download for Linux</text>
+</svg>

@@ -1,118 +1,204 @@
-# HomePix
-
-A private photo manager with AI search and face recognition that runs entirely on your own computer. Point it at a folder, let it work through your photos (overnight if the folder is big), then search with plain words like "dog on the beach" or "birthday cake", and by the people you've named.
-
-Nothing is uploaded anywhere. The only network access is a one-time download of the AI models (about 130 MB) the first time you index.
-
-## Download
-
-<p>
-  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePixSetup.exe"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for_Windows-0A7DAD?style=for-the-badge" height="44"></a>
-  &nbsp;
-  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.deb"><img alt="Download for Linux" src="https://img.shields.io/badge/Download_for_Linux-13212C?style=for-the-badge" height="44"></a>
-  &nbsp;
-  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.dmg"><img alt="Download for Mac" src="https://img.shields.io/badge/Download_for_Mac-555555?style=for-the-badge" height="44"></a>
+<p align="center">
+  <img src="homepix-icon.png" alt="HomePix icon" width="96" height="96">
 </p>
 
-Free, and nothing else to install.
+<h1 align="center">HomePix</h1>
 
-**Windows 10 and 11:** double-click the downloaded `HomePixSetup.exe`. If Windows says it protected your PC (the installer isn't signed by a paid certificate), click **More info**, then **Run anyway**. HomePix then appears in the Start menu, and no administrator password is needed.
+<p align="center">
+  <b>Find any photo in seconds, by what's in it or who's in it.</b><br>
+  A private photo manager with AI search and face recognition that runs entirely on your own computer.
+</p>
 
-**Linux** (Ubuntu, Linux Mint, Pop!_OS, Debian and others like them): double-click the downloaded `HomePix.deb`. It opens in your software installer: click **Install** and type your password. HomePix then appears in your applications menu.
+<p align="center">
+  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePixSetup.exe"><img src="docs/images/download-windows.svg" alt="Download for Windows" height="48"></a>
+  &nbsp;
+  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.dmg"><img src="docs/images/download-mac.svg" alt="Download for Mac" height="48"></a>
+  &nbsp;
+  <a href="https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.deb"><img src="docs/images/download-linux.svg" alt="Download for Linux" height="48"></a>
+</p>
 
-**Mac** (Apple Silicon, M1 or newer, with macOS 14 Sonoma or newer):
+<p align="center">
+  Free and open source &nbsp;·&nbsp; Windows, Mac and Linux &nbsp;·&nbsp; Nothing uploaded, ever
+</p>
 
-1. Double-click the downloaded `HomePix.dmg`, and drag **HomePix** onto the **Applications** folder beside it. (Install updates works only for a copy in Applications.)
-2. Open HomePix from Applications (or Launchpad). The first time, macOS says it can't check HomePix for harmful software, because HomePix isn't paid-signed by Apple: click **Done** (or **OK**).
-3. Open **System Settings**, then **Privacy & Security**, scroll down to where it mentions HomePix, and click **Open Anyway**. Confirm with your password or Touch ID.
+<p align="center">
+  <a href="#install">Install</a> &nbsp;·&nbsp;
+  <a href="#what-it-does">Features</a> &nbsp;·&nbsp;
+  <a href="docs/GUIDE.md">User guide</a> &nbsp;·&nbsp;
+  <a href="#how-its-built">How it's built</a> &nbsp;·&nbsp;
+  <a href="#for-developers">Contributing</a>
+</p>
 
-After that, HomePix opens normally, like any other app. macOS asks this once, not again after updates.
+---
 
-**Other Linux** (Fedora, Arch and the rest): download [HomePix-x86_64.AppImage](https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix-x86_64.AppImage) instead. Right-click it, choose **Properties**, and turn on **Allow executing file as program** (Linux asks this once for anything downloaded). Then double-click it. The first time, it adds **HomePix** to your applications menu. It needs no installing, so it also works where you can't install software.
+## The problem
 
-All versions are on the [Releases page](https://github.com/meirgarfinkel/homepix/releases).
+Most of us have thousands of photos spread across folders, old phones and backup drives, with names like `IMG_4821.jpg`. Finding "that picture of Grandma at the beach" means scrolling for an hour.
 
-To build these yourself, see **[BUILDING.md](BUILDING.md)**.
+Google Photos and iCloud solve this, but only by uploading your whole life to someone else's servers, and charging a monthly fee once you run out of space.
 
-HomePix is a native desktop app (Qt). While it's open, it looks for new photos every 30 minutes; opening it a second time brings the open window forward. `--self-test` checks that the window, thumbnails and AI parts all work.
+**HomePix gives you the same smart search and face recognition, but everything happens on your own computer.** Your photos stay exactly where they are, in your own folders. Nothing is uploaded, there's no account, and it works without the internet.
 
-What's in it:
+## What it does
 
-- **Timeline:** every photo and video by date, newest first, in month sections, with a year scrubber down the side for jumping through the years. Ctrl + mouse wheel (or the Size slider) makes the thumbnails bigger or smaller.
-- **Folders:** your library's real folder tree, with how many photos each folder inside it holds. A folder on an unplugged drive is marked *not connected*; its photos still show. Right-click a folder and choose *Exclude from library* to keep its photos out of All photos, people and search (nothing is deleted; opening the folder still shows them, and the same menu includes it again).
-- **Who is this?** (in the sidebar, or Ctrl+Shift+N): unnamed faces that look alike, one group at a time, with the closest look-alikes side by side. None are ticked to start with: click the ones of the same person (Ctrl+A ticks them all; **Most like ticked** brings the faces most like the ones ticked to the front, most alike to least), type a name (someone new, or someone already named, offered as you type) and press Enter; faces in other photos that clearly match the faces you named are named too (a face named that way is never used to name more, and faces too small to tell aren't named by themselves). Skip a group for now, or say it's no one you know, and it isn't asked about again. Right after you name a group, **Is this ...?** shows once the faces that might be them too, from every group, most alike first: tick the ones that are and press Enter, or choose *The rest aren't ...* to also say the others aren't (they're not asked about as them again, and the app learns from it). Then the groups go on, those least like anyone you've named first (someone new), and last those that look like someone you've named (with their name already typed in, as a guess).
-- **People:** everyone you've named, as a page of faces. Click one to see their photos; right-click to rename them (a name someone else has makes them one person), say they're the same person as someone else, or forget them.
-- **Fixing wrong matches:** on someone's photos, **Their faces** shows every face taken to be them, the least like the rest first. Click the wrong ones to tick them, as on Who is this? (Ctrl+A ticks them all; **Most like ticked** brings the faces most like them to the front), and choose *Not them*, *Someone else...* or *Not a face*. A face taken away is never put back on them by itself. It also teaches HomePix who they *aren't*: their other automatic matches that look like the faces you took away are unnamed at once, and faces like them in new photos aren't taken to be them. A couple of these is enough to tell apart look-alikes such as siblings; Undo takes it all back.
-- **Starting faces over:** View → **Start faces over...** forgets every face and name (a copy of the database goes to the backups folder first) and looks through the photos for faces again in the background, with the newest way of reading them. Search, dates and everything else stay.
-- **Faces in the viewer** (N): a box on each face with its name. Click one to name it, say it's someone else, or that it isn't a face.
-- **Search** (Ctrl+F): describe what's in the photo. With a folder or person open, it searches just those.
-- **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
-- **Info** (I): description, keywords, when it was taken and where that date came from, camera, size, place, people, folder.
-- **Which date:** the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the rule the library's `YYYY_MM_DD_HH_MM_SS` names were made by, so a photo shows on the day its name says.
-- **Details written into the photos** (the Photo menu, or right-click): description, keywords and location (Ctrl+I), for one photo or many at once; date and time, set or moved by some hours for a batch whose camera clock was wrong (Ctrl+Shift+D), and a file named by its date is renamed to its new one; rotate (Ctrl+R, Ctrl+Shift+R) and flip, without re-saving the picture; and every detail a file holds (Alt+Enter). They're written the standard way (XMP and EXIF, using the bundled ExifTool), so other photo apps see them too, and the file's modified time is kept. A Live Photo's clip gets its photo's new date. Undo works for all of it, and the people found in a photo stay named.
-- **Working with files** (the Edit menu, or right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete; the Recycle Bin on Windows; on a Mac, the Finder's Trash, where Put Back works), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip goes along with its photo.
-- **Organizing** (the File menu, or right-click a folder): *Tidy the library* or *Organize a folder* names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. A year folder's own subfolders are left alone (`2022/Trip/`).
-- **Duplicates** (in the sidebar, or the View menu): copies of the same photo or video, side by side, the one to keep marked (the most pixels, then the biggest file; click another to keep it instead). Exact copies are the same bytes; near ones look the same (resized or saved again), checked by both a picture fingerprint and the search model. Shots of a burst are never called duplicates. Move the extras to the Trash, for the groups you select or all of them, after a preview; say a group isn't duplicates and it's never offered again; or **Skip for now** to leave it for later (skipped groups wait at the end, under *Skipped for now*, even after closing the app).
-- **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) for all of these, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... And if the computer crashes or loses power partway, HomePix finishes the job next time it opens, with no photo lost or doubled.
-- **Taking your library along:** each library folder holds a copy of everything HomePix knows about its photos, in a hidden `.homepix` folder: the people you named and their faces, search, duplicate choices and folders left out. It's updated a few seconds after each change and when the app closes. Copy the folder to another computer (or a new one, Linux, Windows or Mac), add it in HomePix there, and choose **Use it**: everything comes back without looking through every photo again. Photos are found by their content, so it doesn't matter where the folder ends up, or if files were renamed since. Not carried along: the undo history, and thumbnails (made again as needed). Two computers working on the same folder at the same time don't merge: the copy saved last wins.
-- **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
-- **Menus:** File, Edit, Photo and View are under the **⋯** button at the top right. Their shortcuts work anywhere in the window. On a Mac, shortcuts written here with Ctrl use ⌘ instead.
+- 🔍 **Search by describing the photo.** Type "dog on the beach", "birthday cake" or "snow at night" and the matching photos appear, even though none of them were ever tagged.
+- 🙂 **Recognizes the people in your photos.** HomePix groups faces that look alike and asks "Who is this?". Name someone once, and they're found in every other photo, including new ones. If it gets someone wrong, correct it and it learns, even telling siblings apart.
+- 🗓️ **Puts everything in order by date.** One timeline of every photo and video, newest first. HomePix works out when each one was really taken, even when the file's own date is wrong.
+- 🧹 **Tidies up the mess.** Finds duplicate photos (including resized copies), renames files by the date they were taken, and sorts them into year folders. It always shows you the changes first.
+- ✏️ **Edits the details.** Fix a wrong date, add a description or location, rotate, rename, move. Changes are written the standard way, so other photo apps see them too.
+- ↩️ **Undo for everything.** Every change can be undone, even after closing the app. If the computer crashes in the middle of a change, HomePix finishes the job safely the next time it opens.
+- 💼 **Takes your library along.** Copy your photo folder to a new computer and everything HomePix learned (names, faces, choices) comes with it.
 
-Every change to who's who is undoable like a file operation.
+See the **[user guide](docs/GUIDE.md)** for every feature and keyboard shortcut.
 
-If the app misbehaves, its log is in `~/.local/share/homepix/app.log` (Windows: `%LOCALAPPDATA%\homepix\app.log`; Mac: `~/Library/Application Support/homepix/app.log`).
+## Install
 
-## Where things are stored
+| System | What you need |
+|---|---|
+| **Windows** | Windows 10 or 11 (64-bit) |
+| **Mac** | A Mac with Apple's own chip (M1 or newer) and macOS 14 Sonoma or newer |
+| **Linux** | A 64-bit PC with Ubuntu 22.04, Debian 12, Fedora, Arch or newer |
 
-`~/.local/share/homepix/` on Linux, `%LOCALAPPDATA%\homepix` on Windows, `~/Library/Application Support/homepix` on a Mac (change it with the `HOMEPIX_HOME` environment variable):
+Everything HomePix needs comes in the download. There's nothing else to install.
 
-- `homepix.db`: one SQLite file holding everything it learned (about 1–2 KB per photo)
-- `models/`: the downloaded AI models
-- `thumbs/`: small previews of every photo
+### Windows
 
-Each library folder also gets `.homepix/library.db`, the copy of what's known about its photos (see *Taking your library along*), and a note saying what it is. A copy found from another library is never overwritten; it's kept beside the new one as `library-<date>.db`.
+1. Click **[Download for Windows](https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePixSetup.exe)** and open the downloaded `HomePixSetup.exe`.
+2. If Windows shows a blue box saying it **protected your PC**, click **More info**, then **Run anyway**. (Windows shows this for apps from small developers without a paid certificate.)
+3. Follow the installer. You don't need an administrator password.
+4. Open HomePix from the Start menu.
 
-Your photos change only when you ask (rename, move, Trash, details, organize, duplicates), and every change can be undone. Uninstalling the app keeps that folder, so reinstalling picks up where you left off; delete it to remove everything.
+### Mac
 
-## How it works
+1. Click **[Download for Mac](https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.dmg)** and open the downloaded `HomePix.dmg`.
+2. In the window that opens, drag the **HomePix** icon onto the **Applications** folder.
+3. Open HomePix from Applications or Launchpad. The first time, macOS says it can't check the app for harmful software (it isn't registered with Apple's paid developer program). Click **Done**.
+4. Open **System Settings** → **Privacy & Security**, scroll down to the message about HomePix, and click **Open Anyway**. Confirm with your password or Touch ID.
 
-- **Search:** each photo is shrunk to 256×256 and turned into a list of 512 numbers by MobileCLIP-S0, a small image–text model from Apple. Your search words go through the matching text model, and photos are ranked by how close their numbers are. A search across tens of thousands of photos takes about a second.
-- **Faces:** YuNet finds faces and SFace turns each into 128 numbers (both from the OpenCV model zoo). Similar faces are grouped; once you name a group, matching faces in new photos are tagged automatically. A person is never tagged twice in one photo.
-- **Speed tricks:** JPEGs are decoded directly at reduced size, which is much faster than opening a full 24-megapixel photo.
+You only do steps 3 and 4 once. After that, HomePix opens like any other app, even after updates.
 
-## Models and licenses
+### Linux
 
-| Model | File size | License |
+**Ubuntu, Linux Mint, Pop!_OS, Debian and similar:**
+
+1. Click **[Download for Linux](https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix.deb)** and double-click the downloaded `HomePix.deb`.
+2. Your software installer opens. Click **Install** and type your password.
+3. Open HomePix from your applications menu.
+
+**Fedora, Arch and other Linux:**
+
+1. Download **[HomePix-x86_64.AppImage](https://github.com/meirgarfinkel/homepix/releases/latest/download/HomePix-x86_64.AppImage)**.
+2. Right-click it, choose **Properties**, and turn on **Allow executing file as program**.
+3. Double-click it. The first time, it adds HomePix to your applications menu. No installing needed, so it also works on computers where you can't install software.
+
+### First time you open it
+
+1. Choose the folder with your photos (or click **Use my Pictures folder**).
+2. HomePix looks through your photos. A large library can take a few hours, so leaving it on overnight is a good idea. You can use the app while it works.
+3. Once it's done, try a search, and open **Who is this?** to start naming people.
+
+The first time, HomePix downloads its AI models (about 130 MB). Apart from that and checking for updates, it never uses the internet.
+
+**Updates install themselves:** when a new version is out, HomePix downloads it and offers to restart into it. All versions are on the [Releases page](https://github.com/meirgarfinkel/homepix/releases).
+
+## How it's built
+
+HomePix is a native desktop app written in Python (about 13,000 lines) with a Qt interface, SQLite for storage and ONNX Runtime for the AI. Here are the main design decisions, what problem each one solved, and what it gained.
+
+### All the AI runs on your computer, on everyday hardware
+
+**Problem:** cloud photo apps send every photo to a server. Running the AI locally usually means a powerful graphics card.
+**Decision:** small, efficient models instead of large ones: Apple's MobileCLIP-S0 for search (about 90 MB), and YuNet and SFace for faces, all run on the processor through ONNX Runtime.
+**Result:** works on an ordinary laptop with no graphics card and no internet, and the photos never leave the computer.
+
+### Searching tens of thousands of photos in about a second
+
+**Problem:** running the AI on every photo each time someone searches would take minutes.
+**Decision:** each photo is turned into a list of 512 numbers once, when it's first seen, and stored. A search turns the typed words into numbers in the same "language" and compares them with every photo in a single matrix multiplication, with all the vectors kept in memory.
+**Result:** a search across tens of thousands of photos takes about a second, and the slow part only ever happens once per photo.
+
+### Reading photos fast
+
+**Problem:** a modern 24-megapixel photo takes a long time to open, and the library may hold tens of thousands of them.
+**Decision:** JPEGs are decoded straight to a reduced size (the AI only needs 256×256), skipping most of the work. The full photo is read only when a small face needs a closer look.
+**Result:** indexing is much faster than opening each photo in full, with no loss in what the AI sees.
+
+### File changes that survive crashes and can always be undone
+
+**Problem:** a photo app that renames and moves thousands of files can lose or duplicate photos if the power cuts out halfway.
+**Decision:** every change follows the same three steps. First it's **planned** without touching anything. Then the whole plan is **written to a journal** in the database before any file moves (the same idea databases use to stay safe). Moves happen in two phases through hidden temporary names, and nothing is ever overwritten. On startup, HomePix checks the journal and **finishes any interrupted job** by looking at where the files actually are. Undo turns any finished job into its reverse.
+**Result:** no photo is ever lost or doubled, and one mechanism handles undo, redo and crash recovery for every kind of change, including people and duplicate decisions.
+
+### Recognizing a photo by its content, not its name
+
+**Problem:** people rename and move photos, and drives get unplugged. Tracking photos by file path would forget everything about a photo once it moved.
+**Decision:** each file gets a fingerprint from its size plus its first and last 64 KB, so only 128 KB is read instead of the whole file. Thumbnails and the portable library copy are tied to fingerprints, not paths. When many photos disappear at once, HomePix assumes a drive was unplugged, not that the photos were deleted.
+**Result:** moved and renamed photos keep their names, faces and thumbnails, and a library can move to a new computer with everything intact.
+
+### Learning from corrections
+
+**Problem:** face recognition mixes up people who look alike, such as siblings.
+**Decision:** when someone says "that's not them", HomePix trains a small per-person classifier (logistic regression, solved with a few steps of Newton's method in NumPy) to separate that person from the faces they were confused with.
+**Result:** a couple of corrections are enough to tell look-alikes apart, without adding a machine-learning library.
+
+### An interface that never freezes
+
+**Problem:** decoding thousands of thumbnails and running AI can lock up an app's window.
+**Decision:** a strict split between `core` (all the logic, no interface) and `ui` (only what to show). Slow work runs on background threads, and requests where only the newest answer matters (the photo just clicked, the search just typed) drop stale work automatically. The timeline only draws the rows on screen.
+**Result:** scrolling a library of tens of thousands of photos stays smooth, even while indexing runs.
+
+### Tested and shipped automatically on three systems
+
+**Problem:** a desktop app has to work on Windows, Mac and many versions of Linux, each with its own quirks.
+**Decision:** 260 automated tests run on Linux, Windows and Mac for every change, and every pull request is built into real installers. Each build runs the app's own `--self-test` (window, thumbnails and AI). The Linux version is built on an older Linux (AlmaLinux 9) so it runs on newer ones, and is tested on six Linux distributions. Pushing a version tag builds and publishes all four downloads, and the app updates itself from there.
+**Result:** a release takes one command, and problems are caught before anyone downloads them.
+
+## For developers
+
+Contributions are welcome. To run HomePix from source (Python 3.10–3.12):
+
+```bash
+git clone https://github.com/meirgarfinkel/homepix.git
+cd homepix
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
+.venv/bin/python -m homepix.ui                           # run the app
+QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q  # run the tests
+```
+
+Set `HOMEPIX_HOME=/some/folder` to use a separate test library, so you don't touch your own. Writing details into photos from source needs ExifTool (`sudo apt install libimage-exiftool-perl`, or `brew install exiftool` on a Mac); the downloads bundle their own.
+
+**The code in brief:**
+
+```
+homepix/
+  core/   all the logic, with no interface: database, indexing, dates, people,
+          search, duplicates, organizing, file changes. Fully testable without a window.
+    ai/   the search and face models
+  ui/     the desktop app (PySide6 / Qt): the window, its pages and menus
+tests/    pytest suite, with fake AI models so it runs in seconds
+packaging/  build scripts for the Windows installer, Mac disk image, AppImage and .deb
+```
+
+**Where to read next:**
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: setup, code checks, branches, pull requests and releases
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: how the pieces fit together, step by step
+- **[BUILDING.md](BUILDING.md)**: building the installers yourself
+- **[REQUIREMENTS.md](REQUIREMENTS.md)**: what's in scope for the app
+
+To contribute: fork the repo, make a branch, and open a pull request. The tests and code checks run automatically on every pull request, and changes are merged once they pass and have been reviewed.
+
+## Credits and license
+
+HomePix is free software under the [GNU General Public License v3.0](LICENSE). You can use, change and share it, including for money, but anything you distribute that's built on it must also be released under the GPL-3.0, with its full source code.
+
+The AI models and font keep their own licenses:
+
+| Part | Size | License |
 |---|---|---|
-| MobileCLIP-S0 image + text ([Xenova/mobileclip_s0](https://huggingface.co/Xenova/mobileclip_s0)) | 45 + 43 MB | Apple sample code license (allows use, modification and redistribution) |
-| YuNet face detector | 0.2 MB | MIT |
-| SFace face recognizer | 39 MB | Apache-2.0 |
+| MobileCLIP-S0 image and text models ([Xenova/mobileclip_s0](https://huggingface.co/Xenova/mobileclip_s0)) | 45 + 43 MB | Apple sample code license (allows use, changes and sharing) |
+| YuNet face detector (OpenCV model zoo) | 0.2 MB | MIT |
+| SFace face recognizer (OpenCV model zoo) | 39 MB | Apache-2.0 |
+| [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans) font | | SIL Open Font License |
 
-Read the Apple license yourself before shipping a commercial product. The newer MobileCLIP2 models are more accurate but use a different, research-oriented Apple license.
-
-The app's font is [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans), bundled under the SIL Open Font License (`homepix/ui/fonts/OFL.txt`).
-
-## Tuning
-
-Constants in `homepix/core/config.py`:
-
-- `MATCH_STRICTNESS`: raise it if unrelated photos show up as search matches; lower it if real matches end up under "possibly related". `NEAR_STRICTNESS` and `MAX_NEAR` control the "possibly related" section.
-- `CLUSTER_SIM`: raise it if different people end up in one group; lower it if one person is split across many groups.
-- `ASSIGN_SIM`, `ASSIGN_MARGIN`: how sure it must be before auto-tagging a named person (compared with the faces you named).
-- `ASSIGN_MIN_PX`: faces smaller than this are never auto-tagged.
-- `MIN_FACE_PX`: ignore faces smaller than this (tiny background faces are hard to recognize).
-
-## Known limits
-
-- Search is great for objects, scenes, colors and activities. It's weak at counting ("three dogs"), reading text in photos, and left/right relationships.
-- Photos are center-cropped to a square for search, so things at the far edges of wide panoramas can be missed.
-- RAW camera files other than DNG aren't supported yet; DNG photos are shown from the preview inside them.
-- HEIC photos can be rotated but not flipped, and WebP files can't have details written into them with the ExifTool that comes with older Linux versions (the bundled one can).
-- From source, writing details needs ExifTool: `sudo apt install libimage-exiftool-perl` (on a Mac: `brew install exiftool`; the downloads bundle their own).
-- The Mac version runs on Apple Silicon Macs only (M1 or newer), not older Intel Macs. It's tested automatically on GitHub's Macs, but has had less use than the Windows and Linux versions.
-- On Windows, files on a network folder or a USB stick can't go to the Recycle Bin (Windows keeps none there), so HomePix won't delete them.
-- Very small faces in big group photos are often missed or not recognized (small faces are read from the full-size photo, which helps when it has the pixels).
-
-## License
-
-HomePix is free software under the [GNU General Public License v3.0](LICENSE). You may use, change and share it, including for money, but anything you distribute that's built on it must also be released under the GPL-3.0, with its full source code. The AI models and the font keep their own licenses, listed above.
+Read the Apple license yourself before using the search model in a commercial product.
