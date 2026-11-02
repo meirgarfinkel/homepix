@@ -170,6 +170,18 @@ def exiftool() -> ExifTool:
         return _shared
 
 
+def close_shared():
+    """Stop the app's ExifTool (on quitting). One busy with a long request is stopped at once."""
+    tool = _shared
+    if tool is None:
+        return
+    if tool._lock.acquire(timeout=2):
+        tool._lock.release()
+        tool.close()
+    elif tool._proc is not None:
+        tool._proc.kill()
+
+
 def available() -> bool:
     try:
         command()

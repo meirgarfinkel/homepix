@@ -194,3 +194,12 @@ def open_window(app, ready=lambda w: w.loaded, index=False, size=(1000, 700)):
     if ready is not None:
         wait_until(app, lambda: ready(w))
     return w
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _stop_exiftool():
+    """The shared ExifTool, stopped when the tests end (else it outlives them)."""
+    yield
+    from homepix.core import exiftool
+
+    exiftool.close_shared()

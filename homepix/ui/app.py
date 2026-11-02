@@ -7,6 +7,7 @@ applications menu (no terminal), its output goes to app.log in the data folder.
 window) and exits 0 if they all work.
 """
 
+import atexit
 import getpass
 import hashlib
 import os
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import QApplication
 from .. import __version__
 from ..core.config import data_dir
 from ..core.media import HEIF  # noqa: F401  (registers the HEIC reader before anything decodes)
+from . import workers
 from .open_files import MIME_TYPES, given_files
 
 ICON = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix-icon.png"
@@ -60,10 +62,25 @@ def main(argv=None):
 
     win = MainWindow()
     server.newConnection.connect(lambda: _listen(server.nextPendingConnection(), win))
+    win.closing.connect(server.close)  # a launch from now on opens a new window, not this closing one
     win.show()
     if files:
         win.opener.open(files)
-    return app.exec()
+    code = app.exec()
+    _exit(code)
+
+
+def _exit(code):
+    """Leave without waiting long for background work (indexing and the database are safe to stop at
+    any point). A change to the user's files under way is waited for."""
+    from ..core import exiftool
+
+    exiftool.close_shared()  # else it can outlive the app
+    workers.wait_idle(10)
+    atexit._run_exitfuncs()  # tidy-ups registered with atexit (os._exit skips them)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 # --- one at a time -----------------------------------------------------------------------------------
@@ -76,26 +93,39 @@ def _server_name() -> str:
 
 def single_instance(files=()):
     """A local server other launches can find, or None if HomePix is already open (it's then
-    told to show itself, and given the files to open)."""
+    told to show itself, and given the files to open). A copy that doesn't answer is closing (or
+    stuck): it's waited for, and asked again, for up to 30 seconds."""
     name = _server_name()
-    probe = QLocalSocket()
-    probe.connectToServer(name)
-    if probe.waitForConnected(500):
-        if sys.platform == "win32":  # let the open window come to the front (else it only flashes)
-            import ctypes
-
-            ctypes.windll.user32.AllowSetForegroundWindow(-1)
-        # the paths, one per line, then a zero byte; the open window answers once it has them
-        probe.write("\n".join(files).encode() + b"\0")
-        probe.waitForBytesWritten(1000)
-        probe.waitForReadyRead(3000)
-        probe.disconnectFromServer()
-        return None
+    end = time.time() + 30
+    while time.time() < end:
+        said = _ask_open_copy(name, files)
+        if said == "answered":
+            return None
+        if said == "none":
+            break
     server = QLocalServer()
     if not server.listen(name):
-        QLocalServer.removeServer(name)  # left over from one that crashed
+        QLocalServer.removeServer(name)  # left over from one that crashed (or from one stuck)
         server.listen(name)
     return server
+
+
+def _ask_open_copy(name, files) -> str:
+    """Ask an open copy to show itself (and open the files): "answered", "silent" or "none" (no copy open)."""
+    probe = QLocalSocket()
+    probe.connectToServer(name)
+    if not probe.waitForConnected(500):
+        return "none"
+    if sys.platform == "win32":  # let the open window come to the front (else it only flashes)
+        import ctypes
+
+        ctypes.windll.user32.AllowSetForegroundWindow(-1)
+    # the paths, one per line, then a zero byte; the open window answers once it has them
+    probe.write("\n".join(files).encode() + b"\0")
+    probe.waitForBytesWritten(1000)
+    answered = probe.waitForReadyRead(3000)
+    probe.abort()
+    return "answered" if answered else "silent"
 
 
 def _listen(sock, win):

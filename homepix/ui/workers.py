@@ -12,6 +12,9 @@ class _Relay(QObject):
 
 _relay = None
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-job")
+_pending = 0  # jobs submitted to the pool and not finished yet
+_vital = 0  # of those, the ones quitting must wait for
+_idle = threading.Condition()
 
 
 def _job(fn, callback, args):
@@ -32,10 +35,37 @@ def _job(fn, callback, args):
     return job
 
 
-def run(fn, callback, *args):
+def _counted(job, must_finish):
+    def run_it():
+        global _pending, _vital
+        try:
+            job()
+        finally:
+            with _idle:
+                _pending -= 1
+                _vital -= must_finish
+                _idle.notify_all()
+
+    return run_it
+
+
+def run(fn, callback, *args, must_finish=False):
     """Run fn(*args) on a worker thread, then callback(result, error) on the UI thread.
-    error is None on success, else the exception (and result None)."""
-    return _pool.submit(_job(fn, callback, args))
+    error is None on success, else the exception (and result None). must_finish: quitting waits for
+    it however long it takes (changes to the user's files)."""
+    global _pending, _vital
+    with _idle:
+        _pending += 1
+        _vital += must_finish
+    return _pool.submit(_counted(_job(fn, callback, args), must_finish))
+
+
+def wait_idle(timeout: float) -> bool:
+    """On quitting: wait for jobs that must finish, then up to timeout seconds for the rest. True if
+    every job finished."""
+    with _idle:
+        _idle.wait_for(lambda: _vital == 0)
+        return _idle.wait_for(lambda: _pending == 0, timeout)
 
 
 def run_apart(fn, callback, *args):
