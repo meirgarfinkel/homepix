@@ -565,3 +565,61 @@ def test_restoring_after_the_person_in_it_was_deleted(home, lib):
     db.commit()
     assert fo.undo(db).finished == 1
     assert db.execute("SELECT person_id FROM faces").fetchone()[0] is None
+
+
+# --- sidecars (.xmp, .json, .aae) go with their photo ------------------------------------------------
+
+
+def test_trash_takes_the_sidecars_and_undo_brings_them_back(home, lib, tmp_path):
+    pf, db = home
+    make(pf, lib, ["IMG_1.jpg", "IMG_2.jpg"])
+    (lib / "IMG_1.jpg.xmp").write_text("x")
+    (lib / "IMG_1.json").write_text("j")
+    (lib / "IMG_2.xmp").write_text("other")
+    before = contents(lib)
+    fo.run(db, "trash", "test", fo.plan_trash([lib / "IMG_1.jpg"]))
+    assert sorted(os.listdir(lib)) == ["IMG_2.jpg", "IMG_2.xmp"]
+    assert len(trashed_files(tmp_path)) == 3
+    fo.undo(db)
+    assert contents(lib) == before
+
+
+def test_a_sidecar_named_by_the_stem_stays_with_another_file_of_that_name(home, lib):
+    pf, db = home
+    make(pf, lib, ["IMG_1.jpg"])
+    (lib / "IMG_1.dng").write_bytes(b"raw")  # a RAW and its JPEG: IMG_1.xmp is shared
+    (lib / "IMG_1.xmp").write_text("x")
+    fo.run(db, "trash", "test", fo.plan_trash([lib / "IMG_1.jpg"]))
+    assert sorted(os.listdir(lib)) == ["IMG_1.dng", "IMG_1.xmp"]
+
+
+def test_rename_takes_the_sidecars_under_the_new_name(home, lib):
+    pf, db = home
+    make(pf, lib, ["IMG_1.jpg"])
+    (lib / "IMG_1.jpg.xmp").write_text("x")
+    (lib / "IMG_1.aae").write_text("a")
+    fo.run(db, "rename", "test", fo.plan_rename(db, [(lib / "IMG_1.jpg", "Beach")]))
+    assert sorted(os.listdir(lib)) == ["Beach.aae", "Beach.jpg", "Beach.jpg.xmp"]
+    fo.undo(db)
+    assert sorted(os.listdir(lib)) == ["IMG_1.aae", "IMG_1.jpg", "IMG_1.jpg.xmp"]
+
+
+def test_a_moved_photo_renamed_to_fit_keeps_its_sidecars_matching(home, lib):
+    pf, db = home
+    make(pf, lib, ["IMG_1.jpg", "sub/IMG_1.jpg"])
+    (lib / "IMG_1.jpg.xmp").write_text("x")
+    (lib / "IMG_1.aae").write_text("a")
+    fo.run(db, "move", "test", fo.plan_into([lib / "IMG_1.jpg"], lib / "sub", "move"))
+    # sub already has an IMG_1.jpg: the photo becomes IMG_1_1.jpg, and its sidecars follow it
+    assert sorted(os.listdir(lib / "sub")) == ["IMG_1.jpg", "IMG_1_1.aae", "IMG_1_1.jpg", "IMG_1_1.jpg.xmp"]
+    assert sorted(os.listdir(lib)) == ["sub"]
+
+
+def test_copy_takes_the_sidecars(home, lib):
+    pf, db = home
+    make(pf, lib, ["IMG_1.jpg"])
+    (lib / "IMG_1.xmp").write_text("x")
+    (lib / "out").mkdir()
+    fo.run(db, "copy", "test", fo.plan_into([lib / "IMG_1.jpg"], lib / "out", "copy"))
+    assert sorted(os.listdir(lib / "out")) == ["IMG_1.jpg", "IMG_1.xmp"]
+    assert {"IMG_1.jpg", "IMG_1.xmp"} <= set(os.listdir(lib))  # the originals stay

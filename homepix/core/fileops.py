@@ -242,20 +242,104 @@ def plan_moves(pairs, freed=()) -> list[dict]:
 
 
 def plan_into(paths, folder, action: str) -> list[dict]:
-    """Move or copy files into folder, keeping their names (made free if taken)."""
+    """Move or copy files into folder, keeping their names (made free if taken). Their sidecars go too."""
     folder = os.path.abspath(folder)
     if action == "move":
-        return plan_moves([(p, os.path.join(folder, os.path.basename(p))) for p in paths])
+        return with_sidecars(plan_moves([(p, os.path.join(folder, os.path.basename(p))) for p in paths]))
     taken, steps = set(), []
     for p in paths:
         name = free_name(folder, os.path.basename(p), taken)
         taken.add(name)
         steps.append({"action": "copy", "src": os.path.abspath(p), "dst": os.path.join(folder, name)})
-    return steps
+    return with_sidecars(steps)
 
 
 def plan_trash(paths) -> list[dict]:
-    return [{"action": "trash", "src": os.path.abspath(p), "dst": None} for p in paths]
+    """To the Trash, with their sidecars."""
+    return with_sidecars([{"action": "trash", "src": os.path.abspath(p), "dst": None} for p in paths])
+
+
+# --- sidecars: the small files beside a photo that belong to it ---------------------------------------
+
+SIDECAR_EXTS = (".aae", ".xmp", ".json")
+
+
+def sidecars(paths) -> dict[str, list[tuple[str, bool]]]:
+    """{file: [(sidecar, named by its whole name)]} for those of paths that have any: IMG_1.JPG.xmp
+    (by its whole name), or IMG_1.xmp (by its stem). One named by the stem is left out when another
+    file there, not among paths, has that stem (a RAW and its JPEG share one)."""
+    paths = [os.path.abspath(p) for p in paths]
+    asked = {path_key(p) for p in paths}
+    folders, used, out = {}, set(), {}
+    for p in paths:
+        folder, name = os.path.split(p)
+        if folder not in folders:
+            try:
+                names = os.listdir(folder)
+            except OSError:
+                names = []
+            side, stems = {}, {}
+            for n in names:
+                stem, ext = os.path.splitext(n)
+                if ext.lower() in SIDECAR_EXTS:
+                    side[n.lower()] = n
+                else:
+                    stems.setdefault(stem.lower(), []).append(path_key(os.path.join(folder, n)))
+            folders[folder] = side, stems
+        side, stems = folders[folder]
+        stem = os.path.splitext(name)[0]
+        found = []
+        for ext in SIDECAR_EXTS:
+            for base, whole in ((name, True), (stem, False)):
+                n = side.get((base + ext).lower())
+                if n is None or os.path.join(folder, n) in used:
+                    continue
+                if not whole and any(k not in asked for k in stems.get(stem.lower(), ())):
+                    continue
+                used.add(os.path.join(folder, n))
+                found.append((os.path.join(folder, n), whole))
+        if found:
+            out[p] = found
+    return out
+
+
+def with_sidecars(steps) -> list[dict]:
+    """steps, plus the same for the sidecars of the files they move, copy or trash: named after where
+    their file ends up (IMG_1_1.jpg's is IMG_1_1.jpg.xmp), so the two still match."""
+    files = [s for s in steps if s["action"] in ("move", "copy", "trash")]
+    sides = sidecars([s["src"] for s in files])
+    if not sides:
+        return steps
+    leaving = {path_key(s["src"]) for s in files if s["action"] != "copy"}
+    leaving |= {path_key(side) for s in files if s["action"] != "copy" for side, _ in sides.get(s["src"], ())}
+    taken = {path_key(s["dst"]) for s in steps if s.get("dst")}
+    extra = []
+    for s in files:
+        for side, whole in sides.get(s["src"], ()):
+            if s["action"] == "trash":
+                extra.append({"action": "trash", "src": side, "dst": None})
+                continue
+            folder, name = os.path.split(s["dst"])
+            stem = name if whole else os.path.splitext(name)[0]  # IMG_1.jpg(.xmp) or IMG_1(.xmp)
+            ext = os.path.splitext(side)[1]
+            n, candidate = 0, os.path.join(folder, stem + ext)
+            while (key := path_key(candidate)) in taken or (os.path.lexists(candidate) and key not in leaving):
+                n += 1
+                candidate = os.path.join(folder, f"{stem}_{n}{ext}")
+            taken.add(key)
+            if candidate != side:
+                extra.append({"action": s["action"], "src": side, "dst": candidate})
+    return steps + extra
+
+
+def with_sidecar_files(paths) -> list[str]:
+    """paths, each followed by its sidecars (for the clipboard)."""
+    sides = sidecars(paths)
+    out = []
+    for p in paths:
+        p = os.path.abspath(p)
+        out += [p, *(side for side, _ in sides.get(p, ()))]
+    return out
 
 
 def companions(db, paths) -> dict[str, str]:
@@ -327,7 +411,7 @@ def plan_rename(db, renames) -> list[dict]:
         if path in clips:
             clip = clips[path]
             pairs.append((clip, os.path.join(os.path.dirname(clip), stem + os.path.splitext(clip)[1])))
-    return plan_moves(pairs)
+    return with_sidecars(plan_moves(pairs))
 
 
 def plan_details(db, paths, edit: "metadata.Edit"):
@@ -369,7 +453,9 @@ def plan_details(db, paths, edit: "metadata.Edit"):
                 renames.append(
                     (s["src"], os.path.join(_year_folder(s["src"], when), when.strftime(dates.FORMAT) + ext))
                 )
-        steps = plan_moves(renames) + steps  # moves go first anyway; each write follows its file (see run)
+        steps = (
+            with_sidecars(plan_moves(renames)) + steps
+        )  # moves go first anyway; each write follows its file (see run)
     return steps, cant
 
 

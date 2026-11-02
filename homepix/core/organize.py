@@ -13,12 +13,11 @@ import os
 from dataclasses import dataclass
 
 from . import dates
-from .fileops import companions
+from .fileops import SIDECAR_EXTS, companions
 from .safefs import path_key
 from .util import within
 
 UNSORTED = "Unsorted"
-SIDECAR_EXTS = (".aae", ".xmp", ".json")
 
 
 @dataclass
