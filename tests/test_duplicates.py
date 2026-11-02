@@ -345,3 +345,16 @@ def test_a_series_without_dates_is_not_duplicates(home, lib):
         save(scene(60, shift=i), lib / "2024" / f"2024_01_01_00_00_00_{i}.jpg")
     pf.index_folder(lib, want_faces=False)
     assert duplicates.find(db) == []
+
+
+def test_extras_take_their_sidecars_but_not_the_keepers(home, lib, planted):
+    _, db = home
+    (lib / "backup" / "IMG_0001.jpg.xmp").write_text("x")  # "a exact"'s own
+    (lib / "2023" / "2023_04_04_10_00_00.png.xmp").write_text("x")  # "d png"'s own
+    (lib / "2023" / "2023_04_04_10_00_00.xmp").write_text("x")  # by the stem: the kept JPEG's too
+    fo.run(db, "trash", "Trash", duplicates.plan_extras(db, groups_of(home, lib)))
+    assert not (lib / "backup" / "IMG_0001.jpg.xmp").exists()
+    assert not (lib / "2023" / "2023_04_04_10_00_00.png.xmp").exists()
+    assert (lib / "2023" / "2023_04_04_10_00_00.xmp").exists()
+    fo.undo(db)
+    assert (lib / "backup" / "IMG_0001.jpg.xmp").exists() and (lib / "2023" / "2023_04_04_10_00_00.png.xmp").exists()

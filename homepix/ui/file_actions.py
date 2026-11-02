@@ -134,7 +134,7 @@ class FileActions:
             return
         db = open_db()
         try:
-            paths = files.with_companions(db, [it.path for it in items])
+            paths = files.with_sidecar_files(files.with_companions(db, [it.path for it in items]))
         finally:
             db.close()
         desktop.copy_files(paths, cut)
