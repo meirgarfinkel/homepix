@@ -211,7 +211,7 @@ class AllDetailsDialog(QDialog):
 
     def __init__(self, name: str, tags: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"All details: {name}")
+        self.setWindowTitle(f"File info: {name}")
         self.resize(640, 640)
         self.find = QLineEdit()
         self.find.setPlaceholderText("Find a detail...")

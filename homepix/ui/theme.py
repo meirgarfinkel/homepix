@@ -6,6 +6,7 @@ here at paint time (`color("accent")`), so they follow a switch on their next re
 """
 
 import atexit
+import math
 import shutil
 import sys
 import tempfile
@@ -349,6 +350,14 @@ QMenu::item {{ padding: 9px 32px 9px 14px; border-radius: 8px; }}
 QMenu::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 QMenu::item:disabled {{ color: {muted}; }}
 QMenu::separator {{ height: 1px; background: {border}; margin: 5px 8px; }}
+QMenu#mainMenu::item {{ padding-left: 26px; }}  /* (in line with the rows' names, beside their icons) */
+QWidget#menuRow {{ border-radius: 8px; background: transparent; }}
+QWidget#menuRow[active="true"] {{ background: {accentSoft}; }}
+QLabel#menuRowTitle {{ font-weight: 600; color: {text}; background: transparent; }}
+QWidget#menuRow[active="true"] QLabel#menuRowTitle {{ color: {accentText}; }}
+QLabel#menuRowText {{ font-size: 12px; color: {muted}; background: transparent; }}
+QLabel#menuHeading {{ font-size: 11px; font-weight: 700; color: {muted}; padding: 10px 14px 4px;
+    background: transparent; }}
 
 QSlider::groove:horizontal {{ height: 4px; background: {border}; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 2px; }}
@@ -377,13 +386,49 @@ def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon
         p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
         p.drawLine(QPointF(12, 11), QPointF(12, 16.5))
         p.drawPoint(QPointF(12, 7.8))
-    elif name == "settings":  # two sliders
-        for y, x in ((8.5, 15), (15.5, 9)):
-            p.drawLine(QPointF(4, y), QPointF(20, y))
-            p.save()
-            p.setBrush(p.pen().color())
-            p.drawEllipse(QPointF(x, y), 2.4, 2.4)
-            p.restore()
+    elif name == "settings":  # a gear
+        path = QPainterPath()
+        for k in range(8):
+            for da, r in ((-15, 6.6), (-8, 9), (8, 9), (15, 6.6)):
+                a = math.radians(k * 45 + da)
+                pt = QPointF(12 + r * math.cos(a), 12 + r * math.sin(a))
+                if path.elementCount():
+                    path.lineTo(pt)
+                else:
+                    path.moveTo(pt)
+        path.closeSubpath()
+        p.drawPath(path)
+        p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
+    elif name == "calendar":
+        p.drawRoundedRect(QRectF(4, 5.5, 16, 14.5), 2.5, 2.5)
+        p.drawLine(QPointF(4, 10), QPointF(20, 10))
+        p.drawLine(QPointF(8.5, 3.5), QPointF(8.5, 7))
+        p.drawLine(QPointF(15.5, 3.5), QPointF(15.5, 7))
+    elif name == "copies":
+        p.drawRoundedRect(QRectF(8.5, 8.5, 11.5, 11.5), 2, 2)
+        path = QPainterPath(QPointF(15.5, 8.5))
+        path.lineTo(15.5, 6)
+        path.quadTo(15.5, 4, 13.5, 4)
+        path.lineTo(6, 4)
+        path.quadTo(4, 4, 4, 6)
+        path.lineTo(4, 13.5)
+        path.quadTo(4, 15.5, 6, 15.5)
+        path.lineTo(8.5, 15.5)
+        p.drawPath(path)
+    elif name == "trash":
+        p.drawLine(QPointF(4.5, 7), QPointF(19.5, 7))
+        path = QPainterPath(QPointF(6.5, 7))
+        path.lineTo(7.5, 19.5)
+        path.lineTo(16.5, 19.5)
+        path.lineTo(17.5, 7)
+        p.drawPath(path)
+        path = QPainterPath(QPointF(9.5, 7))
+        path.lineTo(9.5, 4.5)
+        path.lineTo(14.5, 4.5)
+        path.lineTo(14.5, 7)
+        p.drawPath(path)
+        p.drawLine(QPointF(10.5, 10.5), QPointF(10.5, 16))
+        p.drawLine(QPointF(13.5, 10.5), QPointF(13.5, 16))
     elif name == "more":
         p.save()
         p.setBrush(p.pen().color())

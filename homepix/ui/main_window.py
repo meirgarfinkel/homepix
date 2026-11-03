@@ -48,6 +48,7 @@ from .dedupe import Dedupe
 from .file_actions import FileActions, count_of
 from .fileops import FileOps
 from .indexing import IndexStatus, IndexWatcher
+from .menu import MenuButton, add_heading, add_row
 from .open_files import Opener, folder_items, photos_in
 from .organizer import Organizer
 from .people_actions import PeopleActions
@@ -433,7 +434,6 @@ class MainWindow(QMainWindow):
             (self.faces_action, "faces"),
             (self.info_action, "info"),
             (self.settings_action, "settings"),
-            (self.more_button, "more"),
         ):
             action.setIcon(theme.icon(name))
         self.search_box.icon = theme.icon("search")
@@ -510,10 +510,12 @@ class MainWindow(QMainWindow):
         settings.setToolTip("Settings (Ctrl+,)")
         settings.triggered.connect(self.open_settings)
         bar.addAction(settings)
-        self.more_button = QToolButton()
-        self.more_button.setToolTip("More")
-        self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.more_button = MenuButton()
+        self.more_button.setToolTip("Menu")
+        self.more_button.setAccessibleName("Menu")
         self.more_menu = QMenu(self.more_button)
+        self.more_menu.setObjectName("mainMenu")
+        self.more_menu.setMinimumWidth(340)
         self.more_button.setMenu(self.more_menu)
         bar.addWidget(self.more_button)
         reload = self.reload_action = QAction("Reload", self)
@@ -542,59 +544,42 @@ class MainWindow(QMainWindow):
         return a
 
     def _build_menus(self):
-        """Behind the toolbar's ⋯ button (every item's shortcut works anywhere in the window)."""
-        bar = self.more_menu
-        m = bar.addMenu("&File")
-        m.addActions([self.files.open_app, self.files.show])
-        m.addSeparator()
-        m.addAction(self.files.export)
-        m.addSeparator()
-        m.addAction(
-            self.add_action(
-                "Tidy the library...",
-                self.organizer.tidy,
-                tip="Rename files by date, in year folders",
-            )
+        """The toolbar's menu: one list, no submenus (every item's shortcut works anywhere in the window)."""
+        m = self.more_menu
+        add_heading(m, "Clean up")
+        add_row(
+            m,
+            self.add_action("Sort by date...", self.organizer.tidy),
+            "Rename photos by date and file them into year folders",
+            "calendar",
         )
-        m.addAction(self.add_action("Organize a folder...", lambda: self.organizer.choose_folder(self.open_folder())))
+        add_row(
+            m,
+            self.add_action("Duplicates", lambda: self.show_place(DUPES)),
+            "Copies of the same photo, to review and clear out",
+            "copies",
+        )
+        add_row(
+            m,
+            self.add_action("Declutter", lambda: self.show_place(JUNK)),
+            "Screenshots, blurry shots and others you may not need",
+            "trash",
+        )
+        add_heading(m, "People")
+        add_row(
+            m,
+            self.add_action("Name faces", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]),
+            "Tell HomePix who's who, so you can find them",
+            "faces",
+        )
+        m.addAction(self.add_action("Show names on faces", self.viewer.toggle_faces))
+        m.addAction(self.add_action("Start faces over...", self.naming.start_over))
         m.addSeparator()
-        m.addAction(self.settings_action)
-        m.addAction(self.add_action("Install updates...", self.updater.check))
+        m.addActions([self.files.undo, self.files.redo])
         m.addSeparator()
+        m.addActions([self.full_action, self.settings_action])
+        m.addAction(self.add_action("Check for updates", self.updater.check))
         m.addAction(self.add_action("Quit", self.close, [QKeySequence.StandardKey.Quit]))
-        bar.addMenu(self.files.menu(self))
-        bar.addMenu(self.photo.menu(self))
-        m = bar.addMenu("&View")
-        m.addActions([self.library_action, self.info_action, self.full_action, self.reload_action])
-        m.addSeparator()
-        m.addAction(self.add_action("Who is this?", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]))
-        m.addAction(
-            self.add_action(
-                "Duplicates", lambda: self.show_place(DUPES), tip="Copies of the same photo or video, to review"
-            )
-        )
-        m.addAction(
-            self.add_action(
-                "Declutter",
-                lambda: self.show_place(JUNK),
-                tip="Photos you may not need",
-            )
-        )
-        m.addAction(
-            self.add_action(
-                "Show faces in the viewer",
-                self.viewer.toggle_faces,
-                tip="Show names on faces",
-            )
-        )
-        m.addSeparator()
-        m.addAction(
-            self.add_action(
-                "Start faces over...",
-                self.naming.start_over,
-                tip="Forget all faces and names",
-            )
-        )
 
     # --- files and folders ---------------------------------------------------------------------------
 
@@ -678,7 +663,7 @@ class MainWindow(QMainWindow):
             )
         menu.addSeparator()
         if os.path.isdir(path):
-            menu.addAction("Organize this folder...", lambda: self.organizer.preview(path))
+            menu.addAction("Sort this folder by date...", lambda: self.organizer.preview(path))
         menu.addAction("Show in file manager", lambda: desktop.open_file(path))
         menu.addSeparator()
         menu.setToolTipsVisible(True)

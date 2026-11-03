@@ -1,5 +1,5 @@
 """Updates. At startup, a newer HomePix on GitHub is downloaded quietly and a bar offers to restart
-into it. Install updates (the File menu) does the same on request, or says this is the latest version.
+into it. Check for updates (the menu) does the same on request, or says this is the latest version.
 Each kind of copy is updated the way it was installed."""
 
 import os
