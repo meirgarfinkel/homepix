@@ -350,11 +350,14 @@ QMenu::item {{ padding: 9px 32px 9px 14px; border-radius: 8px; }}
 QMenu::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 QMenu::item:disabled {{ color: {muted}; }}
 QMenu::separator {{ height: 1px; background: {border}; margin: 5px 8px; }}
-QMenu#mainMenu::item {{ padding-left: 26px; }}  /* (in line with the rows' names, beside their icons) */
 QWidget#menuRow {{ border-radius: 8px; background: transparent; }}
 QWidget#menuRow[active="true"] {{ background: {accentSoft}; }}
 QLabel#menuRowTitle {{ font-weight: 600; color: {text}; background: transparent; }}
-QWidget#menuRow[active="true"] QLabel#menuRowTitle {{ color: {accentText}; }}
+QLabel#menuRowPlain {{ color: {text}; background: transparent; }}
+QWidget#menuRow[active="true"] QLabel#menuRowTitle, QWidget#menuRow[active="true"] QLabel#menuRowPlain
+    {{ color: {accentText}; }}
+QLabel#menuRowKeys {{ color: {muted}; font-size: 12px; background: transparent; padding-left: 16px; }}
+QWidget#menuRow QLabel:disabled {{ color: {muted}; }}
 QLabel#menuRowText {{ font-size: 12px; color: {muted}; background: transparent; }}
 QLabel#menuHeading {{ font-size: 11px; font-weight: 700; color: {muted}; padding: 10px 14px 4px;
     background: transparent; }}
@@ -399,6 +402,67 @@ def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon
         path.closeSubpath()
         p.drawPath(path)
         p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
+    elif name == "check":
+        path = QPainterPath(QPointF(5.5, 12.5))
+        path.lineTo(10, 17)
+        path.lineTo(18.5, 7.5)
+        p.drawPath(path)
+    elif name in ("undo", "redo"):
+        p.save()
+        if name == "redo":  # undo's mirror image
+            p.translate(24, 0)
+            p.scale(-1, 1)
+        path = QPainterPath(QPointF(5, 10))
+        path.lineTo(15, 10)
+        path.cubicTo(21, 10, 21, 19, 15, 19)
+        path.lineTo(10, 19)
+        p.drawPath(path)
+        path = QPainterPath(QPointF(9, 6))
+        path.lineTo(5, 10)
+        path.lineTo(9, 14)
+        p.drawPath(path)
+        p.restore()
+    elif name == "label":  # a name tag
+        path = QPainterPath(QPointF(4, 6.5))
+        path.lineTo(13, 6.5)
+        path.lineTo(20, 12)
+        path.lineTo(13, 17.5)
+        path.lineTo(4, 17.5)
+        path.closeSubpath()
+        p.drawPath(path)
+        p.drawEllipse(QPointF(13, 12), 1.3, 1.3)
+    elif name == "restart":  # a circling arrow
+        path = QPainterPath()
+        path.arcMoveTo(QRectF(4.5, 4.5, 15, 15), 60)
+        path.arcTo(QRectF(4.5, 4.5, 15, 15), 60, 300)
+        p.drawPath(path)
+        tip = QPainterPath(QPointF(15.8, 3.5))
+        tip.lineTo(15.8, 7.6)
+        tip.lineTo(11.7, 7.6)
+        p.drawPath(tip)
+    elif name == "fullscreen":  # four corners
+        for x, y, dx, dy in ((4, 4, 1, 1), (20, 4, -1, 1), (4, 20, 1, -1), (20, 20, -1, -1)):
+            path = QPainterPath(QPointF(x, y + 5 * dy))
+            path.lineTo(x, y)
+            path.lineTo(x + 5 * dx, y)
+            p.drawPath(path)
+    elif name == "update":  # an arrow down into a tray
+        p.drawLine(QPointF(12, 4), QPointF(12, 15))
+        path = QPainterPath(QPointF(7.5, 10.5))
+        path.lineTo(12, 15)
+        path.lineTo(16.5, 10.5)
+        p.drawPath(path)
+        path = QPainterPath(QPointF(4.5, 15))
+        path.lineTo(4.5, 19.5)
+        path.lineTo(19.5, 19.5)
+        path.lineTo(19.5, 15)
+        p.drawPath(path)
+    elif name == "quit":  # a power symbol
+        path = QPainterPath()
+        path.arcMoveTo(QRectF(4.5, 5, 15, 15), 55)
+        path.arcTo(QRectF(4.5, 5, 15, 15), 55, 290)
+        p.drawPath(path)
+        p.drawLine(QPointF(12, 3.5), QPointF(12, 11))
     elif name == "calendar":
         p.drawRoundedRect(QRectF(4, 5.5, 16, 14.5), 2.5, 2.5)
         p.drawLine(QPointF(4, 10), QPointF(20, 10))

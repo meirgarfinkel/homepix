@@ -51,13 +51,13 @@ Press Ctrl+F and describe what's in the photo, in plain words: "dog on the beach
 
 ## Dates
 
-A photo's date is the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the same rule that *Sort by date* names files by, so a photo shows on the day its name says.
+A photo's date is the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the same rule that *Organize by date* names files by, so a photo shows on the day its name says.
 
 ## Changing photos and files
 
 - **Details written into the photos** (right-click a photo): description, keywords and location (Ctrl+I), for one photo or many at once; date and time, set or moved by some hours for a batch whose camera clock was wrong (Ctrl+Shift+D), and a file named by its date is renamed to its new one; rotate (Ctrl+R, Ctrl+Shift+R) and flip, without re-saving the picture; and every detail a file holds (*File info*, Alt+Enter). They're written the standard way (XMP and EXIF, using the bundled ExifTool), so other photo apps see them too, and the file's modified time is kept. A Live Photo's clip gets its photo's new date. The people found in a photo stay named.
 - **Working with files** (right-click a photo): cut, copy and paste (to and from your file manager too), rename one photo or many at once with a pattern like `{date} Trip {n}` (F2), move to a folder or a new one, move to the Trash (Delete; the Recycle Bin on Windows; on a Mac, the Finder's Trash, where Put Back works), export originals or smaller JPEGs for sharing (Ctrl+E), open in your photo editor, show in folder. A Live Photo's clip and a photo's `.xmp`, `.json` and `.aae` files go along with it.
-- **Sorting by date** (*Sort by date* in the menu for the whole library, or right-click a folder and *Sort this folder by date*): names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. A year folder's own subfolders are left alone (`2022/Trip/`).
+- **Organizing by date** (*Organize by date* in the menu for the whole library, or right-click a folder and *Organize this folder by date*): names each file by when it was taken (`2022_04_01_07_32_31.jpg`, then `_1`, `_2` for others in the same second) and puts it in its year's folder (`2022/`). A file with no real date (only when it was last changed) goes to `Unsorted/` with its own name. It shows every change first and does nothing until you say so. A Live Photo's clip and a photo's `.aae`, `.xmp` and `.json` files go with it. A year folder's own subfolders are left alone (`2022/Trip/`).
 
 ## Duplicates
 
@@ -80,7 +80,7 @@ Not carried along: the undo history, and thumbnails (made again as needed). Two 
 ## Settings and menus
 
 - **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
-- **Menu:** the **☰** button at the top right holds the clean-up tools, people, undo, settings and updates, each with a line saying what it does. Everything you can do to photos is on their right-click menu. Shortcuts work anywhere in the window. On a Mac, shortcuts written here with Ctrl use ⌘ instead.
+- **Menu:** the **☰** button at the top right holds the clean-up tools, people, undo, settings and updates; the main tools have a line saying what they do. Everything you can do to photos is on their right-click menu. Shortcuts work anywhere in the window. On a Mac, shortcuts written here with Ctrl use ⌘ instead.
 - **Updates:** when a new version is out, HomePix downloads it quietly and offers to restart into it. **Check for updates** in the menu checks right away.
 
 ## Where HomePix keeps its files

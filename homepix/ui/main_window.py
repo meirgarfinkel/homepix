@@ -433,7 +433,6 @@ class MainWindow(QMainWindow):
             (self.library_action, "sidebar"),
             (self.faces_action, "faces"),
             (self.info_action, "info"),
-            (self.settings_action, "settings"),
         ):
             action.setIcon(theme.icon(name))
         self.search_box.icon = theme.icon("search")
@@ -507,9 +506,8 @@ class MainWindow(QMainWindow):
         bar.addAction(info)
         settings = self.settings_action = QAction("Settings...", self)
         settings.setShortcut(QKeySequence("Ctrl+,"))
-        settings.setToolTip("Settings (Ctrl+,)")
         settings.triggered.connect(self.open_settings)
-        bar.addAction(settings)
+        self.addAction(settings)  # (in the menu)
         self.more_button = MenuButton()
         self.more_button.setToolTip("Menu")
         self.more_button.setAccessibleName("Menu")
@@ -549,37 +547,43 @@ class MainWindow(QMainWindow):
         add_heading(m, "Clean up")
         add_row(
             m,
-            self.add_action("Sort by date...", self.organizer.tidy),
-            "Rename photos by date and file them into year folders",
+            self.add_action("Organize by date...", self.organizer.tidy),
             "calendar",
+            "Rename photos by date and file them into year folders",
         )
         add_row(
             m,
             self.add_action("Duplicates", lambda: self.show_place(DUPES)),
-            "Copies of the same photo, to review and clear out",
             "copies",
+            "Copies of the same photo, to review and clear out",
         )
         add_row(
             m,
             self.add_action("Declutter", lambda: self.show_place(JUNK)),
-            "Screenshots, blurry shots and others you may not need",
             "trash",
+            "Screenshots, blurry shots and others you may not need",
         )
         add_heading(m, "People")
         add_row(
             m,
             self.add_action("Name faces", lambda: self.show_place(WHO), ["Ctrl+Shift+N"]),
-            "Tell HomePix who's who, so you can find them",
             "faces",
+            "Tell HomePix who's who, so you can find them",
         )
-        m.addAction(self.add_action("Show names on faces", self.viewer.toggle_faces))
-        m.addAction(self.add_action("Start faces over...", self.naming.start_over))
+        names = self.names_action = self.add_action("Show names on faces", self.viewer.toggle_faces)
+        names.setCheckable(True)
+        names.setChecked(self.viewer.show_faces)
+        self.viewer.faces_toggled.connect(names.setChecked)  # (N in the viewer too)
+        add_row(m, names, "label")
+        add_row(m, self.add_action("Start faces over...", self.naming.start_over), "restart")
         m.addSeparator()
-        m.addActions([self.files.undo, self.files.redo])
+        add_row(m, self.files.undo, "undo")
+        add_row(m, self.files.redo, "redo")
         m.addSeparator()
-        m.addActions([self.full_action, self.settings_action])
-        m.addAction(self.add_action("Check for updates", self.updater.check))
-        m.addAction(self.add_action("Quit", self.close, [QKeySequence.StandardKey.Quit]))
+        add_row(m, self.full_action, "fullscreen")
+        add_row(m, self.settings_action, "settings")
+        add_row(m, self.add_action("Check for updates", self.updater.check), "update")
+        add_row(m, self.add_action("Quit", self.close, [QKeySequence.StandardKey.Quit]), "quit")
 
     # --- files and folders ---------------------------------------------------------------------------
 
@@ -663,7 +667,7 @@ class MainWindow(QMainWindow):
             )
         menu.addSeparator()
         if os.path.isdir(path):
-            menu.addAction("Sort this folder by date...", lambda: self.organizer.preview(path))
+            menu.addAction("Organize this folder by date...", lambda: self.organizer.preview(path))
         menu.addAction("Show in file manager", lambda: desktop.open_file(path))
         menu.addSeparator()
         menu.setToolTipsVisible(True)

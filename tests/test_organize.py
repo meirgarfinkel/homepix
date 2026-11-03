@@ -268,7 +268,7 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
     def exec_(dlg):
         model = dlg.table.model()
         shown.append([model.data(model.index(0, c)) for c in range(3)])
-        return 1  # Sort
+        return 1  # Organize
 
     monkeypatch.setattr(changes_dialog.ChangesDialog, "exec", exec_)
     w = MainWindow(index=False)
