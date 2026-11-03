@@ -34,26 +34,18 @@ class PhotoActions:
         a = window.add_action
         self.details = a("Edit details...", self.edit_details, ["Ctrl+I"])
         self.date = a("Date and time...", self.edit_date, ["Ctrl+Shift+D"])
-        self.all_details = a("All details...", self.show_all, ["Alt+Return"])
+        self.all_details = a("File info...", self.show_all, ["Alt+Return"])
         self.turns = {
             t: a(names[0], lambda _=False, t=t: self.turn(t), keys)
             for (t, names), keys in zip(TURNS.items(), (["Ctrl+R"], ["Ctrl+Shift+R"], [], []), strict=True)
         }
         self.targeted = [self.details, self.date, self.all_details, *self.turns.values()]
 
-    def menu(self, parent) -> QMenu:
-        m = QMenu("&Photo", parent)
-        m.addActions([self.details, self.date])
-        m.addSeparator()
-        m.addActions(list(self.turns.values()))
-        m.addSeparator()
-        m.addAction(self.all_details)
-        return m
-
     def add_to(self, menu: QMenu):
         """The tile menu's part."""
         menu.addActions([self.details, self.date])
         menu.addActions([self.turns["right"], self.turns["left"]])
+        menu.addAction(self.all_details)
 
     # --- doing ------------------------------------------------------------------------------------------
 
@@ -134,7 +126,7 @@ class PhotoActions:
 
         def ready(tags, err):
             if err is not None:
-                QMessageBox.warning(self.w, "All details", f"Couldn't read them: {err}")
+                QMessageBox.warning(self.w, "File info", f"Couldn't read them: {err}")
                 return
             AllDetailsDialog(os.path.basename(path), tags, self.w).exec()
 

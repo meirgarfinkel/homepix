@@ -53,17 +53,6 @@ class FileActions:
             self.show,
         ]
 
-    def menu(self, parent) -> QMenu:
-        m = QMenu("&Edit", parent)
-        m.addActions([self.undo, self.redo])
-        m.addSeparator()
-        m.addActions([self.cut, self.copy, self.paste, self.select_all])
-        m.addSeparator()
-        m.addActions([self.rename, self.move, self.new_folder, self.copy_to])
-        m.addSeparator()
-        m.addAction(self.trash)
-        return m
-
     def tile_menu(self, pos):
         items = self.targets()
         if not items:

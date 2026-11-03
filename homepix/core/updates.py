@@ -1,5 +1,5 @@
 """Updates: is there a newer HomePix on GitHub, and getting the right file for how this copy was
-installed. Checked at startup (installed copies only) and from the menu's Install updates."""
+installed. Checked at startup (installed copies only) and from the menu's Check for updates."""
 
 import hashlib
 import json

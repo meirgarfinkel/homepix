@@ -4,7 +4,7 @@ it as one operation (Undo takes it back)."""
 import os
 from collections import Counter
 
-from PySide6.QtWidgets import QFileDialog, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from ..core import organize
 from ..core.db import open_db
@@ -37,7 +37,7 @@ def summary(plan) -> str:
 
 def preview(plan, folders, title, parent):
     n = len(plan.changes)
-    note = "Nothing changes until you choose Organize."
+    note = "Nothing changes until you choose Sort."
     if plan.not_ready:
         note += f" {plan.not_ready:,} files are skipped for now (still being checked)."
     rows = [(relative(c.src, folders), relative(c.dst, folders), _why_text(c.why), c.src) for c in plan.changes]
@@ -46,7 +46,7 @@ def preview(plan, folders, title, parent):
         f"<b>{n:,} of {plan.looked_at:,} files</b> will be renamed or moved: {summary(plan)}.",
         note,
         rows,
-        f"Organize {n:,} files",
+        f"Sort {n:,} files",
         parent,
     )
 
@@ -68,14 +68,6 @@ class Organizer:
     def tidy(self):
         self.preview(None)
 
-    def choose_folder(self, start=None):
-        folders = library_folders()
-        if not folders:
-            return
-        folder = QFileDialog.getExistingDirectory(self.w, "Organize a folder", start or folders[0])
-        if folder:
-            self.preview(os.path.abspath(folder))
-
     def preview(self, scope):
         """scope: a folder in the library, or None for all of it."""
         if self._looking or self.w.ops.busy:
@@ -86,7 +78,7 @@ class Organizer:
         if scope and organize.root_of(scope, library_folders()) is None:
             QMessageBox.information(
                 self.w,
-                "Organize",
+                "Sort by date",
                 f"{scope} isn't in your library. Add it in Settings first.",
             )
             return
@@ -98,7 +90,7 @@ class Organizer:
     def _plan_ready(self, scope, name, res, err):
         self._looking = False
         self.w.statusBar().clearMessage()
-        title = "Tidy the library" if scope is None else f"Organize {name}"
+        title = "Sort by date" if scope is None else f"Sort {name} by date"
         if err is not None:
             QMessageBox.warning(self.w, title, f"Couldn't work out what to do:\n{err}")
             return
@@ -113,4 +105,5 @@ class Organizer:
         if not dlg.exec():
             return
         steps, n = plan.as_steps(), len(plan.changes)
-        self.w.ops.run("organize", f"Organize {plural(n, 'file')}", f"Organized {plural(n, 'file')}", lambda db: steps)
+        what = plural(n, "file")
+        self.w.ops.run("organize", f"Sort {what} by date", f"Sorted {what} by date", lambda db: steps)
