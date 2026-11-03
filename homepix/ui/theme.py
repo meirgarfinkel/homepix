@@ -1,6 +1,6 @@
 """The look: colours, the font, the app-wide style sheet, and the toolbar's icons.
 
-One design (Gallery, with the Ocean accent) in a dark and a light version. Dark is the default;
+One design in a dark version (sand on ink blue) and a light one. Dark is the default;
 Settings can pick light, or follow the system. Widgets that paint themselves read the colours from
 here at paint time (`color("accent")`), so they follow a switch on their next repaint.
 """
@@ -33,6 +33,7 @@ TOKENS = {
         "text": "#161A1F",
         "muted": "#5B6470",
         "accent": "#0A7DAD",
+        "accentFill": "#0A7DAD",
         "accentInk": "#FFFFFF",
         "accentSoft": "rgba(10,125,173,0.11)",
         "accentText": "#086A93",
@@ -42,21 +43,22 @@ TOKENS = {
         "rail": "rgba(22,26,31,0.025)",  # the years beside the photos
     },
     "dark": {
-        "bg": "#0E1014",
-        "side": "#15181D",
-        "raised": "#1D2127",
-        "field": "#1D2127",
-        "border": "#262B32",
-        "text": "#E7EAEE",
-        "muted": "#9AA3AE",
-        "accent": "#3AA9DB",
-        "accentInk": "#04202C",
-        "accentSoft": "rgba(58,169,219,0.16)",
-        "accentText": "#7FCBEA",
-        "hover": "rgba(231,234,238,0.06)",
-        "hoverStrong": "rgba(231,234,238,0.12)",
+        "bg": "#1F1F28",  # the photos
+        "side": "#23242C",  # the toolbar and sidebar, one band around them
+        "raised": "#2A2B35",
+        "field": "#2F303A",
+        "border": "#3D3E4A",
+        "text": "#F4F2EE",
+        "muted": "#A4A4AE",
+        "accent": "#F0DAB3",
+        "accentFill": "rgba(240,218,179,0.80)",  # the chosen place in the sidebar, the slider's knob
+        "accentInk": "#1F1F28",
+        "accentSoft": "rgba(240,218,179,0.14)",
+        "accentText": "#F0DAB3",
+        "hover": "rgba(244,242,238,0.06)",
+        "hoverStrong": "rgba(244,242,238,0.12)",
         "danger": "#F0776A",
-        "rail": "rgba(231,234,238,0.03)",
+        "rail": "rgba(244,242,238,0.03)",
     },
 }
 
@@ -237,9 +239,9 @@ def style_sheet(t: dict) -> str:
     return """
 QMainWindow, QDialog {{ background: {bg}; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {border}; padding: 5px 8px; }}
-QMainWindow::separator {{ background: {border}; width: 1px; height: 1px; }}
+QMainWindow::separator {{ background: {side}; width: 1px; height: 1px; }}
 
-QToolBar#main {{ background: {bg}; border: none; border-bottom: 1px solid {border}; padding: 0 14px;
+QToolBar#main {{ background: {side}; border: none; padding: 0 14px;
                  spacing: 14px; }}
 QToolBar#main QToolButton {{ background: transparent; border: none; border-radius: 19px; min-width: 38px;
                              min-height: 38px; padding: 0; color: {text}; }}
@@ -250,7 +252,7 @@ QToolBar#main QToolButton::menu-indicator {{ image: none; width: 0; }}
 QLabel#brand {{ font-weight: 700; font-size: 15px; padding-left: 4px; }}
 QLineEdit#search {{ background: {field}; border: 1px solid transparent; border-radius: 20px; min-height: 38px;
                     padding: 0 40px 0 40px; font-size: 14px; }}
-QLineEdit#search:focus {{ border-color: {accent}; background: {bg}; }}
+QLineEdit#search:focus {{ border-color: {accent}; }}
 
 QWidget#pageHeader {{ background: {bg}; }}
 QLabel#pageTitle {{ font-size: 26px; font-weight: 700; }}
@@ -267,7 +269,7 @@ QTreeWidget#sidebar::item:first {{ border-top-left-radius: 18px; border-bottom-l
 QTreeWidget#sidebar::item:last {{ border-top-right-radius: 18px; border-bottom-right-radius: 18px;
     padding-right: 12px; }}
 QTreeWidget#sidebar::item:hover {{ background: {hover}; }}
-QTreeWidget#sidebar::item:selected {{ background: {accentSoft}; color: {accentText}; }}
+QTreeWidget#sidebar::item:selected {{ background: {accentFill}; color: {accentInk}; }}
 QTreeWidget#sidebar::branch {{ background: {side}; image: none; border-image: none; }}
 
 QWidget#infoBody, QScrollArea#info {{ background: {side}; border: none; }}
@@ -364,7 +366,8 @@ QLabel#menuHeading {{ font-size: 11px; font-weight: 700; color: {muted}; padding
 
 QSlider::groove:horizontal {{ height: 4px; background: {border}; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 2px; }}
-QSlider::handle:horizontal {{ background: {accent}; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }}
+QSlider::handle:horizontal {{ background: {accentFill}; width: 14px; height: 14px; margin: -5px 0;
+    border-radius: 7px; }}
 QProgressBar {{ background: {field}; border: none; border-radius: 3px; max-height: 6px; }}
 QProgressBar::chunk {{ background: {accent}; border-radius: 3px; }}
 
