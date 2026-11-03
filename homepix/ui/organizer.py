@@ -37,7 +37,7 @@ def summary(plan) -> str:
 
 def preview(plan, folders, title, parent):
     n = len(plan.changes)
-    note = "Nothing changes until you choose Sort."
+    note = "Nothing changes until you choose Organize."
     if plan.not_ready:
         note += f" {plan.not_ready:,} files are skipped for now (still being checked)."
     rows = [(relative(c.src, folders), relative(c.dst, folders), _why_text(c.why), c.src) for c in plan.changes]
@@ -46,7 +46,7 @@ def preview(plan, folders, title, parent):
         f"<b>{n:,} of {plan.looked_at:,} files</b> will be renamed or moved: {summary(plan)}.",
         note,
         rows,
-        f"Sort {n:,} files",
+        f"Organize {n:,} files",
         parent,
     )
 
@@ -78,7 +78,7 @@ class Organizer:
         if scope and organize.root_of(scope, library_folders()) is None:
             QMessageBox.information(
                 self.w,
-                "Sort by date",
+                "Organize by date",
                 f"{scope} isn't in your library. Add it in Settings first.",
             )
             return
@@ -90,7 +90,7 @@ class Organizer:
     def _plan_ready(self, scope, name, res, err):
         self._looking = False
         self.w.statusBar().clearMessage()
-        title = "Sort by date" if scope is None else f"Sort {name} by date"
+        title = "Organize by date" if scope is None else f"Organize {name} by date"
         if err is not None:
             QMessageBox.warning(self.w, title, f"Couldn't work out what to do:\n{err}")
             return
@@ -106,4 +106,4 @@ class Organizer:
             return
         steps, n = plan.as_steps(), len(plan.changes)
         what = plural(n, "file")
-        self.w.ops.run("organize", f"Sort {what} by date", f"Sorted {what} by date", lambda db: steps)
+        self.w.ops.run("organize", f"Organize {what} by date", f"Organized {what} by date", lambda db: steps)

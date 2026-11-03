@@ -1,8 +1,9 @@
 """The toolbar's menu: a hamburger button that turns into an X while its menu is open, and the menu's
-rows that say what they do (a name, and a line under it)."""
+rows: an icon, a name (with a line under it saying what it does, for the main ones), and on the right
+the shortcut, or a tick for a setting that's on."""
 
-from PySide6.QtCore import QEasingCurve, QPointF, Qt, QVariantAnimation
-from PySide6.QtGui import QPainter, QPen
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPointF, Qt, QVariantAnimation
+from PySide6.QtGui import QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -79,74 +80,102 @@ class MenuButton(QToolButton):
 
 
 class _Row(QWidget):
-    """A menu row with a line under its name saying what it does."""
-
     def __init__(self, action, description, icon, menu):
         super().__init__(menu)
-        self.action, self.menu = action, menu
+        self.action, self.menu, self.icon_name = action, menu, icon
         self.item = None  # its place in the menu (set by add_row)
         self.setObjectName("menuRow")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setProperty("active", False)
         row = QHBoxLayout(self)
-        row.setContentsMargins(14, 8, 24, 8)
+        row.setContentsMargins(14, 8, 14, 8)
         row.setSpacing(12)
         self.icon = QLabel()
         self.icon.setFixedSize(20, 20)
-        self.icon_name = icon
-        row.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop)
+        row.addWidget(self.icon, 0, Qt.AlignmentFlag.AlignTop if description else Qt.AlignmentFlag.AlignVCenter)
         words = QVBoxLayout()
         words.setSpacing(2)
         self.title = QLabel(action.text())
-        self.title.setObjectName("menuRowTitle")
+        self.title.setObjectName("menuRowTitle" if description else "menuRowPlain")
+        words.addWidget(self.title)
         self.description = QLabel(description)
         self.description.setObjectName("menuRowText")
-        words.addWidget(self.title)
+        self.description.setVisible(bool(description))
         words.addWidget(self.description)
         row.addLayout(words, 1)
-        self._paint_icon()
+        self.right = QLabel()  # the shortcut, or a tick
+        self.right.setObjectName("menuRowKeys")
+        row.addWidget(self.right, 0, Qt.AlignmentFlag.AlignVCenter)
+        action.changed.connect(self.refresh)
+        self.refresh()
 
-    def _paint_icon(self):
-        colour = "accentText" if self.property("active") else "text"
+    def refresh(self):
+        """After the action changed (on or off, enabled or not), or the row became active or not."""
+        on = self.action.isEnabled()
+        self.setEnabled(on)
+        if self.item is not None:
+            self.item.setEnabled(on)  # (the arrows pass over it while it's off)
+        colour = "muted" if not on else "accentText" if self.property("active") else "text"
         self.icon.setPixmap(theme.icon(self.icon_name, colour).pixmap(20, 20))
+        if self.action.isCheckable():
+            self.right.setText("")
+            self.right.setPixmap(theme.icon("check", colour).pixmap(18, 18) if self.action.isChecked() else QPixmap())
+        else:
+            self.right.setText(self.action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
+        for w in (self, self.title, self.description, self.right):
+            w.style().unpolish(w)
+            w.style().polish(w)
 
-    def _set_active(self, on):
+    def set_active(self, on):
         if self.property("active") != on:
             self.setProperty("active", on)
-            for w in (self, self.title, self.description):
-                w.style().unpolish(w)
-                w.style().polish(w)
-            self._paint_icon()
+            self.refresh()
 
     def enterEvent(self, e):  # noqa: N802 (Qt's name)
-        self.menu.setActiveAction(self.item)
-        self.setFocus()
-        self._set_active(True)
+        if self.action.isEnabled():
+            self.menu.setActiveAction(self.item)  # (the menu then lights this row: _RowMenu)
 
     def leaveEvent(self, e):  # noqa: N802 (Qt's name)
-        if not self.hasFocus():
-            self._set_active(False)
-
-    def focusInEvent(self, e):  # noqa: N802 (Qt's name)
-        self._set_active(True)
-
-    def focusOutEvent(self, e):  # noqa: N802 (Qt's name)
-        self._set_active(False)
+        self.set_active(False)
 
     def mouseReleaseEvent(self, e):  # noqa: N802 (Qt's name)
         if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
             self.choose()
 
-    def keyPressEvent(self, e):  # noqa: N802 (Qt's name)
-        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-            self.choose()
-        else:
-            e.ignore()  # (the arrows and Esc are the menu's)
-
     def choose(self):
-        self.menu.close()
-        self.action.trigger()
+        if self.action.isEnabled():
+            self.menu.close()
+            self.action.trigger()
+
+
+class _RowMenu(QObject):
+    """Keeps the menu's rows lit as the menu's own items would be: the one under the mouse, or reached
+    with the arrow keys (and Enter chooses it)."""
+
+    def __init__(self, menu: QMenu):
+        super().__init__(menu)
+        self.menu = menu
+        menu.hovered.connect(self._light)
+        menu.aboutToShow.connect(lambda: self._light(None))
+        menu.aboutToHide.connect(lambda: self._light(None))
+        menu.installEventFilter(self)
+
+    def rows(self):
+        widgets = (a.defaultWidget() for a in self.menu.actions() if isinstance(a, QWidgetAction))
+        return [w for w in widgets if isinstance(w, _Row)]
+
+    def _light(self, action):
+        for row in self.rows():
+            row.set_active(action is not None and row.item is action)
+
+    def eventFilter(self, obj, e):  # noqa: N802 (Qt's name)
+        if e.type() == QEvent.Type.KeyPress and e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            active = self.menu.activeAction()
+            for row in self.rows():
+                if row.item is active:
+                    row.choose()
+                    return True
+        return False
 
 
 def add_heading(menu: QMenu, text: str):
@@ -158,11 +187,14 @@ def add_heading(menu: QMenu, text: str):
     menu.addAction(item)
 
 
-def add_row(menu: QMenu, action, description: str, icon: str):
-    """action, as a row with its description under it (choosing it triggers action)."""
+def add_row(menu: QMenu, action, icon: str, description: str = ""):
+    """action, as a row (choosing it triggers action)."""
+    if not hasattr(menu, "_rows"):
+        menu._rows = _RowMenu(menu)
     item = QWidgetAction(menu)
     row = _Row(action, description, icon, menu)
     row.item = item
     item.setDefaultWidget(row)
+    row.refresh()
     menu.addAction(item)
     return item
