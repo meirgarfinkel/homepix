@@ -7,7 +7,7 @@ from pathlib import Path
 import shiboken6
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QHeaderView, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
+from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QTreeWidget, QTreeWidgetItem
 
 from ...core.util import folder_prefix
 from .. import theme
@@ -95,7 +95,8 @@ class CountDelegate(QStyledItemDelegate):
         super().paint(p, option, index)  # the row's background
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        muted = theme.color("muted")
+        chosen = option.state & QStyle.StateFlag.State_Selected
+        muted = theme.color("accentInk" if chosen else "muted")
         arrow = QRectF(option.rect.right() - RIGHT - CHEVRON, option.rect.top(), CHEVRON, option.rect.height())
         if text:
             p.setPen(muted)
@@ -111,7 +112,7 @@ class CountDelegate(QStyledItemDelegate):
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(theme.color("hoverStrong"))
                 p.drawEllipse(arrow.center(), 12, 12)
-            pen = QPen(theme.color("text"), 1.6)
+            pen = QPen(theme.color("accentInk" if chosen else "text"), 1.6)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
