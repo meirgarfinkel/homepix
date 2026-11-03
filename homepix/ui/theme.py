@@ -422,15 +422,6 @@ def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon
         path.lineTo(9, 14)
         p.drawPath(path)
         p.restore()
-    elif name == "label":  # a name tag
-        path = QPainterPath(QPointF(4, 6.5))
-        path.lineTo(13, 6.5)
-        path.lineTo(20, 12)
-        path.lineTo(13, 17.5)
-        path.lineTo(4, 17.5)
-        path.closeSubpath()
-        p.drawPath(path)
-        p.drawEllipse(QPointF(13, 12), 1.3, 1.3)
     elif name == "restart":  # a circling arrow
         path = QPainterPath()
         path.arcMoveTo(QRectF(4.5, 4.5, 15, 15), 60)
@@ -457,12 +448,9 @@ def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon
         path.lineTo(19.5, 19.5)
         path.lineTo(19.5, 15)
         p.drawPath(path)
-    elif name == "quit":  # a power symbol
-        path = QPainterPath()
-        path.arcMoveTo(QRectF(4.5, 5, 15, 15), 55)
-        path.arcTo(QRectF(4.5, 5, 15, 15), 55, 290)
-        p.drawPath(path)
-        p.drawLine(QPointF(12, 3.5), QPointF(12, 11))
+    elif name == "quit":  # a power symbol: a circle with a line from its top to the middle, inside it
+        p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
+        p.drawLine(QPointF(12, 7), QPointF(12, 12))
     elif name == "calendar":
         p.drawRoundedRect(QRectF(4, 5.5, 16, 14.5), 2.5, 2.5)
         p.drawLine(QPointF(4, 10), QPointF(20, 10))

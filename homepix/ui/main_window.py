@@ -574,7 +574,7 @@ class MainWindow(QMainWindow):
         names.setCheckable(True)
         names.setChecked(self.viewer.show_faces)
         self.viewer.faces_toggled.connect(names.setChecked)  # (N in the viewer too)
-        add_row(m, names, "label")
+        add_row(m, names)
         add_row(m, self.add_action("Start faces over...", self.naming.start_over), "restart")
         m.addSeparator()
         add_row(m, self.files.undo, "undo")
