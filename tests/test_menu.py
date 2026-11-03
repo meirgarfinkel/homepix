@@ -36,7 +36,8 @@ def test_one_list_with_described_rows(pf, app, monkeypatch):
         ]
         described = [t for t, r in rows.items() if r.description.text()]
         assert described == ["Organize by date...", "Duplicates", "Declutter", "Name faces"]
-        assert all(not r.icon.pixmap().isNull() for r in rows.values())  # an icon on every row
+        unticked = {t: r for t, r in rows.items() if t != "Show names on faces"}
+        assert all(not r.icon.pixmap().isNull() for r in unticked.values())  # an icon on every other row
         assert rows["Settings..."].right.text()  # its shortcut
         organized = []
         monkeypatch.setattr(w.organizer, "preview", organized.append)
@@ -60,11 +61,11 @@ def test_a_tick_while_names_are_shown(pf, app):
     w = open_window(app)
     try:
         row = _rows(w.more_menu)["Show names on faces"]
-        assert row.right.pixmap().isNull()  # off: nothing
+        assert row.icon.pixmap().isNull()  # off: nothing
         w.viewer.toggle_faces()  # (as N in the viewer does)
-        assert not row.right.pixmap().isNull()
+        assert not row.icon.pixmap().isNull()  # on: a tick
         row.choose()
-        assert not w.viewer.show_faces and row.right.pixmap().isNull()
+        assert not w.viewer.show_faces and row.icon.pixmap().isNull()
     finally:
         w.close()
 

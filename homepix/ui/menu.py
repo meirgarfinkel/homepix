@@ -61,14 +61,14 @@ class MenuButton(QToolButton):
         side = self.iconSize().width()
         p.translate((self.width() - side) / 2, (self.height() - side) / 2)
         p.scale(side / 24, side / 24)
-        pen = QPen(theme.color("text"), 1.8)
+        pen = QPen(theme.color("text"), 2.1)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
         # first the top and bottom lines slide to the middle (the middle one fading), then they turn
         slide = min(self.progress * 2, 1.0)
         turn = max(self.progress * 2 - 1, 0.0)
-        half = 7.5 - 0.9 * turn  # the X's arms a little shorter than the lines (they're diagonal)
-        for y, angle in ((6.5, 45), (17.5, -45)):
+        half = 8.3 - 1.0 * turn  # the X's arms a little shorter than the lines (they're diagonal)
+        for y, angle in ((5.8, 45), (18.2, -45)):
             p.save()
             p.translate(12, y + (12 - y) * slide)
             p.rotate(angle * turn)
@@ -76,7 +76,7 @@ class MenuButton(QToolButton):
             p.restore()
         if slide < 1:
             p.setOpacity(1 - slide)
-            p.drawLine(QPointF(4.5, 12), QPointF(19.5, 12))
+            p.drawLine(QPointF(3.7, 12), QPointF(20.3, 12))
 
 
 class _Row(QWidget):
@@ -103,7 +103,7 @@ class _Row(QWidget):
         self.description.setVisible(bool(description))
         words.addWidget(self.description)
         row.addLayout(words, 1)
-        self.right = QLabel()  # the shortcut, or a tick
+        self.right = QLabel()  # the shortcut
         self.right.setObjectName("menuRowKeys")
         row.addWidget(self.right, 0, Qt.AlignmentFlag.AlignVCenter)
         action.changed.connect(self.refresh)
@@ -116,12 +116,11 @@ class _Row(QWidget):
         if self.item is not None:
             self.item.setEnabled(on)  # (the arrows pass over it while it's off)
         colour = "muted" if not on else "accentText" if self.property("active") else "text"
-        self.icon.setPixmap(theme.icon(self.icon_name, colour).pixmap(20, 20))
-        if self.action.isCheckable():
-            self.right.setText("")
-            self.right.setPixmap(theme.icon("check", colour).pixmap(18, 18) if self.action.isChecked() else QPixmap())
-        else:
-            self.right.setText(self.action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
+        name = self.icon_name
+        if self.action.isCheckable():  # a tick where the icon goes while it's on, else nothing
+            name = "check" if self.action.isChecked() else ""
+        self.icon.setPixmap(theme.icon(name, colour).pixmap(20, 20) if name else QPixmap())
+        self.right.setText(self.action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
         for w in (self, self.title, self.description, self.right):
             w.style().unpolish(w)
             w.style().polish(w)
@@ -187,8 +186,8 @@ def add_heading(menu: QMenu, text: str):
     menu.addAction(item)
 
 
-def add_row(menu: QMenu, action, icon: str, description: str = ""):
-    """action, as a row (choosing it triggers action)."""
+def add_row(menu: QMenu, action, icon: str = "", description: str = ""):
+    """action, as a row (choosing it triggers action). A checkable one shows a tick in place of an icon."""
     if not hasattr(menu, "_rows"):
         menu._rows = _RowMenu(menu)
     item = QWidgetAction(menu)
