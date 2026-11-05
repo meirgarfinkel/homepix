@@ -596,17 +596,19 @@ def icon(name: str, colour: str = "text", checked: str = "accentText") -> QIcon:
 
 
 def brand_mark(px: int = 28, dpr: float = 2.0) -> QPixmap:
-    """The app icon (homepix-icon.svg): a roof with a chimney over a camera lens, on a dark rounded
-    square. Drawn on a 64-unit grid, the same as the SVG."""
+    """The app icon (homepix-icon.svg): a roof with a chimney over a camera lens, on a dark circle.
+    Drawn on a 64-unit grid, the same as the SVG."""
     pm = QPixmap(round(px * dpr), round(px * dpr))
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.scale(dpr * px / 64, dpr * px / 64)
-    roof_colour, lens_colour = QColor("#E4E7EA"), QColor("#3AA9DB")
+    roof_colour, lens_colour = QColor("#FFFFFF"), QColor("#328EB9")
     p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(QColor("#13212C"))
-    p.drawRoundedRect(QRectF(0, 0, 64, 64), 15, 15)
+    p.setBrush(QColor("#1A1E24"))
+    p.drawEllipse(QRectF(0, 0, 64, 64))
+    p.translate(-3.84, -3.91)  # the house a little larger, as in the SVG
+    p.scale(1.12, 1.12)
     p.setBrush(roof_colour)
     p.drawRoundedRect(QRectF(40, 16.5, 4, 7.5), 0.8, 0.8)  # chimney
 
