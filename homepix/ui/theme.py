@@ -248,15 +248,16 @@ def style_sheet(t: dict) -> str:
     return """
 QMainWindow, QDialog {{ background: {bg}; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {border}; padding: 5px 8px; }}
-QMainWindow::separator {{ background: {border}; width: 1px; height: 1px; }}
+QMainWindow::separator {{ background: {side}; width: 0; height: 0; }}
 
-QToolBar#main {{ background: {side}; border: none; border-bottom: 1px solid {border}; padding: 0 8px;
-                 spacing: 10px; }}
+QToolBar#main {{ background: {side}; border: none; padding: 0 8px; spacing: 10px; }}
 QToolBar#main QToolButton {{ background: transparent; border: none; border-radius: 14px; min-width: 28px;
                              min-height: 28px; padding: 0; color: {text}; }}
 QToolBar#main QToolButton[label="true"] {{ padding: 0 12px; font-weight: 500; }}
 QToolBar#main QToolButton:hover {{ background: {hover}; }}
 QToolBar#main QToolButton:checked {{ background: {accentSoft}; color: {accentText}; }}
+QToolBar#main QToolButton#sidebarToggle:checked {{ background: transparent; }}
+QToolBar#main QToolButton#sidebarToggle:hover {{ background: {hover}; }}
 QToolBar#main QToolButton::menu-indicator {{ image: none; width: 0; }}
 QLabel#brand {{ font-weight: 600; font-size: 14px; padding-left: 4px; }}
 QLineEdit#search {{ background: {field}; border: 1px solid transparent; border-radius: 16px; min-height: 34px;
@@ -272,7 +273,7 @@ QToolButton#pageBack {{ border: none; border-radius: 14px; padding: 4px 12px 4px
 QToolButton#pageBack:hover {{ background: {hover}; color: {text}; }}
 
 QTreeWidget#sidebar {{ background: {side}; color: {sideText}; border: none; padding: 10px 8px; outline: 0; }}
-QTreeWidget#sidebar::item {{ min-height: 28px; padding: 0 4px; border: none; color: {sideText}; }}
+QTreeWidget#sidebar::item {{ min-height: 28px; padding: 0 4px; border: none; }}
 QTreeWidget#sidebar::item:first {{ border-top-left-radius: 14px; border-bottom-left-radius: 14px;
     padding-left: 8px; }}
 QTreeWidget#sidebar::item:last {{ border-top-right-radius: 14px; border-bottom-right-radius: 14px;
@@ -374,7 +375,7 @@ QLabel#menuHeading {{ font-size: 11px; font-weight: 600; color: {muted}; padding
     background: transparent; }}
 
 QSlider::groove:horizontal {{ height: 4px; background: {border}; border-radius: 2px; }}
-QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: {text}; border-radius: 2px; }}
 QSlider::handle:horizontal {{ background: {accent}; width: 14px; height: 14px; margin: -5px 0;
     border-radius: 7px; }}
 QProgressBar {{ background: {field}; border: none; border-radius: 3px; max-height: 6px; }}
@@ -460,9 +461,13 @@ def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon
         path.lineTo(19.5, 19.5)
         path.lineTo(19.5, 15)
         p.drawPath(path)
-    elif name == "quit":  # a power symbol: a circle with a line from its top to the middle, inside it
-        p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
-        p.drawLine(QPointF(12, 7), QPointF(12, 12))
+    elif name == "quit":  # a power symbol: a circle open at the top, a line down through the gap
+        path = QPainterPath()
+        ring = QRectF(3.5, 4.5, 17, 17)
+        path.arcMoveTo(ring, 125)
+        path.arcTo(ring, 125, 290)
+        p.drawPath(path)
+        p.drawLine(QPointF(12, 2.5), QPointF(12, 12.5))
     elif name == "calendar":
         p.drawRoundedRect(QRectF(4, 5.5, 16, 14.5), 2.5, 2.5)
         p.drawLine(QPointF(4, 10), QPointF(20, 10))
@@ -567,11 +572,11 @@ def _pixmap(name: str, col: QColor, px: int = 20, dpr: float = 2.0) -> QPixmap:
     return pm
 
 
-def icon(name: str, colour: str = "text") -> QIcon:
-    """In the text colour (or another), and the accent's when checked."""
+def icon(name: str, colour: str = "text", checked: str = "accentText") -> QIcon:
+    """In the text colour (or another), and the accent's (or another) when checked."""
     ic = QIcon()
     ic.addPixmap(_pixmap(name, color(colour)), QIcon.Mode.Normal, QIcon.State.Off)
-    ic.addPixmap(_pixmap(name, color("accentText")), QIcon.Mode.Normal, QIcon.State.On)
+    ic.addPixmap(_pixmap(name, color(checked)), QIcon.Mode.Normal, QIcon.State.On)
     ic.addPixmap(_pixmap(name, color("muted")), QIcon.Mode.Disabled, QIcon.State.Off)
     return ic
 

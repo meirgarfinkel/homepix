@@ -429,9 +429,9 @@ class MainWindow(QMainWindow):
 
     def _restyle(self):
         """The icons, after the colours changed."""
+        self.library_action.setIcon(theme.icon("sidebar", checked="text"))  # white open or closed
         for action, name in (
             (self.back_action, "back"),
-            (self.library_action, "sidebar"),
             (self.faces_action, "faces"),
             (self.info_action, "info"),
         ):
@@ -451,6 +451,11 @@ class MainWindow(QMainWindow):
         bar.setIconSize(QSize(18, 18))
         bar.setFixedHeight(52)
         self.addToolBar(bar)
+        folders = self.library_action = self.sidebar_dock.toggleViewAction()  # at the far left, always
+        folders.setText("Library")
+        folders.setToolTip("Show or hide the library")
+        bar.addAction(folders)
+        bar.widgetForAction(folders).setObjectName("sidebarToggle")  # (no fill when open)
         bar.addWidget(_spacer(6))
         self.brand = QLabel()
         bar.addWidget(self.brand)
@@ -458,10 +463,6 @@ class MainWindow(QMainWindow):
         name.setObjectName("brand")
         bar.addWidget(name)
         bar.addWidget(_spacer(14))
-        folders = self.library_action = self.sidebar_dock.toggleViewAction()
-        folders.setText("Library")
-        folders.setToolTip("Show or hide the library")
-        bar.addAction(folders)
         self.back_action = QAction("Back", self)
         self.back_action.setToolTip("Back to the photos (Esc)")
         self.back_action.triggered.connect(self.close_viewer)

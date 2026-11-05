@@ -182,11 +182,8 @@ class Sidebar(QTreeWidget):
             junk.setToolTip(0, "Photos you may not need")
             self._style_count(junk)
             self.addTopLevelItem(junk)
-        heading = QTreeWidgetItem(["FOLDERS", ""])
-        heading.setFlags(Qt.ItemFlag.NoItemFlags)  # a label, not a place
-        font = theme.font(11, QFont.Weight.Bold)
-        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108)
-        heading.setFont(0, font)
+        heading = QTreeWidgetItem(["Folders", ""])
+        heading.setFlags(Qt.ItemFlag.NoItemFlags)  # a label, not a place: the folders' font, greyed
         heading.setForeground(0, theme.color("muted"))
         self.addTopLevelItem(heading)
         for root, node in folder_tree(roots, counts).items():
