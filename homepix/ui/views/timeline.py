@@ -7,6 +7,7 @@ binary search.
 
 import bisect
 import calendar
+import itertools
 import math
 from dataclasses import dataclass
 
@@ -636,12 +637,11 @@ class Scrubber(QWidget):
     def paintEvent(self, e):
         v = self.view
         p = QPainter(self)
-        p.fillRect(self.rect(), theme.color("rail"))  # the faintest shade: apart from the photos
         if not v.months:
             return
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         scale = self._scale()
-        muted, accent = theme.color("muted"), theme.color("accent")
+        accent = theme.color("accent")
         font = theme.font(11, QFont.Weight.DemiBold)
         bold = theme.font(11, QFont.Weight.Bold)
         p.setFont(font)
@@ -650,11 +650,19 @@ class Scrubber(QWidget):
         self._labels = []
         for year, mi, y in year_labels(self._year_starts(scale), line + 2, self.height() - line - 4):
             now = year == shown
-            p.setPen(theme.color("accentText") if now else muted)
+            p.setPen(theme.color("yearNow") if now else accent)
             p.setFont(bold if now else font)
             rect = QRect(0, round(y), self.width() - 10, line)
             p.drawText(rect, Qt.AlignmentFlag.AlignRight, str(year))
             self._labels.append((rect, mi))
+        # a short thin line between one year and the next, a quarter of the scrubber wide
+        tick = theme.color("muted")
+        tick.setAlpha(110)
+        p.setPen(QPen(tick, 1))
+        right = self.width() - 10
+        for (above, _), (below, _) in itertools.pairwise(self._labels):
+            y = (above.bottom() + below.top()) / 2
+            p.drawLine(QPointF(right - self.WIDTH / 4, y), QPointF(right, y))
         # where the screen is now
         bar = v.verticalScrollBar()
         top = bar.value() * scale

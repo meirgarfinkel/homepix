@@ -43,8 +43,9 @@ TOKENS = {
         "selected": "rgba(31,39,51,0.07)",  # the chosen sidebar row
         "sideText": "rgba(20,20,20,0.80)",  # neutral ink, not blue-grey on the tint
         "sideStrong": "rgba(20,20,20,0.95)",
+        "ok": "#2E8A55",  # how many photos and videos
         "danger": "#C0392B",
-        "rail": "rgba(31,39,51,0.025)",  # the years beside the photos
+        "yearNow": "#1F2733",  # the year on screen, in the years beside the photos
     },
     "dark": {
         "bg": "#14171C",
@@ -64,8 +65,9 @@ TOKENS = {
         "selected": "rgba(255,255,255,0.06)",
         "sideText": "rgba(255,255,255,0.80)",
         "sideStrong": "rgba(255,255,255,0.95)",
+        "ok": "#86D9A6",
         "danger": "#F0776A",
-        "rail": "rgba(255,255,255,0.03)",
+        "yearNow": "#FFFFFF",
     },
 }
 
@@ -246,9 +248,10 @@ def style_sheet(t: dict) -> str:
     return """
 QMainWindow, QDialog {{ background: {bg}; }}
 QToolTip {{ background: {raised}; color: {text}; border: 1px solid {border}; padding: 5px 8px; }}
-QMainWindow::separator {{ background: {side}; width: 0; height: 0; }}
+QMainWindow::separator {{ background: {border}; width: 1px; height: 1px; }}
 
-QToolBar#main {{ background: {side}; border: none; padding: 0 8px; spacing: 10px; }}
+QToolBar#main {{ background: {side}; border: none; border-bottom: 1px solid {border}; padding: 0 8px;
+                 spacing: 10px; }}
 QToolBar#main QToolButton {{ background: transparent; border: none; border-radius: 14px; min-width: 28px;
                              min-height: 28px; padding: 0; color: {text}; }}
 QToolBar#main QToolButton[label="true"] {{ padding: 0 12px; font-weight: 500; }}
@@ -262,7 +265,7 @@ QLineEdit#search:focus {{ border-color: {accent}; }}
 
 QWidget#pageHeader {{ background: {bg}; }}
 QLabel#pageTitle {{ font-size: 22px; font-weight: 600; }}
-QLabel#pageCount {{ color: {muted}; }}
+QLabel#pageCount {{ color: {ok}; }}
 QLabel#hint {{ color: {muted}; }}
 QToolButton#pageBack {{ border: none; border-radius: 14px; padding: 4px 12px 4px 6px; color: {muted};
                         font-weight: 500; }}
