@@ -669,7 +669,7 @@ class Scrubber(QWidget):
         h = max(6.0, v.viewport().height() * scale)
         p.setPen(Qt.PenStyle.NoPen)
         hl = accent
-        p.setBrush(QColor(hl.red(), hl.green(), hl.blue(), 150))
+        p.setBrush(hl)  # the size slider's colour
         p.drawRoundedRect(self.width() - 4, int(top), 3, int(h), 1.5, 1.5)
         if self._hover_y is not None:
             p.setPen(QPen(hl, 2))

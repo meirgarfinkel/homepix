@@ -376,7 +376,7 @@ QLabel#menuHeading {{ font-size: 11px; font-weight: 600; color: {muted}; padding
     background: transparent; }}
 
 QSlider::groove:horizontal {{ height: 4px; background: {border}; border-radius: 2px; }}
-QSlider::sub-page:horizontal {{ background: {text}; border-radius: 2px; }}
+QSlider::sub-page:horizontal {{ background: {accent}; border-radius: 2px; }}
 QSlider::handle:horizontal {{ background: {accent}; width: 14px; height: 14px; margin: -5px 0;
     border-radius: 7px; }}
 QProgressBar {{ background: {field}; border: none; border-radius: 3px; max-height: 6px; }}
