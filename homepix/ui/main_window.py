@@ -1001,6 +1001,7 @@ class MainWindow(QMainWindow):
 
         dlg.add_requested.connect(added)
         dlg.remove_requested.connect(self.remove_library_folder)
+        dlg.left_out_changed.connect(self.reload)
         dlg.rescan_requested.connect(
             lambda: (self.watcher.start(), self.statusBar().showMessage("Looking for new photos...", 5000))
         )
