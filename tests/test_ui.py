@@ -440,3 +440,40 @@ def test_long_paths_wrap_in_the_info_panel():
 
     assert breakable(r"C:\Users\me\Pictures").replace("\u200b", "") == r"C:\Users\me\Pictures"
     assert r"\​Users\​" in breakable(r"C:\Users\me")  # a place to wrap after each \
+
+
+def test_settings_lists_and_changes_the_folders_left_out(pf, app, tmp_path, monkeypatch):
+    """Settings' Left out: subfolders of the library left out, one left out more, one taken back in."""
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from homepix.core.settings import excluded_folders, load_settings, save_settings, set_excluded
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    lib = tmp_path / "lib"
+    for sub in ("a", "b"):
+        (lib / sub).mkdir(parents=True)
+    s = load_settings()
+    s["folders"] = [str(lib)]
+    save_settings(s)
+    set_excluded(str(lib / "a"), True)
+    dlg = SettingsDialog()
+    changed = []
+    dlg.left_out_changed.connect(lambda: changed.append(1))
+    assert [dlg.left_list.item(i).data(0x0100) for i in range(dlg.left_list.count())] == [str(lib / "a")]
+    assert not dlg.back_button.isEnabled()
+
+    told = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a: told.append(a[2]))
+    for folder in (lib, tmp_path):  # the library folder itself, and one outside it: not left out
+        monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, f=folder: str(f))
+        dlg._leave_out()
+    assert len(told) == 2 and excluded_folders() == [str(lib / "a")] and not changed
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a: str(lib / "b"))
+    dlg._leave_out()
+    assert excluded_folders() == [str(lib / "a"), str(lib / "b")] and dlg.left_list.count() == 2
+
+    dlg.left_list.item(0).setSelected(True)
+    assert dlg.back_button.isEnabled()
+    dlg._take_back()
+    assert excluded_folders() == [str(lib / "b")] and changed == [1, 1]
