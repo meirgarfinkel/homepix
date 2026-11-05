@@ -3,7 +3,6 @@
 import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QToolButton, QWidget
 
 from ..core.indexer import Indexer
 from ..core.settings import library_folders
@@ -130,42 +129,3 @@ def describe(s: dict) -> str:
             text += f", {time_left(s['sharpen_eta'])}"
         return text
     return "Looking for new photos..."
-
-
-class IndexStatus(QWidget):
-    """What indexing is doing, how far it got, and a button to stop it (in the status pill)."""
-
-    def __init__(self, watcher: IndexWatcher, parent=None):
-        super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-        self.label = QLabel()
-        self.bar = QProgressBar()
-        self.bar.setFixedSize(72, 4)
-        self.bar.setTextVisible(False)
-        self.stop = QToolButton()
-        self.stop.setText("Stop")
-        self.stop.setToolTip("Stop for now; it carries on where it left off next time")
-        self.stop.clicked.connect(watcher.stop)
-        for w in (self.label, self.bar, self.stop):
-            lay.addWidget(w)
-        watcher.state.connect(self.show_state)
-        self.show_state({"running": False, "phase": "idle"})
-
-    def show_state(self, s: dict):
-        text = describe(s)
-        self.label.setText(text)
-        self.label.setVisible(bool(text))
-        busy = bool(s["running"])
-        self.bar.setVisible(busy)
-        self.stop.setVisible(busy)
-        if busy:
-            if s["phase"] == "indexing" and s.get("todo"):
-                self.bar.setRange(0, s["todo"])
-                self.bar.setValue(s["done"])
-            elif s["phase"] == "sharpening" and s.get("sharpen_todo"):
-                self.bar.setRange(0, s["sharpen_todo"])
-                self.bar.setValue(s["sharpen_done"])
-            else:
-                self.bar.setRange(0, 0)  # busy, amount unknown

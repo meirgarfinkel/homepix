@@ -44,7 +44,7 @@ class InfoPanel(QScrollArea):
         super().__init__(parent)
         self.setObjectName("info")
         self.setWidgetResizable(True)
-        self.setMinimumWidth(280)
+        self.setMinimumWidth(200)
         body = QWidget()
         body.setObjectName("infoBody")
         lay = QVBoxLayout(body)
@@ -106,8 +106,7 @@ class InfoPanel(QScrollArea):
             if value:
                 extra = f"<br><span style='color:{muted}'>{e(note)}</span>" if note else ""
                 rows.append(
-                    f"<tr><td width='76' style='color:{muted}; padding: 0 10px 10px 0'>{e(name)}</td>"
-                    f"<td style='padding-bottom: 10px'>{value}{extra}</td></tr>"
+                    f"<p style='color:{muted}; margin:0'>{e(name)}</p><p style='margin:2px 0 14px 0'>{value}{extra}</p>"
                 )
 
         video = info.get("kind") == "video"
@@ -146,7 +145,7 @@ class InfoPanel(QScrollArea):
             )
         row("People", e(", ".join(info["people"])))
         row("Folder", breakable(info["folder"]))
-        self.label.setText(head + "<table width='100%' cellspacing='0' cellpadding='0'>" + "".join(rows) + "</table>")
+        self.label.setText(head + "".join(rows))
 
 
 def _colour(name: str) -> str:

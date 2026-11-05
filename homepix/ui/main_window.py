@@ -47,13 +47,13 @@ from . import portable as portable_ui
 from .dedupe import Dedupe
 from .file_actions import FileActions, count_of
 from .fileops import FileOps
-from .indexing import IndexStatus, IndexWatcher
+from .indexing import IndexWatcher
 from .menu import MenuButton, add_heading, add_row
 from .open_files import Opener, folder_items, photos_in
 from .organizer import Organizer
 from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
-from .status_pill import StatusPill
+from .status_line import StatusLine
 from .thumbs import ThumbLoader
 from .updates import Updater
 from .views.banner import Banner
@@ -63,7 +63,7 @@ from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
 from .views.sidebar import ALL, DUPES, JUNK, PEOPLE, WHO, Sidebar, faces_of, faces_place, person_of, person_place
-from .views.timeline import MAX_TILE, MIN_TILE, Scrubber, TimelineView
+from .views.timeline import MAX_TILE, MIN_TILE, TimelineView
 from .views.update_bar import UpdateBar
 from .views.viewer import Viewer
 from .views.welcome import Welcome
@@ -298,7 +298,7 @@ class MainWindow(QMainWindow):
         self.page_header = QWidget()
         self.page_header.setObjectName("pageHeader")
         head = QHBoxLayout(self.page_header)
-        head.setContentsMargins(24, 18, 24 + Scrubber.WIDTH, 4)
+        head.setContentsMargins(24, 18, 10, 4)  # the count ends where the years beside the photos do
         self.page_back = QToolButton()
         self.page_back.setObjectName("pageBack")
         self.page_back.setText("People")
@@ -325,7 +325,17 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.sidebar = Sidebar()
-        self.sidebar_dock = self._dock("Library", "library", self.sidebar, Qt.DockWidgetArea.LeftDockWidgetArea)
+        side = QWidget()  # the sidebar, with the status line at its bottom (never over the page)
+        side.setObjectName("sidePanel")
+        side_lay = QVBoxLayout(side)
+        side_lay.setContentsMargins(0, 0, 0, 0)
+        side_lay.setSpacing(0)
+        side_lay.addWidget(self.sidebar, 1)
+        self.status_line = StatusLine(self.watcher, self.statusBar())
+        side_lay.addWidget(self.status_line)
+        self.sidebar_dock = self._dock("Library", "library", side, Qt.DockWidgetArea.LeftDockWidgetArea)
+        self.status_line.changed.connect(lambda _: self._show_count())
+        self.sidebar_dock.visibilityChanged.connect(lambda _: self._show_count())
         self.info = InfoPanel()
         self.info_dock = self._dock("Info", "info", self.info, Qt.DockWidgetArea.RightDockWidgetArea)
 
@@ -340,13 +350,6 @@ class MainWindow(QMainWindow):
         self.updater = Updater(self)
         self.photo = PhotoActions(self)
         self._build_menus()
-        self.index_status = IndexStatus(self.watcher)
-        # messages and indexing in a small box over the page's corner: nothing moves when it shows
-        self.status_pill = StatusPill(
-            self.centralWidget(), self.statusBar(), self.index_status, right_inset=Scrubber.WIDTH
-        )
-        self.watcher.state.connect(self.status_pill.refresh)
-        self.status_pill.raise_()
         theme.signals.changed.connect(self._restyle)
         self._restyle()
 
@@ -430,12 +433,9 @@ class MainWindow(QMainWindow):
     def _restyle(self):
         """The icons, after the colours changed."""
         self.library_action.setIcon(theme.icon("sidebar", checked="text"))  # white open or closed
-        for action, name in (
-            (self.back_action, "back"),
-            (self.faces_action, "faces"),
-            (self.info_action, "info"),
-        ):
-            action.setIcon(theme.icon(name))
+        self.back_action.setIcon(theme.icon("back"))
+        for action, name in ((self.faces_action, "faces"), (self.info_action, "info")):
+            action.setIcon(theme.icon(name, checked="text"))  # white on grey when on
         self.search_box.icon = theme.icon("search")
         self.search_box.clear_icon = theme.icon("clear", "muted")
         self.page_back.setIcon(theme.icon("back", "muted"))
@@ -892,9 +892,18 @@ class MainWindow(QMainWindow):
         self._count_text()
         self.files.update_enabled()
 
+    def _show_count(self):
+        """How much is shown; with the sidebar closed, the status line's words instead while it has some."""
+        busy = bool(self.status_line.text) and self.sidebar_dock.isHidden()
+        self.count_label.setText(self.status_line.text if busy else getattr(self, "_count", ""))
+        self.count_label.setProperty("busy", busy)
+        self.count_label.style().unpolish(self.count_label)
+        self.count_label.style().polish(self.count_label)
+
     def _set_count(self, text: str):
         """The page's title (where we are) and, beside it, how much is shown."""
-        self.count_label.setText(text.strip())
+        self._count = text.strip()
+        self._show_count()
         pid, fid = person_of(self.place), faces_of(self.place)
         if self.query:
             title = f"“{self.query}”"
