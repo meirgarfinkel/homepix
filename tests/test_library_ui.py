@@ -295,29 +295,30 @@ def test_only_photos_from_outside_the_library_start_a_rescan(window, pf, lib, ap
     assert starts == [1]
 
 
-def test_messages_and_indexing_float_in_a_corner_without_moving_anything(window, app):
-    """The status pill floats over the page's bottom right; the page doesn't move when it comes or goes."""
-    pill, page = window.status_pill, window.centralWidget()
+def test_messages_and_indexing_show_at_the_bottom_of_the_sidebar(window, app):
+    """The status line sits under the sidebar, never over the page; with the sidebar closed, its words
+    take the place of the photo count until they're gone."""
+    line = window.status_line
     wait_until(app, lambda: window.loaded)
     app.processEvents()
-    before = window.stack.geometry()
-    assert not pill.isVisible() and not window.statusBar().isVisible()
+    count = window.count_label.text()
+    assert line.isHidden() and not window.statusBar().isVisible()
 
     window.statusBar().showMessage("Moved 3 photos to Trash. Ctrl+Z undoes it.")
     app.processEvents()
-    assert pill.isVisible() and "Moved 3 photos" in pill.message.text()
-    assert window.stack.geometry() == before and not window.statusBar().isVisible()
-    box = pill.geometry()
-    assert page.rect().contains(box) and box.bottom() > page.height() - 40 and box.right() > page.width() // 2
-    assert box.height() < 40  # small
+    assert line.isVisible() and "Moved 3 photos" in line.label.text()
+    assert window.sidebar.parentWidget() is line.parentWidget()  # in the sidebar
+    assert window.count_label.text() == count
 
+    window.sidebar_dock.hide()
+    app.processEvents()
+    assert "Moved 3 photos" in window.count_label.text()
     window.statusBar().clearMessage()
     app.processEvents()
-    assert not pill.isVisible()
+    assert window.count_label.text() == count and line.isHidden()
+    window.sidebar_dock.show()
 
-    window.index_status.show_state({"running": True, "phase": "scanning", "done": 0, "todo": 0})
-    pill.refresh()
-    assert pill.isVisible() and window.index_status.stop.isVisible() and window.stack.geometry() == before
-    window.index_status.show_state({"running": False, "phase": "idle"})
-    pill.refresh()
-    assert not pill.isVisible()
+    line.show_state({"running": True, "phase": "scanning", "done": 0, "todo": 0})
+    assert line.isVisible() and line.stop.isVisible()
+    line.show_state({"running": False, "phase": "idle"})
+    assert line.isHidden()

@@ -18,12 +18,12 @@ def app(pf):
 def test_dark_by_default_and_switches(app):
     theme.apply(app)
     assert theme.mode() == "dark" and theme._dark
-    assert app.palette().color(QPalette.ColorRole.Window).name() == "#1f1f28"
+    assert app.palette().color(QPalette.ColorRole.Window).name() == "#14171c"
     theme.set_mode("light")
     assert load_settings()["theme"] == "light"
     assert not theme._dark
     assert app.palette().color(QPalette.ColorRole.Window).name() == "#ffffff"
-    assert theme.color("accent").name() == "#0a7dad"
+    assert theme.color("accent").name() == "#966230"
     theme.set_mode("dark")
 
 

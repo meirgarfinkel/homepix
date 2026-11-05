@@ -96,7 +96,7 @@ class CountDelegate(QStyledItemDelegate):
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         chosen = option.state & QStyle.StateFlag.State_Selected
-        muted = theme.color("accentInk" if chosen else "muted")
+        muted = theme.color("sideStrong" if chosen else "muted")
         arrow = QRectF(option.rect.right() - RIGHT - CHEVRON, option.rect.top(), CHEVRON, option.rect.height())
         if text:
             p.setPen(muted)
@@ -112,7 +112,7 @@ class CountDelegate(QStyledItemDelegate):
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(theme.color("hoverStrong"))
                 p.drawEllipse(arrow.center(), 12, 12)
-            pen = QPen(theme.color("accentInk" if chosen else "text"), 1.6)
+            pen = QPen(theme.color("sideStrong" if chosen else "text"), 1.6)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
@@ -182,11 +182,8 @@ class Sidebar(QTreeWidget):
             junk.setToolTip(0, "Photos you may not need")
             self._style_count(junk)
             self.addTopLevelItem(junk)
-        heading = QTreeWidgetItem(["FOLDERS", ""])
-        heading.setFlags(Qt.ItemFlag.NoItemFlags)  # a label, not a place
-        font = theme.font(11, QFont.Weight.Bold)
-        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108)
-        heading.setFont(0, font)
+        heading = QTreeWidgetItem(["Folders", ""])
+        heading.setFlags(Qt.ItemFlag.NoItemFlags)  # a label, not a place: the folders' font, greyed
         heading.setForeground(0, theme.color("muted"))
         self.addTopLevelItem(heading)
         for root, node in folder_tree(roots, counts).items():

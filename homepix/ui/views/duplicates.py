@@ -173,13 +173,19 @@ class _Row(QStyledItemDelegate):
                 p.setPen(QPen(c_("accent"), 3))
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawRoundedRect(QRectF(r).adjusted(-RING, -RING, RING, RING), RADIUS + RING, RADIUS + RING)
-                _draw_pill(p, r.left() + 10, r.top() + 10, "✓ Keep", c_("accent"), c_("accentInk"))
+                _draw_pill(p, r.left() + 10, r.top() + 10, "✓ Keep", c_("accentFill"), c_("accentInk"))
             else:
                 mark = "Same file" if g.how == "exact" else "Extra copy"
                 _draw_pill(p, r.left() + 10, r.top() + 10, mark, QColor(0, 0, 0, 140), QColor(255, 255, 255))
                 if over:
                     _draw_pill(
-                        p, r.center().x(), r.center().y(), "Keep this one", c_("accent"), c_("accentInk"), centre=True
+                        p,
+                        r.center().x(),
+                        r.center().y(),
+                        "Keep this one",
+                        c_("accentFill"),
+                        c_("accentInk"),
+                        centre=True,
                     )
             y = r.bottom() + 10
             p.setFont(self.view.font())
