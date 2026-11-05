@@ -305,7 +305,7 @@ class TimelineView(QAbstractScrollArea):
         """A tick in an accent circle, top left: it's selected."""
         centre = QPointF(rect.x() + 20, rect.y() + 20)
         p.setPen(QPen(theme.color("bg"), 2))
-        p.setBrush(theme.color("accent"))
+        p.setBrush(theme.color("accentFill"))
         p.drawEllipse(centre, 12, 12)
         tick = QPainterPath(centre + QPointF(-5, 0.5))
         tick.lineTo(centre + QPointF(-1.5, 4))

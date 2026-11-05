@@ -6,8 +6,8 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPainter, QPainterPath
+from PySide6.QtCore import QRect, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence, QPainter
 from PySide6.QtWidgets import (
     QDockWidget,
     QHBoxLayout,
@@ -160,56 +160,6 @@ def run_search(index: SearchIndex, q: str, place):
         if rows:
             sections.append(Month("0000-00", [item_from_row(r) for r in rows], title))
     return sections, len(found["matches"]), time.perf_counter() - start
-
-
-class _Corner(QWidget):
-    """A rounded top corner of the page, where it meets the toolbar and a side panel: the panels'
-    colour painted outside a quarter circle, so the photos sit in a well inside one band."""
-
-    RADIUS = 16
-
-    def __init__(self, page: QWidget, right: bool):
-        super().__init__(page)
-        self.right = right
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setFixedSize(self.RADIUS, self.RADIUS)
-        page.installEventFilter(self)
-        self._place()
-
-    def eventFilter(self, obj, e):
-        if e.type() == QEvent.Type.Resize:
-            self._place()
-        return False
-
-    def _place(self):
-        self.move(self.parentWidget().width() - self.RADIUS if self.right else 0, 0)
-        self.raise_()
-
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = self.RADIUS
-        outside, rounded = QPainterPath(), QPainterPath()
-        outside.addRect(QRectF(0, 0, r, r))
-        x = -r if self.right else 0
-        rounded.addEllipse(QRectF(x, 0, 2 * r, 2 * r))
-        p.fillPath(outside.subtracted(rounded), theme.color("side"))
-
-
-class _CornerSwitch(QObject):
-    """Shows a corner only while its side panel is open."""
-
-    def __init__(self, corner: _Corner, dock: QDockWidget):
-        super().__init__(corner)
-        self.corner, self.dock = corner, dock
-        dock.installEventFilter(self)
-        corner.setVisible(dock.isVisible())
-
-    def eventFilter(self, obj, e):
-        if e.type() in (QEvent.Type.Show, QEvent.Type.Hide):
-            self.corner.setVisible(self.dock.isVisible())
-            self.corner.raise_()
-        return False
 
 
 def _spacer(width: int, stretch: bool = False) -> QWidget:
@@ -396,9 +346,6 @@ class MainWindow(QMainWindow):
             self.centralWidget(), self.statusBar(), self.index_status, right_inset=Scrubber.WIDTH
         )
         self.watcher.state.connect(self.status_pill.refresh)
-        self.corners = [_Corner(central, right) for right in (False, True)]
-        for corner, dock in zip(self.corners, (self.sidebar_dock, self.info_dock), strict=True):
-            _CornerSwitch(corner, dock)
         self.status_pill.raise_()
         theme.signals.changed.connect(self._restyle)
         self._restyle()
@@ -495,16 +442,14 @@ class MainWindow(QMainWindow):
         self.search_box.update()
         self.brand.setPixmap(theme.brand_mark())
         self.timeline.viewport().update()
-        for corner in getattr(self, "corners", ()):
-            corner.update()
 
     def _build_toolbar(self):
         bar = QToolBar("Main", self)
         bar.setObjectName("main")
         bar.setMovable(False)
         bar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-        bar.setIconSize(QSize(20, 20))
-        bar.setFixedHeight(60)
+        bar.setIconSize(QSize(18, 18))
+        bar.setFixedHeight(52)
         self.addToolBar(bar)
         bar.addWidget(_spacer(6))
         self.brand = QLabel()
