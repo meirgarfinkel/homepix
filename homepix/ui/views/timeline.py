@@ -7,7 +7,6 @@ binary search.
 
 import bisect
 import calendar
-import itertools
 import math
 from dataclasses import dataclass
 
@@ -589,27 +588,50 @@ class TimelineView(QAbstractScrollArea):
         return self._height
 
 
-def year_labels(starts: list, gap: float, bottom: float) -> list:
-    """Where to put each year's label: at its start, moved just enough that none overlap (gap apart)
-    and all fit above bottom. If even that can't fit them all, every second (third...) year is left
-    out, evenly. starts: (year, section, y) top to bottom; gives the same with the label's y."""
-    if not starts:
-        return []
-    step = max(1, math.ceil(len(starts) * gap / max(gap, bottom + gap)))
-    keep = starts[::step]
-    ys, prev = [], -gap
-    for _, _, y in keep:  # down: no closer than gap to the one above
-        prev = max(y, prev + gap)
-        ys.append(prev)
-    nxt = bottom + gap
-    for i in range(len(ys) - 1, -1, -1):  # up: fit above bottom, still gap apart
-        nxt = min(ys[i], nxt - gap)
-        ys[i] = max(0.0, nxt)
-    return [(year, mi, y) for (year, mi, _), y in zip(keep, ys, strict=True)]
+def scrubber_marks(n_years: int, height: float, line: float, tick_gap: float = 16) -> tuple:
+    """Where the year labels and the little lines between them go. Every year gets the same share of
+    the height, its label at the top of its share. If labels would be closer than a line apart, only
+    every second (third...) year is labelled. The space between labels is filled with as many short
+    lines as fit about tick_gap apart: many when there are few years, few when there are many.
+    Gives ([(year index, label y)], [line y])."""
+    if n_years <= 0 or height <= 0:
+        return [], []
+    seg = height / n_years
+    step = max(1, math.ceil((line + 4) / seg))
+    labels = [(k, k * seg) for k in range(0, n_years, step) if k * seg + line <= height]
+    ticks = []
+    for (_, y), ny in zip(labels, [y for _, y in labels[1:]] + [height], strict=True):
+        top, space = y + line, ny - y - line
+        n = int(space // tick_gap) if space > 0 else 0
+        ticks += [top + space * j / (n + 1) for j in range(1, n + 1)]
+    return labels, ticks
+
+
+def to_bar(starts: list, total: float, height: float, c: float) -> float:
+    """A spot in the photos (c, in pixels) to a spot on the scrubber, where every year is the same
+    length. starts: where each year begins in the photos, top to bottom; total: the photos' height."""
+    if not starts or height <= 0:
+        return 0.0
+    seg = height / len(starts)
+    k = max(0, bisect.bisect_right(starts, c) - 1)
+    end = starts[k + 1] if k + 1 < len(starts) else total
+    frac = (c - starts[k]) / max(1.0, end - starts[k])
+    return seg * (k + min(1.0, max(0.0, frac)))
+
+
+def from_bar(starts: list, total: float, height: float, y: float) -> float:
+    """The other way: a spot on the scrubber to a spot in the photos."""
+    if not starts or height <= 0:
+        return 0.0
+    seg = height / len(starts)
+    k = min(len(starts) - 1, max(0, int(y // seg)))
+    end = starts[k + 1] if k + 1 < len(starts) else total
+    frac = min(1.0, max(0.0, y / seg - k))
+    return starts[k] + frac * (end - starts[k])
 
 
 class Scrubber(QWidget):
-    """Years down the right edge, marked where they start. Click or drag to jump; the bubble shows
+    """Years down the right edge, evenly spaced, with short lines between. Click or drag to jump; the bubble shows
     the month you'd land on. Takes the place of the scroll bar."""
 
     WIDTH = 48
@@ -631,8 +653,20 @@ class Scrubber(QWidget):
     def sizeHint(self):
         return QSize(self.WIDTH, 100)
 
-    def _scale(self) -> float:
-        return self.height() / max(1, self.view.content_height())
+    def _years(self) -> list:
+        """(year, its first section, where it starts in the photos), top to bottom."""
+        years, seen = [], set()
+        for mi, m in enumerate(self.view.months):  # newest first, so a year's first section is its December
+            if m.year not in seen:
+                seen.add(m.year)
+                years.append((m.year, mi, self.view.month_y(mi)))
+        return years
+
+    def _bar(self, c: float) -> float:
+        return to_bar([y for *_, y in self._years()], self.view.content_height(), self.height(), c)
+
+    def _content(self, y: float) -> float:
+        return from_bar([c for *_, c in self._years()], self.view.content_height(), self.height(), y)
 
     def paintEvent(self, e):
         v = self.view
@@ -640,50 +674,40 @@ class Scrubber(QWidget):
         if not v.months:
             return
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        scale = self._scale()
         accent = theme.color("accent")
         font = theme.font(11, QFont.Weight.DemiBold)
         bold = theme.font(11, QFont.Weight.Bold)
         p.setFont(font)
         line = p.fontMetrics().height()
+        years = self._years()
         shown = v.months[v.visible_months()[0]].year if v.rows else None
+        labels, ticks = scrubber_marks(len(years), self.height(), line)
+        right = self.width() - 10
         self._labels = []
-        for year, mi, y in year_labels(self._year_starts(scale), line + 2, self.height() - line - 4):
+        for k, y in labels:
+            year, mi, _ = years[k]
             now = year == shown
-            p.setPen(theme.color("yearNow") if now else accent)
+            p.setPen(accent if now else theme.color("yearText"))
             p.setFont(bold if now else font)
-            rect = QRect(0, round(y), self.width() - 10, line)
-            p.drawText(rect, Qt.AlignmentFlag.AlignRight, str(year))
+            rect = QRect(0, round(y), right, line)
+            p.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, str(year))
             self._labels.append((rect, mi))
-        # a short thin line between one year and the next, a quarter of the scrubber wide
+        # short thin lines filling the space between the years
         tick = theme.color("muted")
         tick.setAlpha(110)
         p.setPen(QPen(tick, 1))
-        right = self.width() - 10
-        for (above, _), (below, _) in itertools.pairwise(self._labels):
-            y = (above.bottom() + below.top()) / 2
+        for y in ticks:
             p.drawLine(QPointF(right - self.WIDTH / 4, y), QPointF(right, y))
         # where the screen is now
-        bar = v.verticalScrollBar()
-        top = bar.value() * scale
-        h = max(6.0, v.viewport().height() * scale)
+        top = self._bar(v.verticalScrollBar().value())
+        bottom = self._bar(v.verticalScrollBar().value() + v.viewport().height())
         p.setPen(Qt.PenStyle.NoPen)
-        hl = accent
-        p.setBrush(hl)  # the size slider's colour
-        p.drawRoundedRect(self.width() - 4, int(top), 3, int(h), 1.5, 1.5)
+        p.setBrush(accent)  # the size slider's colour
+        p.drawRoundedRect(QRectF(self.width() - 4, top, 3, max(6.0, bottom - top)), 1.5, 1.5)
         if self._hover_y is not None:
-            p.setPen(QPen(hl, 2))
+            p.setPen(QPen(accent, 2))
             p.drawLine(0, int(self._hover_y), self.width(), int(self._hover_y))
         p.end()
-
-    def _year_starts(self, scale: float) -> list:
-        """(year, its first section, where that section starts on the scrubber), top to bottom."""
-        starts, seen = [], set()
-        for mi, m in enumerate(self.view.months):  # newest first, so a year's first section is its December
-            if m.year not in seen:
-                seen.add(m.year)
-                starts.append((m.year, mi, self.view.month_y(mi) * scale))
-        return starts
 
     def _label_at(self, y: float):
         """The section of the year label at y, if there's one there."""
@@ -693,20 +717,20 @@ class Scrubber(QWidget):
         return None
 
     def _month_label(self, y: float) -> str:
-        mi = self.view.month_at_y(int(y / self._scale()))
+        mi = self.view.month_at_y(int(self._content(y)))
         if mi < 0:
             return ""
         m = self.view.months[mi]
         return f"{calendar.month_name[m.month]} {m.year}" if m.month else str(m.year)
 
     def _jump_to(self, y: float):
-        target = int(y / self._scale()) - self.view.viewport().height() // 2
+        target = int(self._content(y)) - self.view.viewport().height() // 2
         self.view.verticalScrollBar().setValue(target)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             mi = self._label_at(e.position().y())
-            if mi is not None:  # a year: go to its start (labels can sit a little off from it)
+            if mi is not None:  # a year: go to its start
                 self.view.verticalScrollBar().setValue(self.view.month_y(mi))
                 return
             self._drag = True
