@@ -7,7 +7,6 @@ binary search.
 
 import bisect
 import calendar
-import math
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
@@ -588,17 +587,38 @@ class TimelineView(QAbstractScrollArea):
         return self._height
 
 
-def scrubber_marks(n_years: int, height: float, line: float, tick_gap: float = 16) -> tuple:
-    """Where the year labels and the little lines between them go. Every year gets the same share of
-    the height, its label at the top of its share. If labels would be closer than a line apart, only
-    every second (third...) year is labelled. The space between labels is filled with as many short
-    lines as fit about tick_gap apart: many when there are few years, few when there are many.
-    Gives ([(year index, label y)], [line y])."""
-    if n_years <= 0 or height <= 0:
+def year_bounds(starts: list, total: float, height: float, min_share: float) -> list:
+    """Where each year's share of the scrubber begins and ends (n + 1 values, 0 to height). Every
+    year gets at least min_share (less only if there isn't room for that), and what's left is
+    shared out by how tall the year is in the photos. starts: where each year begins in the
+    photos, top to bottom; total: the photos' height."""
+    n = len(starts)
+    if n == 0 or height <= 0:
+        return [0.0]
+    spans = [max(0.0, e - s) for s, e in zip(starts, [*starts[1:], total], strict=True)]
+    base = min(min_share, height / n)
+    extra = height - n * base
+    whole = sum(spans)
+    bounds, y = [0.0], 0.0
+    for sp in spans:
+        y += base + (extra * sp / whole if whole else extra / n)
+        bounds.append(y)
+    bounds[-1] = float(height)
+    return bounds
+
+
+def scrubber_marks(bounds: list, line: float, tick_gap: float = 16) -> tuple:
+    """Where the year labels and the short lines between them go. Each year's label sits at the top
+    of its share (bounds, from year_bounds); a year too close below the last label shown is left
+    unlabelled. The space between labels fills with as many short lines as fit about tick_gap
+    apart. Gives ([(year index, label y)], [line y])."""
+    if len(bounds) < 2:
         return [], []
-    seg = height / n_years
-    step = max(1, math.ceil((line + 4) / seg))
-    labels = [(k, k * seg) for k in range(0, n_years, step) if k * seg + line <= height]
+    height = bounds[-1]
+    labels = []
+    for k, y in enumerate(bounds[:-1]):
+        if y + line <= height and (not labels or y >= labels[-1][1] + line + 4):
+            labels.append((k, y))
     ticks = []
     for (_, y), ny in zip(labels, [y for _, y in labels[1:]] + [height], strict=True):
         top, space = y + line, ny - y - line
@@ -607,32 +627,30 @@ def scrubber_marks(n_years: int, height: float, line: float, tick_gap: float = 1
     return labels, ticks
 
 
-def to_bar(starts: list, total: float, height: float, c: float) -> float:
-    """A spot in the photos (c, in pixels) to a spot on the scrubber, where every year is the same
-    length. starts: where each year begins in the photos, top to bottom; total: the photos' height."""
-    if not starts or height <= 0:
+def to_bar(starts: list, total: float, bounds: list, c: float) -> float:
+    """A spot in the photos (c, in pixels) to a spot on the scrubber, through each year's share."""
+    if not starts:
         return 0.0
-    seg = height / len(starts)
     k = max(0, bisect.bisect_right(starts, c) - 1)
     end = starts[k + 1] if k + 1 < len(starts) else total
-    frac = (c - starts[k]) / max(1.0, end - starts[k])
-    return seg * (k + min(1.0, max(0.0, frac)))
+    frac = min(1.0, max(0.0, (c - starts[k]) / max(1.0, end - starts[k])))
+    return bounds[k] + frac * (bounds[k + 1] - bounds[k])
 
 
-def from_bar(starts: list, total: float, height: float, y: float) -> float:
+def from_bar(starts: list, total: float, bounds: list, y: float) -> float:
     """The other way: a spot on the scrubber to a spot in the photos."""
-    if not starts or height <= 0:
+    if not starts:
         return 0.0
-    seg = height / len(starts)
-    k = min(len(starts) - 1, max(0, int(y // seg)))
+    k = min(len(starts) - 1, max(0, bisect.bisect_right(bounds, y) - 1))
     end = starts[k + 1] if k + 1 < len(starts) else total
-    frac = min(1.0, max(0.0, y / seg - k))
+    frac = min(1.0, max(0.0, (y - bounds[k]) / max(1e-9, bounds[k + 1] - bounds[k])))
     return starts[k] + frac * (end - starts[k])
 
 
 class Scrubber(QWidget):
-    """Years down the right edge, evenly spaced, with short lines between. Click or drag to jump; the bubble shows
-    the month you'd land on. Takes the place of the scroll bar."""
+    """Years down the right edge: each gets room for its label, the rest is shared out by size, and
+    short lines fill the gaps. Click or drag to jump; the bubble shows the month you'd land on.
+    Takes the place of the scroll bar."""
 
     WIDTH = 48
 
@@ -662,11 +680,18 @@ class Scrubber(QWidget):
                 years.append((m.year, mi, self.view.month_y(mi)))
         return years
 
+    MIN_SHARE = 30  # the least room a year gets: its label and a short line
+
+    def _map(self):
+        starts = [c for *_, c in self._years()]
+        total = self.view.content_height()
+        return starts, total, year_bounds(starts, total, self.height(), self.MIN_SHARE)
+
     def _bar(self, c: float) -> float:
-        return to_bar([y for *_, y in self._years()], self.view.content_height(), self.height(), c)
+        return to_bar(*self._map(), c)
 
     def _content(self, y: float) -> float:
-        return from_bar([c for *_, c in self._years()], self.view.content_height(), self.height(), y)
+        return from_bar(*self._map(), y)
 
     def paintEvent(self, e):
         v = self.view
@@ -681,7 +706,8 @@ class Scrubber(QWidget):
         line = p.fontMetrics().height()
         years = self._years()
         shown = v.months[v.visible_months()[0]].year if v.rows else None
-        labels, ticks = scrubber_marks(len(years), self.height(), line)
+        _, _, bounds = self._map()
+        labels, ticks = scrubber_marks(bounds, line)
         right = self.width() - 10
         self._labels = []
         for k, y in labels:
