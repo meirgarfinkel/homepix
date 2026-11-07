@@ -45,7 +45,7 @@ TOKENS = {
         "sideStrong": "rgba(20,20,20,0.95)",
         "ok": "#2E8A55",  # how many photos and videos
         "danger": "#C0392B",
-        "yearNow": "#1F2733",  # the year on screen, in the years beside the photos
+        "yearText": "#1F2733",  # the years beside the photos (the one on screen is accent)
     },
     "dark": {
         "bg": "#14171C",
@@ -67,7 +67,7 @@ TOKENS = {
         "sideStrong": "rgba(255,255,255,0.95)",
         "ok": "#86D9A6",
         "danger": "#F0776A",
-        "yearNow": "#FFFFFF",
+        "yearText": "#FFFFFF",
     },
 }
 
