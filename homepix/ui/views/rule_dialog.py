@@ -4,6 +4,7 @@ folder in the library, or the library's year folders when organizing), and how i
 import os
 from dataclasses import replace
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QStackedWidget,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -74,25 +75,32 @@ class RuleDialog(QDialog):
         self.name = QLineEdit(r.name)
         self.name.setPlaceholderText("e.g. Dad's phone")
         form.addRow("Name:", self.name)
-        self.watch = QLineEdit(r.watch)
-        self.watch.setPlaceholderText("The folder your sync app puts new photos in")
-        form.addRow("Import from:", _folder_row(self.watch, self._choose_watch))
         self.tidy = QCheckBox("Rename and organize into year folders")  # (it decides what Import to offers)
         self.tidy.setChecked(r.tidy)
         self.tidy.toggled.connect(self._tidy_toggled)
         form.addRow("", self.tidy)
+        self.watch = QLineEdit(r.watch)
+        self.watch.setPlaceholderText("The folder your sync app puts new photos in")
+        form.addRow("Import from:", _folder_row(self.watch, self._choose_watch))
 
         # Import to: a folder in the library, or (organizing) which library folder's year folders
         self.dest = QLineEdit(r.dest if not r.tidy else "")
         self.dest.setPlaceholderText("A folder in your library")
         self.root = QComboBox()
+        self.root.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.root.setMinimumContentsLength(20)  # (a long path doesn't widen the window)
         for f in folders:
             self.root.addItem(f, f)
         if r.tidy and r.dest in folders:
             self.root.setCurrentIndex(folders.index(r.dest))
-        self.to = QStackedWidget()
-        self.to.addWidget(_folder_row(self.dest, self._choose_dest))
-        self.to.addWidget(self.root)
+        # only one shows: a folder to choose, or (organizing) a library folder
+        self.to = QWidget()
+        to_row = QHBoxLayout(self.to)
+        to_row.setContentsMargins(0, 0, 0, 0)
+        self.dest_row = _folder_row(self.dest, self._choose_dest)
+        to_row.addWidget(self.dest_row)
+        to_row.addWidget(self.root)
+        self.to.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         form.addRow("Import to:", self.to)
 
         options = QVBoxLayout()  # (a plain column: a form layout leaves gaps around wrapped text)
@@ -131,7 +139,9 @@ class RuleDialog(QDialog):
         self.adjustSize()
 
     def _tidy_toggled(self, on: bool):
-        self.to.setCurrentIndex(1 if on else 0)
+        self.dest_row.setVisible(not on)
+        self.root.setVisible(on)
+        QTimer.singleShot(0, self._fit_notes)  # (once the layout has caught up: no gap left behind)
 
     def _empty_toggled(self, on: bool):
         self.empty_note.setText(EMPTY_WARNING if on else KEEP_NOTE)
@@ -141,7 +151,7 @@ class RuleDialog(QDialog):
         """Give each wrapped note the height its lines need at its width (layouts don't on their own)."""
         for label in self.findChildren(QLabel):
             if label.objectName() == "hint" and label.width() > 50:
-                label.setMinimumHeight(label.heightForWidth(label.width()))
+                label.setFixedHeight(label.heightForWidth(label.width()))  # (its own guess is too tall)
         self.adjustSize()
 
     def showEvent(self, e):
@@ -151,9 +161,6 @@ class RuleDialog(QDialog):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if e.oldSize().width() != e.size().width():
-            for label in self.findChildren(QLabel):
-                if label.objectName() == "hint":
-                    label.setMinimumHeight(0)
             self._fit_notes()
 
     def _choose_watch(self):
