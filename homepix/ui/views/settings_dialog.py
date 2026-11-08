@@ -1,5 +1,5 @@
 """Settings: the folders that make up the library, the folders excluded from it (exclude a folder,
-take one back in), import automations, the app to edit photos in, and the look."""
+take one back in), import automations, the app to edit photos in, and the theme."""
 
 import os
 from pathlib import Path
@@ -61,6 +61,7 @@ class SettingsDialog(QDialog):
         self.remove = QPushButton("Remove")
         self.remove.clicked.connect(self._remove_folder)
         rescan = QPushButton("Check for new photos now")
+        rescan.setObjectName("checkButton")
         rescan.clicked.connect(self.rescan_requested)
         row.addWidget(add)
         row.addWidget(self.remove)
@@ -101,8 +102,7 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         lay.addWidget(note)
         self.rule_list = QListWidget()
-        self.rule_list.setMinimumHeight(130)  # (two rules, two lines each)
-        self.rule_list.setSpacing(2)
+        self.rule_list.setMinimumHeight(90)  # (room for a few)
         self.rule_list.itemSelectionChanged.connect(self._selected_folder)
         self.rule_list.itemDoubleClicked.connect(lambda _: self._edit_rule())
         lay.addWidget(self.rule_list, 2)
@@ -114,6 +114,7 @@ class SettingsDialog(QDialog):
         self.remove_rule_button = QPushButton("Remove")
         self.remove_rule_button.clicked.connect(self._remove_rule)
         self.check_now = QPushButton("Check now")
+        self.check_now.setObjectName("checkButton")
         self.check_now.clicked.connect(self.import_check_requested)
         for b in (self.add_rule_button, self.edit_rule_button, self.remove_rule_button):
             row.addWidget(b)
@@ -135,7 +136,7 @@ class SettingsDialog(QDialog):
         form.addWidget(self.editor, 1)
         lay.addLayout(form)
         lay.addSpacing(10)
-        lay.addWidget(QLabel("<b>Look</b>"))
+        lay.addWidget(QLabel("<b>Theme</b>"))
         self.look = QComboBox()
         for key, name in theme.MODES.items():
             self.look.addItem(name, key)
@@ -176,7 +177,7 @@ class SettingsDialog(QDialog):
         keep = self._chosen(self.rule_list)
         self.rule_list.clear()
         for r in autoimport.load_rules():
-            item = QListWidgetItem(theme.icon("folder", "muted"), f"{r.name}\n{describe(r)}")
+            item = QListWidgetItem(theme.icon("folder", "muted"), f"{r.name}  ·  {describe(r)}")
             item.setData(Qt.ItemDataRole.UserRole, r.id)
             item.setToolTip(f"Import from {r.watch}\nImport to {'the year folders in ' if r.tidy else ''}{r.dest}")
             self.rule_list.addItem(item)
