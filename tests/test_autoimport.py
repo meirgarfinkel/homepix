@@ -264,3 +264,52 @@ def test_the_rule_dialog_greys_out_the_destination_when_tidying(app, pf, lib, tm
     d2.dest.setText(str(lib))
     d2._save()
     assert "already watches" in d2.problem.text()
+
+
+def test_a_review_can_leave_some_out_for_next_time(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib, auto=False)
+    photo(tmp_path / "Phone" / "a.jpg")
+    photo(tmp_path / "Phone" / "b.jpg")
+    batch = ai.check(db, r, [str(lib)], now=LATER())
+    ai.run(db, batch.without([str(tmp_path / "Phone" / "b.jpg")]))
+    assert names(lib / "From phone") == ["a.jpg"] and names(tmp_path / "Phone") == ["b.jpg"]
+    again = ai.check(db, r, [str(lib)], now=LATER())
+    assert [os.path.basename(f.path) for f, _ in again.imports] == ["b.jpg"]
+
+
+def test_a_rule_that_waits_offers_a_review(app, pf, lib, tmp_path, monkeypatch):
+    from conftest import open_window, own_trash, wait_until
+
+    from homepix.ui.views import review_dialog
+
+    own_trash(monkeypatch, tmp_path)
+    monkeypatch.setattr(ai, "SETTLE", 0)
+    pf.add_folder(lib)
+    r = rule(tmp_path, lib, auto=False)
+    ai.save_rules([r])
+    photo(tmp_path / "Phone" / "a.jpg")
+    photo(tmp_path / "Phone" / "b.jpg")
+    w = open_window(app)
+    try:
+        w.importer.check()
+        wait_until(app, lambda: w.review_bar.isVisible())
+        assert "2 new files from Dad's phone" in w.review_bar.label.text()
+        assert names(tmp_path / "Phone") == ["a.jpg", "b.jpg"]  # nothing done yet
+
+        def review(dlg):  # untick b.jpg, then Import
+            dlg.grid.item(1).setCheckState(review_dialog.Qt.CheckState.Unchecked)
+            assert dlg.go.text() == "Import 1"
+            return review_dialog.ReviewDialog.DialogCode.Accepted
+
+        def fake_exec(self):
+            self.setResult(review(self))
+            return self.result()
+
+        monkeypatch.setattr(review_dialog.ReviewDialog, "exec", fake_exec)
+        w.review_bar.review_button.click()
+        wait_until(app, lambda: w.import_bar.isVisible())
+        assert names(lib / "From phone") == ["a.jpg"] and names(tmp_path / "Phone") == ["b.jpg"]
+        assert not w.review_bar.isVisible()
+    finally:
+        w.close()

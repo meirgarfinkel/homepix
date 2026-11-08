@@ -171,11 +171,21 @@ def settled_files(watch: str, now: float | None = None, should_stop=lambda: Fals
     return out
 
 
-def _sha256(path: str) -> str:
+_hashes: dict[tuple, str] = {}  # (path, size, time) -> its hash: files waiting for review aren't read every hour
+
+
+def _sha256(path: str, st=None) -> str:
+    key = (path, st.st_size, st.st_mtime) if st is not None else None
+    if key in _hashes:
+        return _hashes[key]
     d = hashlib.sha256()
     with open(path, "rb") as f:
         while chunk := f.read(1 << 20):
             d.update(chunk)
+    if key is not None:
+        if len(_hashes) > 50_000:
+            _hashes.clear()
+        _hashes[key] = d.hexdigest()
     return d.hexdigest()
 
 
@@ -206,6 +216,20 @@ class Batch:
 
     def summary(self) -> str:
         return summary([self])
+
+    def without(self, paths) -> "Batch":
+        """The same, leaving out some of the files to import (unticked in a review): they're left as
+        they are, and offered again next time."""
+        out = {path_key(p) for p in paths}
+        b = Batch(
+            self.rule,
+            [(f, d) for f, d in self.imports if path_key(f.path) not in out],
+            self.already,
+            self.unwanted,
+            self.cant,
+        )
+        b.steps = _steps(b)
+        return b
 
 
 def _known(db, path: str, st) -> bool:
@@ -243,7 +267,7 @@ def check(db, rule: Rule, folders: list[str], now=None, should_stop=lambda: Fals
         if _known(db, path, st):
             continue
         try:
-            sha = _sha256(path)
+            sha = _sha256(path, st)
         except OSError as e:
             batch.cant.append((path, e.strerror or str(e)))
             continue

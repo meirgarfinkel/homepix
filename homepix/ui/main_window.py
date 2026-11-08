@@ -60,7 +60,7 @@ from .updates import Updater
 from .views.banner import Banner
 from .views.duplicates import DuplicatesView
 from .views.faces import PersonFaces, WhoView
-from .views.import_bar import ImportBar
+from .views.import_bar import ImportBar, ReviewBar
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
@@ -299,6 +299,7 @@ class MainWindow(QMainWindow):
         self.banner = Banner()
         self.update_bar = UpdateBar()
         self.import_bar = ImportBar()
+        self.review_bar = ReviewBar()
         self.page_header = QWidget()
         self.page_header.setObjectName("pageHeader")
         head = QHBoxLayout(self.page_header)
@@ -324,6 +325,7 @@ class MainWindow(QMainWindow):
         lay.setSpacing(0)
         lay.addWidget(self.update_bar)
         lay.addWidget(self.import_bar)
+        lay.addWidget(self.review_bar)
         lay.addWidget(self.banner)
         lay.addWidget(self.page_header)
         lay.addWidget(self.stack, 1)
@@ -389,6 +391,7 @@ class MainWindow(QMainWindow):
         self.banner.forget_missing.connect(self._forget_missing)
         self.import_bar.see.connect(lambda place: self.show_place(place or ALL))
         self.import_bar.undo.connect(self.importer.undo)
+        self.review_bar.review.connect(self.importer.review)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
         self.watcher.library_changed.connect(self.reload)
         self.watcher.state.connect(self._repaint_while_sharpening)

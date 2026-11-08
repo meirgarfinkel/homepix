@@ -1,6 +1,7 @@
 """Auto import in the app: the rules' watch folders are checked a little after the window opens, then
 every hour, or when asked (Check now). New files come in for rules that import by themselves, and a
-bar says what came in, with See them and Undo."""
+bar says what came in, with See them and Undo. For the others, a bar says new files are waiting, and
+Review shows them before anything is done."""
 
 import datetime as dt
 
@@ -11,6 +12,7 @@ from ..core import autoimport, fileops
 from ..core.db import open_db
 from ..core.settings import library_folders
 from .fileops import counted, plural
+from .views.review_dialog import ReviewDialog
 from .views.sidebar import ALL
 
 FIRST = 30_000  # ms after the window opens (anything interrupted is finished by then)
@@ -57,6 +59,7 @@ class AutoImporter(QObject):
         self.timer = QTimer(self)
         self.timer.setInterval(HOURLY)
         self.timer.timeout.connect(self.check)
+        self.waiting: dict[str, autoimport.Batch] = {}  # rule id: what it found, for rules that wait for review
 
     def start(self):
         QTimer.singleShot(FIRST, self.check)
@@ -94,6 +97,65 @@ class AutoImporter(QObject):
         if err is not None:
             self.window.statusBar().showMessage(f"Auto import didn't work: {err}", 12000)
             return
+        for b in res.batches:
+            if b.rule.auto:
+                continue
+            if b.imports:
+                self.waiting[b.rule.id] = b
+            else:
+                self.waiting.pop(b.rule.id, None)
+        self._show_waiting()
+        self._report(res, asked)
+
+    def _show_waiting(self):
+        if not self.waiting:
+            self.window.review_bar.hide()
+            return
+        n = sum(len(b.imports) for b in self.waiting.values())
+        names = " and ".join(b.rule.name for b in self.waiting.values())
+        self.window.review_bar.show_waiting(f"{plural(n, 'new file')} from {names} waiting for you to review.")
+
+    def review(self):
+        """Show what the first rule waiting found; import what's left ticked."""
+        if not self.waiting:
+            self.window.review_bar.hide()
+            return
+        rule_id, batch = next(iter(self.waiting.items()))
+        dlg = ReviewDialog(batch, self.window)
+        if dlg.exec() != ReviewDialog.DialogCode.Accepted:
+            return
+        chosen = dlg.chosen()
+        left = len(batch.imports) - len(chosen.imports)
+
+        def work(progress, should_stop):
+            db = open_db()
+            try:
+                return autoimport.Checked([chosen], autoimport.run(db, chosen, progress, should_stop))
+            finally:
+                db.close()
+
+        def done(res, err):
+            if err is None:
+                self.waiting.pop(rule_id, None)
+                autoimport.set_status(rule_id, pending=left)
+                if res.result is not None and (n := res.imported(chosen)):
+                    autoimport.set_status(rule_id, imported=autoimport._now(), count=n)
+            self.checked.emit()
+            self._show_waiting()
+            if err is not None:
+                self.window.statusBar().showMessage(f"Import didn't work: {err}", 12000)
+                return
+            self._report(res, asked=True)
+
+        self.window.ops._in_background(
+            f"Importing from {batch.rule.name}...",
+            work,
+            done,
+            rescan=lambda res: bool(res and res.result and res.result.unindexed),
+        )
+
+    def _report(self, res, asked: bool):
+        """Say what an import did."""
         result = res.result
         if result is None or not result.finished:
             if asked:

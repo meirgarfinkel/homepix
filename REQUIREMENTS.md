@@ -118,8 +118,8 @@ the network and never talks to the phone or the sync app.
 | A file is only taken once it's been unchanged for 2 minutes; hidden files and sync apps' part-files (`.syncthing.*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
 | Already in the library (same content) → not imported again. With "move out", such a file goes to the Trash so the watch folder empties; with "leave it there" it's left and remembered | v1 |
 | Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
-| After an automatic batch, a notice: "Imported 37 photos from Dad's phone", with **See them** and **Undo**; also in the history of changes | v1 |
-| A rule with Import automatically off: a banner and a sidebar entry with the count; **Review** shows the new files (untick to leave out) with where each will go; Import or Cancel | v1 |
+| After an automatic batch, a notice: "Imported 37 photos from Dad's phone", with **See them** and **Undo** (while it's still the latest change; Edit > Undo names it too) | v1 |
+| A rule with Import automatically off: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; hover to see where it will go); Import or Cancel | v1 |
 | A missing or unplugged watch folder or destination: nothing happens and nothing is treated as deleted; the rule shows why it's waiting | v1 |
 | The rule screen and the setup guide warn that "move out" deletes from the phone with two-way sync (Syncthing must be Receive Only on the computer) and from iCloud with iCloud for Windows; icloudpd and iCloud need "leave it there" | v1 |
 | Only while the app is running (a closed app imports when next opened). Start on login, minimised | Later |
