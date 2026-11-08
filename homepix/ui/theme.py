@@ -300,6 +300,8 @@ QPushButton:pressed {{ background: {border}; }}
 QPushButton:default {{ background: {accentFill}; color: {accentInk}; border-color: {accentFill}; }}
 QPushButton:disabled {{ color: {muted}; background: {side}; }}
 QPushButton#checkButton:enabled {{ color: {ok}; }}  /* "check for new photos now": the count's green */
+QPushButton#linkButton {{ background: transparent; border: none; color: {accentText}; padding: 2px 0; }}
+QPushButton#linkButton:hover {{ text-decoration: underline; }}
 QToolButton {{ border-radius: 8px; padding: 4px 8px; }}
 QToolButton:hover {{ background: {hover}; }}
 
