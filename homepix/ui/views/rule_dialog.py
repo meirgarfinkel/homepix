@@ -89,6 +89,7 @@ class RuleDialog(QDialog):
         self.root = QComboBox()
         self.root.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.root.setMinimumContentsLength(20)  # (a long path doesn't widen the window)
+        self.root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)  # (never taller than one line)
         for f in folders:
             self.root.addItem(f, f)
         if r.tidy and r.dest in folders:
