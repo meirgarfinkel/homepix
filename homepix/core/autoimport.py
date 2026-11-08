@@ -98,23 +98,23 @@ def problem(rule: Rule, others: list[Rule], folders: list[str]) -> str | None:
         return "Give it a name."
     watch = os.path.abspath(rule.watch) if rule.watch else ""
     if not watch or not os.path.isdir(watch):
-        return "Choose a watch folder that exists."
+        return 'Choose an "Import from" folder that exists.'
     if within(watch, [str(data_dir())]) or within(str(data_dir()), [watch]):
         return "That's where HomePix keeps its own files."
     if within(watch, folders):
-        return "The watch folder can't be inside your library: its photos would be in the library already."
+        return 'The "Import from" folder can\'t be inside your library: its photos are in the library already.'
     if any(within(f, [watch]) for f in folders):
-        return "The watch folder can't hold a library folder."
+        return 'The "Import from" folder can\'t contain a library folder.'
     for o in others:
         if o.id != rule.id and (within(watch, [o.watch]) or within(o.watch, [watch])):
-            return f'"{o.name}" already watches that folder.'
+            return f'"{o.name}" already imports from that folder.'
     if rule.after not in (MOVE, LEAVE):
-        return "Choose what happens after importing."
+        return "Choose whether to empty the folder after importing."
     if rule.tidy:
         if destination_root(rule, folders) is None:
-            return "Choose which library folder gets the year folders."
+            return "Choose which library folder to import to."
     elif not rule.dest or not within(rule.dest, folders):
-        return "Choose a destination inside your library."
+        return 'Choose an "Import to" folder inside your library.'
     return None
 
 
@@ -129,10 +129,10 @@ def destination_root(rule: Rule, folders: list[str]) -> str | None:
 def waiting(rule: Rule, folders: list[str]) -> str | None:
     """Why a rule can't run just now (a drive unplugged, a folder gone), or None."""
     if not os.path.isdir(rule.watch):
-        return "The watch folder isn't there."
+        return 'The "Import from" folder isn\'t connected.'
     where = destination_root(rule, folders) if rule.tidy else rule.dest
     if not where or not os.path.isdir(where):
-        return "The destination isn't there."
+        return 'The "Import to" folder isn\'t connected.'
     return None
 
 
@@ -360,7 +360,7 @@ def summary(batches: list[Batch]) -> str:
         if p or v or (b.already and b.rule.after == MOVE):
             names.append(b.rule.name)
     what = " and ".join(f"{n:,} {w}{'s' if n != 1 else ''}" for n, w in ((photos, "photo"), (videos, "video")) if n)
-    where = " and ".join(names) if len(names) < 3 else f"{len(names)} watch folders"
+    where = " and ".join(names) if len(names) < 3 else f"{len(names)} automations"
     if not what:
         return f"Clear {already:,} already imported from {where}"
     return f"Import {what} from {where}"

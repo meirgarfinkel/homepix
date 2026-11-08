@@ -1,11 +1,10 @@
-"""Adding or changing an auto import rule: its name, the watch folder, where files go, and what
-happens to them after."""
+"""Setting up an import automation: its name, the folder it imports from, where it imports to (a
+folder in the library, or the library's year folders when organizing), and how it behaves."""
 
 import os
 from dataclasses import replace
 
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QRadioButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -24,11 +23,12 @@ from PySide6.QtWidgets import (
 from ...core import autoimport
 from ...core.settings import pictures_folder
 
-MOVE_WARNING = (
-    "Moving files out deletes them from the watch folder. With some sync apps that deletes them from the "
-    "phone or from iCloud too: with Syncthing, set this folder to Receive Only on this computer; with "
-    "iCloud for Windows or icloudpd, choose Leave them there."
+EMPTY_WARNING = (
+    "Imported files are moved out of this folder. If your sync app copies deletions back to the phone or to "
+    "iCloud, they'll be deleted there too. With Syncthing, set this folder to Receive Only on this computer. "
+    "With iCloud for Windows or icloudpd, leave this off."
 )
+KEEP_NOTE = "Imported files are copied, and the originals stay in this folder."
 
 
 def _folder_row(edit: QLineEdit, choose) -> QWidget:
@@ -40,14 +40,32 @@ def _folder_row(edit: QLineEdit, choose) -> QWidget:
     b.setAutoDefault(False)
     b.clicked.connect(choose)
     row.addWidget(b)
-    w.button = b
+    return w
+
+
+def _hint(text: str = "") -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("hint")
+    label.setWordWrap(True)
+    return label
+
+
+def _option(box: QCheckBox, hint: QLabel) -> QWidget:
+    """A checkbox with its explanation right under it."""
+    w = QWidget()
+    col = QVBoxLayout(w)
+    col.setContentsMargins(0, 0, 0, 4)
+    col.setSpacing(2)
+    col.addWidget(box)
+    col.addWidget(hint)
+    hint.setIndent(box.style().pixelMetric(box.style().PixelMetric.PM_IndicatorWidth) + 6)
     return w
 
 
 class RuleDialog(QDialog):
     def __init__(self, rule: autoimport.Rule | None, rules: list, folders: list[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Auto import rule" if rule else "New auto import rule")
+        self.setWindowTitle("Import automation" if rule else "New import automation")
         self.rules, self.folders = rules, folders
         self.rule = rule or autoimport.Rule(name="", watch="", dest=folders[0] if len(folders) == 1 else "")
         r = self.rule
@@ -57,49 +75,46 @@ class RuleDialog(QDialog):
         self.name.setPlaceholderText("e.g. Dad's phone")
         form.addRow("Name:", self.name)
         self.watch = QLineEdit(r.watch)
-        self.watch.setPlaceholderText("Where the sync app puts new photos")
-        form.addRow("Watch folder:", _folder_row(self.watch, self._choose_watch))
+        self.watch.setPlaceholderText("The folder your sync app puts new photos in")
+        form.addRow("Import from:", _folder_row(self.watch, self._choose_watch))
 
-        self.tidy = QCheckBox("Tidy up: name by date and file into year folders")
-        self.tidy.setChecked(r.tidy)
-        self.tidy.toggled.connect(self._tidy_toggled)
-        form.addRow("", self.tidy)
+        # Import to: a folder in the library, or (organizing) which library folder's year folders
         self.dest = QLineEdit(r.dest if not r.tidy else "")
         self.dest.setPlaceholderText("A folder in your library")
-        self.dest_row = _folder_row(self.dest, self._choose_dest)
-        form.addRow("Destination:", self.dest_row)
         self.root = QComboBox()
         for f in folders:
             self.root.addItem(f, f)
         if r.tidy and r.dest in folders:
             self.root.setCurrentIndex(folders.index(r.dest))
-        self.root_label = QLabel("Library folder:")
-        form.addRow(self.root_label, self.root)
+        self.to = QStackedWidget()
+        self.to.addWidget(_folder_row(self.dest, self._choose_dest))
+        self.to.addWidget(self.root)
+        form.addRow("Import to:", self.to)
 
-        after = QWidget()
-        after_lay = QVBoxLayout(after)
-        after_lay.setContentsMargins(0, 0, 0, 0)
-        self.move = QRadioButton("Move them out of the watch folder")
-        self.leave = QRadioButton("Leave them there")
-        group = QButtonGroup(self)
-        for b in (self.move, self.leave):
-            group.addButton(b)
-            after_lay.addWidget(b)
-        (self.move if r.after == autoimport.MOVE else self.leave).setChecked(True)
-        self.warning = QLabel(MOVE_WARNING)
-        self.warning.setObjectName("hint")
-        self.warning.setWordWrap(True)
-        after_lay.addWidget(self.warning)
-        self.move.toggled.connect(self.warning.setVisible)
-        form.addRow("After importing:", after)
-
-        self.auto = QCheckBox("Import new files by themselves (off: they wait for you to review them)")
-        self.auto.setChecked(r.auto)
-        form.addRow("", self.auto)
-        self.enabled = QCheckBox("This rule is on")
-        self.enabled.setChecked(r.enabled)
-        form.addRow("", self.enabled)
+        self.tidy = QCheckBox("Organize: rename by date and sort into year folders")
+        self.tidy.setChecked(r.tidy)
+        self.tidy.toggled.connect(self._tidy_toggled)
+        options = QVBoxLayout()  # (a plain column: a form layout leaves gaps around wrapped text)
+        options.setSpacing(8)
+        options.addWidget(self.tidy)
+        self.empty = QCheckBox('Empty the "Import from" folder after importing')
+        self.empty.setChecked(r.after == autoimport.MOVE)
+        self.empty.toggled.connect(self._empty_toggled)
+        self.empty_note = _hint()
+        options.addWidget(_option(self.empty, self.empty_note))
+        self.ask = QCheckBox("Ask me before importing")
+        self.ask.setChecked(not r.auto)
+        options.addWidget(_option(self.ask, _hint("You'll see the new photos first and choose which ones to import.")))
+        self.paused = QCheckBox("Paused")
+        self.paused.setChecked(not r.enabled)
+        options.addWidget(_option(self.paused, _hint("Nothing is checked or imported until you turn this off.")))
         lay.addLayout(form)
+        label_width = max(form.labelForField(w).sizeHint().width() for w in (self.name, self.watch.parent(), self.to))
+        gap = form.horizontalSpacing()
+        if gap < 0:
+            gap = self.style().pixelMetric(self.style().PixelMetric.PM_LayoutHorizontalSpacing)
+        options.setContentsMargins(label_width + gap, 6, 0, 0)
+        lay.addLayout(options)
 
         self.problem = QLabel()
         self.problem.setObjectName("problem")
@@ -110,21 +125,40 @@ class RuleDialog(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
-        self.warning.setVisible(self.move.isChecked())
         self._tidy_toggled(self.tidy.isChecked())
-        self.resize(560, self.sizeHint().height())
+        self._empty_toggled(self.empty.isChecked())
+        self.setMinimumWidth(600)
+        self.adjustSize()
 
     def _tidy_toggled(self, on: bool):
-        self.dest_row.setEnabled(not on)
-        self.dest.setEnabled(not on)
-        self.dest.setPlaceholderText("Year folders in your library" if on else "A folder in your library")
-        many = len(self.folders) > 1
-        self.root.setVisible(on and many)
-        self.root_label.setVisible(on and many)
+        self.to.setCurrentIndex(1 if on else 0)
+
+    def _empty_toggled(self, on: bool):
+        self.empty_note.setText(EMPTY_WARNING if on else KEEP_NOTE)
+        self._fit_notes()
+
+    def _fit_notes(self):
+        """Give each wrapped note the height its lines need at its width (layouts don't on their own)."""
+        for label in self.findChildren(QLabel):
+            if label.objectName() == "hint" and label.width() > 50:
+                label.setMinimumHeight(label.heightForWidth(label.width()))
+        self.adjustSize()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._fit_notes()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if e.oldSize().width() != e.size().width():
+            for label in self.findChildren(QLabel):
+                if label.objectName() == "hint":
+                    label.setMinimumHeight(0)
+            self._fit_notes()
 
     def _choose_watch(self):
         start = self.watch.text() or str(pictures_folder())
-        path = QFileDialog.getExistingDirectory(self, "Choose the watch folder", start)
+        path = QFileDialog.getExistingDirectory(self, "Import from", start)
         if path:
             self.watch.setText(path)
             if not self.name.text().strip():
@@ -132,7 +166,7 @@ class RuleDialog(QDialog):
 
     def _choose_dest(self):
         start = self.dest.text() or (self.folders[0] if self.folders else str(pictures_folder()))
-        path = QFileDialog.getExistingDirectory(self, "Choose where imported files go", start)
+        path = QFileDialog.getExistingDirectory(self, "Import to", start)
         if path:
             self.dest.setText(path)
 
@@ -148,9 +182,9 @@ class RuleDialog(QDialog):
             watch=os.path.abspath(self.watch.text().strip()) if self.watch.text().strip() else "",
             dest=dest,
             tidy=tidy,
-            after=autoimport.MOVE if self.move.isChecked() else autoimport.LEAVE,
-            auto=self.auto.isChecked(),
-            enabled=self.enabled.isChecked(),
+            after=autoimport.MOVE if self.empty.isChecked() else autoimport.LEAVE,
+            auto=not self.ask.isChecked(),
+            enabled=not self.paused.isChecked(),
         )
 
     def _save(self):

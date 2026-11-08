@@ -1,5 +1,5 @@
 """Settings: the folders that make up the library, the folders excluded from it (exclude a folder,
-take one back in), auto import rules, the app to edit photos in, and the look."""
+take one back in), import automations, the app to edit photos in, and the look."""
 
 import os
 from pathlib import Path
@@ -40,7 +40,7 @@ class SettingsDialog(QDialog):
     remove_requested = Signal(str)
     rescan_requested = Signal()
     left_out_changed = Signal()  # a folder excluded, or taken back in
-    import_check_requested = Signal()  # Check now, for auto import
+    import_check_requested = Signal()  # Check now, for import automations
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -92,10 +92,10 @@ class SettingsDialog(QDialog):
         lay.addLayout(row)
 
         lay.addSpacing(10)
-        lay.addWidget(QLabel("<b>Auto import</b>"))
+        lay.addWidget(QLabel("<b>Import automations</b>"))
         note = QLabel(
-            "Bring new photos in from folders a sync app fills (from a phone, say). "
-            "Watch folders are checked every hour while HomePix is open."
+            "Import new photos by themselves from a folder your sync app fills (from a phone, say). "
+            "Checked every hour while HomePix is open."
         )
         note.setObjectName("hint")
         note.setWordWrap(True)
@@ -107,7 +107,7 @@ class SettingsDialog(QDialog):
         self.rule_list.itemDoubleClicked.connect(lambda _: self._edit_rule())
         lay.addWidget(self.rule_list, 2)
         row = QHBoxLayout()
-        self.add_rule_button = QPushButton("Add a rule...")
+        self.add_rule_button = QPushButton("New automation...")
         self.add_rule_button.clicked.connect(lambda: self._edit_rule(new=True))
         self.edit_rule_button = QPushButton("Edit...")
         self.edit_rule_button.clicked.connect(lambda: self._edit_rule())
@@ -178,7 +178,7 @@ class SettingsDialog(QDialog):
         for r in autoimport.load_rules():
             item = QListWidgetItem(theme.icon("folder", "muted"), f"{r.name}\n{describe(r)}")
             item.setData(Qt.ItemDataRole.UserRole, r.id)
-            item.setToolTip(f"{r.watch}  →  {'year folders in ' if r.tidy else ''}{r.dest}")
+            item.setToolTip(f"Import from {r.watch}\nImport to {'the year folders in ' if r.tidy else ''}{r.dest}")
             self.rule_list.addItem(item)
             if r.id == keep:
                 item.setSelected(True)
@@ -187,7 +187,9 @@ class SettingsDialog(QDialog):
     def _edit_rule(self, new: bool = False):
         folders = library_folders()
         if not folders:
-            QMessageBox.information(self, "Auto import", "Add a library folder first: imported photos go into it.")
+            QMessageBox.information(
+                self, "Import automations", "Add a library folder first: imported photos go into it."
+            )
             return
         rules = autoimport.load_rules()
         chosen = None if new else self._chosen(self.rule_list)
@@ -211,8 +213,8 @@ class SettingsDialog(QDialog):
             return
         answer = QMessageBox.question(
             self,
-            "Remove rule",
-            f'Stop importing from "{rule.name}"?\n\nNo files are touched.',
+            "Remove automation",
+            f'Remove "{rule.name}"?\n\nNo photos are touched.',
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )

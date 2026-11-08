@@ -33,13 +33,13 @@ def when(text: str | None) -> str:
 def describe(rule: autoimport.Rule) -> str:
     """A rule's line in Settings: what it does, and how it's going."""
     if not rule.enabled:
-        return "Off"
+        return "Paused"
     st = autoimport.status(rule.id)
     parts = []
     if st.get("waiting"):
         parts.append(f"Waiting: {st['waiting']}")
     elif not rule.auto and st.get("pending"):
-        parts.append(f"{plural(st['pending'], 'new file')} to review")
+        parts.append(f"{plural(st['pending'], 'new file')} waiting for you")
     if st.get("imported"):
         parts.append(f"last imported {plural(st.get('count', 0), 'file')}, {when(st['imported'])}")
     if st.get("checked"):
@@ -71,7 +71,7 @@ class AutoImporter(QObject):
         rules = [r for r in autoimport.load_rules() if r.enabled]
         if not rules:
             if asked:
-                self.window.statusBar().showMessage("No auto import rules are on.", 5000)
+                self.window.statusBar().showMessage("No import automations are on.", 5000)
             return
         folders = library_folders()
 
@@ -83,7 +83,7 @@ class AutoImporter(QObject):
                 db.close()
 
         started = self.window.ops._in_background(
-            "Checking watch folders...",
+            "Checking for photos to import...",
             work,
             lambda res, err: self._done(res, err, asked),
             rescan=lambda res: bool(res and res.result and res.result.unindexed),
@@ -95,7 +95,7 @@ class AutoImporter(QObject):
     def _done(self, res, err, asked: bool):
         self.checked.emit()
         if err is not None:
-            self.window.statusBar().showMessage(f"Auto import didn't work: {err}", 12000)
+            self.window.statusBar().showMessage(f"Automatic import didn't work: {err}", 12000)
             return
         for b in res.batches:
             if b.rule.auto:
@@ -113,7 +113,7 @@ class AutoImporter(QObject):
             return
         n = sum(len(b.imports) for b in self.waiting.values())
         names = " and ".join(b.rule.name for b in self.waiting.values())
-        self.window.review_bar.show_waiting(f"{plural(n, 'new file')} from {names} waiting for you to review.")
+        self.window.review_bar.show_waiting(f"{plural(n, 'new file')} from {names} ready to import.")
 
     def review(self):
         """Show what the first rule waiting found; import what's left ticked."""
@@ -161,14 +161,14 @@ class AutoImporter(QObject):
             if asked:
                 waiting = sum(1 for b in res.batches if not b.rule.auto and b.imports)
                 self.window.statusBar().showMessage(
-                    "New files are waiting for review." if waiting else "Nothing new in the watch folders.", 6000
+                    "New photos are waiting for you to review." if waiting else "Nothing new to import.", 6000
                 )
             return
         came = [(b, n) for b in res.batches if (n := res.imported(b))]
         if came:
             text = "Imported " + "; ".join(f"{counted(*res.came_in(b))} from {b.rule.name}" for b, _ in came) + "."
         else:
-            text = "Cleared files that were already in your library out of the watch folders (they're in the Trash)."
+            text = "Moved files that were already in your library to the Trash."
         if result.skipped:
             text += f" {plural(len(result.skipped), 'file')} couldn't be brought in and will be tried again."
         place = ALL
