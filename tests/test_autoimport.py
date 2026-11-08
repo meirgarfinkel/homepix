@@ -254,7 +254,7 @@ def test_organizing_imports_to_a_library_folder(app, pf, lib, tmp_path):
     d.name.setText("Phone")
     d.watch.setText(str(tmp_path / "Phone"))
     d.tidy.setChecked(True)
-    assert d.to.currentWidget() is d.root  # organizing: a library folder to import to, nothing greyed out
+    assert not d.dest_row.isVisibleTo(d) and d.root.isVisibleTo(d)  # a library folder to import to
     d._save()
     assert d.result() == d.DialogCode.Accepted
     assert d.rule.tidy and d.rule.dest == str(lib) and d.rule.after == ai.MOVE and d.rule.auto
