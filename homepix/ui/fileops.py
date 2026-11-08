@@ -62,27 +62,34 @@ class FileOps(QObject):
 
     # --- running --------------------------------------------------------------------------------------
 
-    def _in_background(self, title: str, work, finished, exclusive: bool = True, rescan=lambda res: True):
+    def _in_background(
+        self, title: str, work, finished, exclusive: bool = True, rescan=lambda res: True, quiet: bool = False
+    ) -> bool:
         """work(progress, should_stop) on a worker thread, then finished(result, error) here.
         exclusive: no indexing meanwhile (anything that changes the library); rescan(result): whether it
-        left something for indexing to find, so look through the folders again afterwards."""
+        left something for indexing to find, so look through the folders again afterwards. quiet: no
+        progress window (for work nobody asked for just now, like auto import). False if it couldn't
+        start because another is under way."""
         if self.busy:
-            self.window.statusBar().showMessage("Still busy with the last one. A moment...", 4000)
-            return
+            if not quiet:
+                self.window.statusBar().showMessage("Still busy with the last one. A moment...", 4000)
+            return False
         self.busy, self._stop = True, False
         watcher = self.window.watcher
         was_indexing = watcher.indexer.snapshot()["running"]
         if exclusive:
             watcher.hold()
-        dlg = QProgressDialog(title, "Stop", 0, 0, self.window)
-        dlg.setWindowTitle("HomePix")
-        dlg.setWindowModality(Qt.WindowModality.WindowModal)
-        dlg.setMinimumDuration(700)  # only if it takes a while
-        dlg.setAutoClose(False)
-        dlg.setAutoReset(False)
-        dlg.canceled.connect(lambda: setattr(self, "_stop", True))
-        relay = _Progress(dlg)
-        relay.moved.connect(lambda done, total: (dlg.setMaximum(total), dlg.setValue(done)))
+        dlg = None
+        relay = _Progress(self)
+        if not quiet:
+            dlg = QProgressDialog(title, "Stop", 0, 0, self.window)
+            dlg.setWindowTitle("HomePix")
+            dlg.setWindowModality(Qt.WindowModality.WindowModal)
+            dlg.setMinimumDuration(700)  # only if it takes a while
+            dlg.setAutoClose(False)
+            dlg.setAutoReset(False)
+            dlg.canceled.connect(lambda: setattr(self, "_stop", True))
+            relay.moved.connect(lambda done, total: (dlg.setMaximum(total), dlg.setValue(done)))
 
         def job():
             if not exclusive:
@@ -92,8 +99,10 @@ class FileOps(QObject):
                 return work(relay.moved.emit, lambda: self._stop)
 
         def after(res, err):
-            dlg.close()
-            dlg.deleteLater()
+            if dlg is not None:
+                dlg.close()
+                dlg.deleteLater()
+            relay.deleteLater()
             self.busy = False
             if exclusive:
                 found = err is not None or rescan(res)  # (after an error, look: something may have changed)
@@ -102,6 +111,11 @@ class FileOps(QObject):
             self.history_changed.emit()
 
         workers.run(job, after, must_finish=True)
+        return True
+
+    def stop(self):
+        """Ask the operation under way to stop at the next file (a move under way always finishes)."""
+        self._stop = True
 
     def run(self, kind: str, summary: str, past: str, plan):
         """plan(db) -> steps (from core.fileops), worked out with the library to ourselves. summary is
