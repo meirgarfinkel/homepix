@@ -101,8 +101,8 @@ def problem(rule: Rule, others: list[Rule], folders: list[str]) -> str | None:
         return 'Choose an "Import from" folder that exists.'
     if within(watch, [str(data_dir())]) or within(str(data_dir()), [watch]):
         return "That's where HomePix keeps its own files."
-    if within(watch, folders):
-        return 'The "Import from" folder can\'t be inside your library: its photos are in the library already.'
+    if watch in [os.path.abspath(f) for f in folders]:
+        return "That's a whole library folder. Choose a folder inside it, or one outside your library."
     if any(within(f, [watch]) for f in folders):
         return 'The "Import from" folder can\'t contain a library folder.'
     for o in others:
@@ -238,9 +238,11 @@ def _known(db, path: str, st) -> bool:
     return r is not None and r["size"] == st.st_size and abs((r["mtime"] or 0) - st.st_mtime) < 1e-3
 
 
-def _in_library(db, path: str, size: int, sha: str) -> bool:
+def _in_library(db, path: str, size: int, sha: str, watch: str) -> bool:
+    """Is this content in the library already? (Not counting the Import from folder itself: when it's
+    inside the library, its photos are indexed, but they're on their way in.)"""
     rows = db.execute("SELECT id, path, sha256 FROM photos WHERE qhash=?", (quick_hash(Path(path), size),)).fetchall()
-    rows = [r for r in rows if os.path.abspath(r["path"]) != os.path.abspath(path)]
+    rows = [r for r in rows if not within(r["path"], [watch])]
     return bool(rows) and sha in duplicates._sha256(db, rows).values()
 
 
@@ -276,7 +278,7 @@ def check(db, rule: Rule, folders: list[str], now=None, should_stop=lambda: Fals
         if isinstance(history, tuple):
             f.op_id = history[1]
             batch.unwanted.append(f)
-        elif history == "imported" or sha in shas or _in_library(db, path, st.st_size, sha):
+        elif history == "imported" or sha in shas or _in_library(db, path, st.st_size, sha, rule.watch):
             batch.already.append(f)
         else:
             shas.add(sha)

@@ -156,8 +156,11 @@ def test_rules_that_cant_be_saved(pf, lib, tmp_path):
     (tmp_path / "Phone").mkdir()
     ok = ai.Rule(name="Phone", watch=str(tmp_path / "Phone"), dest=str(lib))
     assert ai.problem(ok, [], folders) is None
-    inside = ai.Rule(name="x", watch=str(lib), dest=str(lib))
-    assert "inside your library" in ai.problem(inside, [], folders)
+    whole = ai.Rule(name="x", watch=str(lib), dest=str(lib))
+    assert "whole library folder" in ai.problem(whole, [], folders)
+    (lib / "Inbox").mkdir()
+    inside = ai.Rule(name="x", watch=str(lib / "Inbox"), dest=str(lib))
+    assert ai.problem(inside, [], folders) is None
     outer = tmp_path / "Drive"
     (outer / "Pictures").mkdir(parents=True)
     holds = ai.Rule(name="x", watch=str(outer), dest=str(outer / "Pictures"))
@@ -313,3 +316,45 @@ def test_a_rule_that_waits_offers_a_review(app, pf, lib, tmp_path, monkeypatch):
         assert not w.review_bar.isVisible()
     finally:
         w.close()
+
+
+def test_an_import_from_folder_inside_the_library(home, lib, tmp_path):
+    """Its photos are indexed (it's in the library, though excluded), but they're on their way in:
+    not already in the library, and not duplicates of their copies."""
+    from homepix.core import duplicates
+
+    pf, db = home
+    (lib / "From phone").mkdir()
+    r = ai.Rule(name="Inbox", watch=str(lib / "Inbox"), dest=str(lib / "From phone"), after=ai.LEAVE)
+    ai.save_rules([r])
+    pf.set_excluded(str(lib / "Inbox"), True)
+    photo(lib / "Inbox" / "a.jpg")
+    pf.index_folder(lib, want_faces=False)
+    batch, res = go(db, r, lib)
+    assert res.finished == 1 and names(lib / "From phone") == ["a.jpg"]
+    pf.index_folder(lib, want_faces=False)
+    assert duplicates.find(db) == []
+
+
+def test_saving_an_import_from_folder_in_the_library_excludes_it(app, pf, lib, monkeypatch):
+    from homepix.ui.views import rule_dialog
+
+    pf.add_folder(lib)
+    (lib / "Inbox").mkdir()
+    d = rule_dialog.RuleDialog(None, [], [str(lib)])
+    d.name.setText("Inbox")
+    d.watch.setText(str(lib / "Inbox"))
+    d.dest.setText(str(lib))
+    asked = []
+    monkeypatch.setattr(
+        rule_dialog.QMessageBox,
+        "question",
+        lambda *a, **k: asked.append(a[2]) or rule_dialog.QMessageBox.StandardButton.Cancel,
+    )
+    d._save()
+    assert asked and "Excluded folders" in asked[0]
+    assert d.result() != d.DialogCode.Accepted and pf.excluded_folders() == []  # said no: nothing saved
+    monkeypatch.setattr(rule_dialog.QMessageBox, "question", lambda *a, **k: rule_dialog.QMessageBox.StandardButton.Yes)
+    d._save()
+    assert d.result() == d.DialogCode.Accepted and d.excluded_now
+    assert pf.excluded_folders() == [str(lib / "Inbox")]

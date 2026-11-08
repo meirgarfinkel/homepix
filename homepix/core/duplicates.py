@@ -147,9 +147,14 @@ _COLS = "id, path, kind, qhash, size, width, height, taken, taken_source, sha256
 
 
 def _candidate_rows(db):
-    return db.execute(
+    from .settings import import_from_folders
+    from .util import within
+
+    rows = db.execute(
         f"SELECT {_COLS} FROM photos WHERE error IS NULL AND qhash IS NOT NULL AND kind != 'motion'"
     ).fetchall()
+    arriving = import_from_folders()  # (photos waiting to be imported aren't duplicates of their copies)
+    return [r for r in rows if not within(r["path"], arriving)] if arriving else rows
 
 
 def _as_copy(r) -> Copy:
