@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -22,7 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from ...core import autoimport
-from ...core.settings import pictures_folder
+from ...core.settings import excluded_folders, pictures_folder, set_excluded
+from ...core.util import within
 
 EMPTY_WARNING = (
     "Imported files are moved out of this folder. If your sync app copies deletions back to the phone or to "
@@ -68,6 +70,7 @@ class RuleDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Import automation" if rule else "New import automation")
         self.rules, self.folders = rules, folders
+        self.excluded_now = False  # its Import from folder was just added to Excluded folders
         self.rule = rule or autoimport.Rule(name="", watch="", dest=folders[0] if len(folders) == 1 else "")
         r = self.rule
         lay = QVBoxLayout(self)
@@ -202,5 +205,25 @@ class RuleDialog(QDialog):
             self.problem.setText(why)
             self.problem.show()
             return
+        inside = within(rule.watch, self.folders) and not within(rule.watch, excluded_folders())
+        if inside and not self._exclude(rule.watch):
+            return
         self.rule = rule
         self.accept()
+
+    def _exclude(self, folder: str) -> bool:
+        """An Import from folder inside the library is excluded, once the user agrees."""
+        answer = QMessageBox.question(
+            self,
+            "Import from a folder in your library",
+            f'"{os.path.basename(folder)}" is inside your library, so it will be added to Excluded folders.\n\n'
+            "Photos waiting there won't show in All photos, People, search or Duplicates until they're imported. "
+            "You can still see them by opening the folder itself.\n\nExclude it and save?",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return False
+        set_excluded(folder, True)
+        self.excluded_now = True
+        return True

@@ -204,7 +204,11 @@ class SettingsDialog(QDialog):
         if new:
             rules.append(dlg.rule)
         autoimport.save_rules(rules)
-        self.refresh_rules()
+        if dlg.excluded_now:
+            self.refresh()  # (the folder is in Excluded folders now too)
+            self.left_out_changed.emit()
+        else:
+            self.refresh_rules()
 
     def _remove_rule(self):
         chosen = self._chosen(self.rule_list)

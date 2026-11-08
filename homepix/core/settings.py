@@ -64,6 +64,12 @@ def set_excluded(path: str, excluded: bool):
     save_settings(s)
 
 
+def import_from_folders() -> list[str]:
+    """The folders import automations import from. Photos there are on their way in, so they're
+    never counted as already in the library or as duplicates, even when the folder is inside it."""
+    return [r["watch"] for r in load_settings().get("import_rules", []) if r.get("watch")]
+
+
 def skipped_duplicates() -> set[frozenset]:
     """The groups of duplicates skipped for now (each by its photos' ids): shown last, to decide later."""
     return {frozenset(ids) for ids in load_settings().get("skipped_duplicates", [])}
