@@ -44,6 +44,7 @@ from ..core.timeline import Month, folder_counts, group_by_month, item_from_row,
 from ..core.util import within
 from . import desktop, theme, workers
 from . import portable as portable_ui
+from .autoimport import AutoImporter
 from .dedupe import Dedupe
 from .file_actions import FileActions, count_of
 from .fileops import FileOps
@@ -59,6 +60,7 @@ from .updates import Updater
 from .views.banner import Banner
 from .views.duplicates import DuplicatesView
 from .views.faces import PersonFaces, WhoView
+from .views.import_bar import ImportBar, ReviewBar
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
 from .views.settings_dialog import SettingsDialog
@@ -263,6 +265,7 @@ class MainWindow(QMainWindow):
         self.indexing = index
         self.copies = portable_ui.PortableCopies(self, active=index)
         self.ops = FileOps(self)
+        self.importer = AutoImporter(self)
         self.loaded = False  # the library has been read once
         self.search_index = SearchIndex(settling=lambda: self.watcher.indexer.snapshot()["running"])
         self.place = ALL  # what the grid shows when not searching: ALL or a folder
@@ -295,6 +298,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.timeline)
         self.banner = Banner()
         self.update_bar = UpdateBar()
+        self.import_bar = ImportBar()
+        self.review_bar = ReviewBar()
         self.page_header = QWidget()
         self.page_header.setObjectName("pageHeader")
         head = QHBoxLayout(self.page_header)
@@ -319,6 +324,8 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.update_bar)
+        lay.addWidget(self.import_bar)
+        lay.addWidget(self.review_bar)
         lay.addWidget(self.banner)
         lay.addWidget(self.page_header)
         lay.addWidget(self.stack, 1)
@@ -382,6 +389,9 @@ class MainWindow(QMainWindow):
         self.viewer.face_clicked.connect(self._face_menu)
         self.welcome.folder_chosen.connect(self.add_library_folder)
         self.banner.forget_missing.connect(self._forget_missing)
+        self.import_bar.see.connect(lambda place: self.show_place(place or ALL))
+        self.import_bar.undo.connect(self.importer.undo)
+        self.review_bar.review.connect(self.importer.review)
         self.watcher.state.connect(lambda s: self.banner.show_state(s.get("missing", 0), s.get("error")))
         self.watcher.library_changed.connect(self.reload)
         self.watcher.state.connect(self._repaint_while_sharpening)
@@ -411,6 +421,7 @@ class MainWindow(QMainWindow):
         self.files.editor_changed()
         if index:  # look for new photos once the window is up (bringing in a folder's copy first, if waiting)
             QTimer.singleShot(1500, lambda: portable_ui.offer(self, library_folders(), self.watcher.start))
+            self.importer.start()  # and in the auto import watch folders, a little later
         QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
         QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
         QTimer.singleShot(3000, lambda: workers.run(junk.warm, lambda res, err: None, self.search_index))  # Declutter
@@ -1005,7 +1016,10 @@ class MainWindow(QMainWindow):
         dlg.rescan_requested.connect(
             lambda: (self.watcher.start(), self.statusBar().showMessage("Looking for new photos...", 5000))
         )
+        dlg.import_check_requested.connect(lambda: self.importer.check(asked=True))
+        self.importer.checked.connect(dlg.refresh_rules)
         dlg.exec()
+        self.importer.checked.disconnect(dlg.refresh_rules)
         self._settings_dialog = None
         self.files.editor_changed()
 

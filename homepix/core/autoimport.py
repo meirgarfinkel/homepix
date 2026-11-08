@@ -171,11 +171,21 @@ def settled_files(watch: str, now: float | None = None, should_stop=lambda: Fals
     return out
 
 
-def _sha256(path: str) -> str:
+_hashes: dict[tuple, str] = {}  # (path, size, time) -> its hash: files waiting for review aren't read every hour
+
+
+def _sha256(path: str, st=None) -> str:
+    key = (path, st.st_size, st.st_mtime) if st is not None else None
+    if key in _hashes:
+        return _hashes[key]
     d = hashlib.sha256()
     with open(path, "rb") as f:
         while chunk := f.read(1 << 20):
             d.update(chunk)
+    if key is not None:
+        if len(_hashes) > 50_000:
+            _hashes.clear()
+        _hashes[key] = d.hexdigest()
     return d.hexdigest()
 
 
@@ -205,12 +215,21 @@ class Batch:
         return len(self.imports) - videos, videos
 
     def summary(self) -> str:
-        """What Undo calls it: "Import 37 photos from Dad's phone"."""
-        photos, videos = self.counts()
-        what = " and ".join(f"{n:,} {w}{'s' if n != 1 else ''}" for n, w in ((photos, "photo"), (videos, "video")) if n)
-        if not what:
-            return f"Clear {len(self.already):,} already imported from {self.rule.name}"
-        return f"Import {what} from {self.rule.name}"
+        return summary([self])
+
+    def without(self, paths) -> "Batch":
+        """The same, leaving out some of the files to import (unticked in a review): they're left as
+        they are, and offered again next time."""
+        out = {path_key(p) for p in paths}
+        b = Batch(
+            self.rule,
+            [(f, d) for f, d in self.imports if path_key(f.path) not in out],
+            self.already,
+            self.unwanted,
+            self.cant,
+        )
+        b.steps = _steps(b)
+        return b
 
 
 def _known(db, path: str, st) -> bool:
@@ -248,7 +267,7 @@ def check(db, rule: Rule, folders: list[str], now=None, should_stop=lambda: Fals
         if _known(db, path, st):
             continue
         try:
-            sha = _sha256(path)
+            sha = _sha256(path, st)
         except OSError as e:
             batch.cant.append((path, e.strerror or str(e)))
             continue
@@ -330,21 +349,83 @@ def _remember(db, files: list[Incoming], op_id):
     )
 
 
-def run(db, batch: Batch, progress=None, should_stop=None) -> fileops.Result | None:
-    """Do what check() planned, as one operation, and remember what was dealt with. None if there was
-    nothing to do. A file that couldn't be imported isn't remembered: it's tried again next time."""
+def summary(batches: list[Batch]) -> str:
+    """What Undo calls a check's imports: "Import 37 photos from Dad's phone", "Import 40 photos and 2
+    videos from Dad's phone and Mom's phone"."""
+    photos = videos = already = 0
+    names = []
+    for b in batches:
+        p, v = b.counts()
+        photos, videos, already = photos + p, videos + v, already + len(b.already)
+        if p or v or (b.already and b.rule.after == MOVE):
+            names.append(b.rule.name)
+    what = " and ".join(f"{n:,} {w}{'s' if n != 1 else ''}" for n, w in ((photos, "photo"), (videos, "video")) if n)
+    where = " and ".join(names) if len(names) < 3 else f"{len(names)} watch folders"
+    if not what:
+        return f"Clear {already:,} already imported from {where}"
+    return f"Import {what} from {where}"
+
+
+def run(db, batches, progress=None, should_stop=None) -> fileops.Result | None:
+    """Do what check() planned (for one rule or several), as one operation, and remember what was dealt
+    with. None if there was nothing to do. A file that couldn't be imported isn't remembered: it's tried
+    again next time."""
+    batches = [batches] if isinstance(batches, Batch) else list(batches)
     # left alone and nothing to do with them: remembered now, so they aren't read again next time
-    quiet = batch.unwanted + ([] if batch.rule.after == MOVE else batch.already)
-    _remember(db, quiet, None)
+    for b in batches:
+        _remember(db, b.unwanted + ([] if b.rule.after == MOVE else b.already), None)
     db.commit()
-    if not batch.steps:
+    steps = [s for b in batches for s in b.steps]
+    if not steps:
         return None
-    result = fileops.run(db, "import", batch.summary(), batch.steps, progress, should_stop)
+    result = fileops.run(db, "import", summary(batches), steps, progress, should_stop)
     finished = {
         r["src"]
         for r in db.execute("SELECT src FROM op_steps WHERE op_id=? AND done=?", (result.op_id, fileops.FINISHED))
     }
-    handled = [f for f, _ in batch.imports] + (batch.already if batch.rule.after == MOVE else [])
-    _remember(db, [f for f in handled if f.path in finished], result.op_id)
+    for b in batches:
+        handled = [f for f, _ in b.imports] + (b.already if b.rule.after == MOVE else [])
+        _remember(db, [f for f in handled if f.path in finished], result.op_id)
     db.commit()
+    result.done_paths = finished
     return result
+
+
+@dataclass
+class Checked:
+    """What checking the rules found and did."""
+
+    batches: list[Batch]  # one per rule that could be checked
+    result: fileops.Result | None  # the import done (rules that import by themselves), if any
+
+    def imported(self, batch: Batch) -> int:
+        """How many of a rule's files came into the library."""
+        return sum(self.came_in(batch))
+
+    def came_in(self, batch: Batch) -> tuple[int, int]:
+        """(photos, videos) of a rule's that came into the library."""
+        done = getattr(self.result, "done_paths", set())
+        exts = [os.path.splitext(f.path)[1].lower() for f, _ in batch.imports if f.path in done]
+        videos = sum(1 for e in exts if e in VIDEO_EXTS)
+        return len(exts) - videos, videos
+
+
+def check_rules(db, rules: list[Rule], folders: list[str], now=None, progress=None, should_stop=lambda: False):
+    """Check every rule that's on: import what's new for those that do it by themselves (all as one
+    operation), count it for those that wait for review, and note each rule's status."""
+    batches = []
+    for r in rules:
+        if not r.enabled:
+            continue
+        why = waiting(r, folders)
+        if why:
+            set_status(r.id, checked=_now(), waiting=why)
+            continue
+        batches.append(check(db, r, folders, now, should_stop))
+    out = Checked(batches, run(db, [b for b in batches if b.rule.auto], progress, should_stop))
+    for b in batches:
+        st = {"checked": _now(), "waiting": None, "pending": 0 if b.rule.auto else len(b.imports)}
+        if b.rule.auto and (n := out.imported(b)):
+            st.update(imported=_now(), count=n)
+        set_status(b.rule.id, **st)
+    return out

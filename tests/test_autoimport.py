@@ -185,3 +185,131 @@ def test_a_missing_watch_folder_just_waits(home, lib, tmp_path):
     pf, db = home
     r = ai.Rule(name="USB", watch=str(tmp_path / "unplugged"), dest=str(lib))
     assert ai.waiting(r, [str(lib)]) == "The watch folder isn't there."
+
+
+def test_several_rules_import_as_one_change(home, lib, tmp_path):
+    pf, db = home
+    dad = rule(tmp_path, lib)
+    (tmp_path / "Mom").mkdir()
+    mom = ai.Rule(name="Mom's phone", watch=str(tmp_path / "Mom"), dest=str(lib / "From phone"))
+    photo(tmp_path / "Phone" / "a.jpg")
+    photo(tmp_path / "Mom" / "b.jpg")
+    batches = [ai.check(db, r, [str(lib)], now=LATER()) for r in (dad, mom)]
+    assert ai.summary(batches) == "Import 2 photos from Dad's phone and Mom's phone"
+    res = ai.run(db, batches)
+    assert res.finished == 2
+    fo.undo(db)
+    assert names(lib / "From phone") == []
+
+
+def test_checking_the_rules_notes_what_each_did(home, lib, tmp_path):
+    pf, db = home
+    auto = rule(tmp_path, lib)
+    (tmp_path / "Review").mkdir()
+    manual = ai.Rule(name="Scanner", watch=str(tmp_path / "Review"), dest=str(lib / "From phone"), auto=False)
+    gone = ai.Rule(name="USB", watch=str(tmp_path / "unplugged"), dest=str(lib))
+    off = ai.Rule(name="Off", watch=str(tmp_path / "Review"), dest=str(lib), enabled=False)
+    photo(tmp_path / "Phone" / "a.jpg")
+    photo(tmp_path / "Review" / "b.jpg")
+    out = ai.check_rules(db, [auto, manual, gone, off], [str(lib)], now=LATER())
+    assert [b.rule.name for b in out.batches] == ["Dad's phone", "Scanner"]
+    assert names(lib / "From phone") == ["a.jpg"]  # the review one waits
+    assert ai.status(auto.id)["count"] == 1
+    assert ai.status(manual.id)["pending"] == 1
+    assert ai.status(gone.id)["waiting"] == "The watch folder isn't there."
+    assert ai.status(off.id) == {}
+
+
+# --- in the app ---------------------------------------------------------------------------------------
+
+
+def test_the_window_imports_says_so_and_undoes(app, pf, lib, tmp_path, monkeypatch):
+    from conftest import open_window, own_trash, wait_until
+
+    own_trash(monkeypatch, tmp_path)
+    monkeypatch.setattr(ai, "SETTLE", 0)
+    pf.add_folder(lib)
+    r = rule(tmp_path, lib)
+    ai.save_rules([r])
+    photo(tmp_path / "Phone" / "IMG_1.jpg")
+    w = open_window(app)
+    try:
+        w.importer.check()
+        wait_until(app, lambda: w.import_bar.isVisible())
+        assert w.import_bar.label.text() == "Imported 1 photo from Dad's phone."
+        assert names(lib / "From phone") == ["IMG_1.jpg"]
+        assert ai.status(r.id)["count"] == 1
+        w.import_bar.undo_button.click()
+        wait_until(app, lambda: names(tmp_path / "Phone") == ["IMG_1.jpg"])
+        assert not w.import_bar.isVisible()
+    finally:
+        w.close()
+
+
+def test_the_rule_dialog_greys_out_the_destination_when_tidying(app, pf, lib, tmp_path):
+    from homepix.ui.views.rule_dialog import RuleDialog
+
+    (tmp_path / "Phone").mkdir()
+    d = RuleDialog(None, [], [str(lib)])
+    d.name.setText("Phone")
+    d.watch.setText(str(tmp_path / "Phone"))
+    d.tidy.setChecked(True)
+    assert not d.dest.isEnabled() and not d.root.isVisible()  # one library folder: nothing to choose
+    d._save()
+    assert d.result() == d.DialogCode.Accepted
+    assert d.rule.tidy and d.rule.dest == str(lib) and d.rule.after == ai.MOVE and d.rule.auto
+    d2 = RuleDialog(None, [d.rule], [str(lib)])
+    d2.name.setText("Again")
+    d2.watch.setText(str(tmp_path / "Phone"))
+    d2.dest.setText(str(lib))
+    d2._save()
+    assert "already watches" in d2.problem.text()
+
+
+def test_a_review_can_leave_some_out_for_next_time(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib, auto=False)
+    photo(tmp_path / "Phone" / "a.jpg")
+    photo(tmp_path / "Phone" / "b.jpg")
+    batch = ai.check(db, r, [str(lib)], now=LATER())
+    ai.run(db, batch.without([str(tmp_path / "Phone" / "b.jpg")]))
+    assert names(lib / "From phone") == ["a.jpg"] and names(tmp_path / "Phone") == ["b.jpg"]
+    again = ai.check(db, r, [str(lib)], now=LATER())
+    assert [os.path.basename(f.path) for f, _ in again.imports] == ["b.jpg"]
+
+
+def test_a_rule_that_waits_offers_a_review(app, pf, lib, tmp_path, monkeypatch):
+    from conftest import open_window, own_trash, wait_until
+
+    from homepix.ui.views import review_dialog
+
+    own_trash(monkeypatch, tmp_path)
+    monkeypatch.setattr(ai, "SETTLE", 0)
+    pf.add_folder(lib)
+    r = rule(tmp_path, lib, auto=False)
+    ai.save_rules([r])
+    photo(tmp_path / "Phone" / "a.jpg")
+    photo(tmp_path / "Phone" / "b.jpg")
+    w = open_window(app)
+    try:
+        w.importer.check()
+        wait_until(app, lambda: w.review_bar.isVisible())
+        assert "2 new files from Dad's phone" in w.review_bar.label.text()
+        assert names(tmp_path / "Phone") == ["a.jpg", "b.jpg"]  # nothing done yet
+
+        def review(dlg):  # untick b.jpg, then Import
+            dlg.grid.item(1).setCheckState(review_dialog.Qt.CheckState.Unchecked)
+            assert dlg.go.text() == "Import 1"
+            return review_dialog.ReviewDialog.DialogCode.Accepted
+
+        def fake_exec(self):
+            self.setResult(review(self))
+            return self.result()
+
+        monkeypatch.setattr(review_dialog.ReviewDialog, "exec", fake_exec)
+        w.review_bar.review_button.click()
+        wait_until(app, lambda: w.import_bar.isVisible())
+        assert names(lib / "From phone") == ["a.jpg"] and names(tmp_path / "Phone") == ["b.jpg"]
+        assert not w.review_bar.isVisible()
+    finally:
+        w.close()

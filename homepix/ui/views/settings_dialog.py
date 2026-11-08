@@ -1,5 +1,5 @@
 """Settings: the folders that make up the library, the folders excluded from it (exclude a folder,
-take one back in), the app to edit photos in, and the look."""
+take one back in), auto import rules, the app to edit photos in, and the look."""
 
 import os
 from pathlib import Path
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ...core import autoimport
 from ...core.settings import (
     excluded_folders,
     library_folders,
@@ -30,6 +31,8 @@ from ...core.settings import (
 )
 from ...core.util import within
 from .. import theme
+from ..autoimport import describe
+from .rule_dialog import RuleDialog
 
 
 class SettingsDialog(QDialog):
@@ -37,11 +40,12 @@ class SettingsDialog(QDialog):
     remove_requested = Signal(str)
     rescan_requested = Signal()
     left_out_changed = Signal()  # a folder excluded, or taken back in
+    import_check_requested = Signal()  # Check now, for auto import
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.resize(620, 600)
+        self.resize(640, 800)
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("<b>Library folders</b>"))
         note = QLabel("The folders HomePix shows and searches.")
@@ -74,7 +78,7 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         lay.addWidget(note)
         self.left_list = QListWidget()
-        self.left_list.setMinimumHeight(110)  # (room for a few rows)
+        self.left_list.setMinimumHeight(80)  # (room for a few rows)
         self.left_list.itemSelectionChanged.connect(self._selected_folder)
         lay.addWidget(self.left_list, 2)
         row = QHBoxLayout()
@@ -85,6 +89,36 @@ class SettingsDialog(QDialog):
         row.addWidget(self.leave_button)
         row.addWidget(self.back_button)
         row.addStretch()
+        lay.addLayout(row)
+
+        lay.addSpacing(10)
+        lay.addWidget(QLabel("<b>Auto import</b>"))
+        note = QLabel(
+            "Bring new photos in from folders a sync app fills (from a phone, say). "
+            "Watch folders are checked every hour while HomePix is open."
+        )
+        note.setObjectName("hint")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        self.rule_list = QListWidget()
+        self.rule_list.setMinimumHeight(130)  # (two rules, two lines each)
+        self.rule_list.setSpacing(2)
+        self.rule_list.itemSelectionChanged.connect(self._selected_folder)
+        self.rule_list.itemDoubleClicked.connect(lambda _: self._edit_rule())
+        lay.addWidget(self.rule_list, 2)
+        row = QHBoxLayout()
+        self.add_rule_button = QPushButton("Add a rule...")
+        self.add_rule_button.clicked.connect(lambda: self._edit_rule(new=True))
+        self.edit_rule_button = QPushButton("Edit...")
+        self.edit_rule_button.clicked.connect(lambda: self._edit_rule())
+        self.remove_rule_button = QPushButton("Remove")
+        self.remove_rule_button.clicked.connect(self._remove_rule)
+        self.check_now = QPushButton("Check now")
+        self.check_now.clicked.connect(self.import_check_requested)
+        for b in (self.add_rule_button, self.edit_rule_button, self.remove_rule_button):
+            row.addWidget(b)
+        row.addStretch()
+        row.addWidget(self.check_now)
         lay.addLayout(row)
 
         lay.addSpacing(10)
@@ -136,7 +170,55 @@ class SettingsDialog(QDialog):
         self.left_list.clear()
         for f in excluded_folders():
             self._add_item(self.left_list, f, f, keep)
+        self.refresh_rules()
+
+    def refresh_rules(self):
+        keep = self._chosen(self.rule_list)
+        self.rule_list.clear()
+        for r in autoimport.load_rules():
+            item = QListWidgetItem(theme.icon("folder", "muted"), f"{r.name}\n{describe(r)}")
+            item.setData(Qt.ItemDataRole.UserRole, r.id)
+            item.setToolTip(f"{r.watch}  →  {'year folders in ' if r.tidy else ''}{r.dest}")
+            self.rule_list.addItem(item)
+            if r.id == keep:
+                item.setSelected(True)
         self._selected_folder()
+
+    def _edit_rule(self, new: bool = False):
+        folders = library_folders()
+        if not folders:
+            QMessageBox.information(self, "Auto import", "Add a library folder first: imported photos go into it.")
+            return
+        rules = autoimport.load_rules()
+        chosen = None if new else self._chosen(self.rule_list)
+        rule = next((r for r in rules if r.id == chosen), None)
+        if not new and rule is None:
+            return
+        dlg = RuleDialog(rule, rules, folders, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        rules = [dlg.rule if r.id == dlg.rule.id else r for r in rules]
+        if new:
+            rules.append(dlg.rule)
+        autoimport.save_rules(rules)
+        self.refresh_rules()
+
+    def _remove_rule(self):
+        chosen = self._chosen(self.rule_list)
+        rules = autoimport.load_rules()
+        rule = next((r for r in rules if r.id == chosen), None)
+        if rule is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Remove rule",
+            f'Stop importing from "{rule.name}"?\n\nNo files are touched.',
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            autoimport.save_rules([r for r in rules if r.id != rule.id])
+            self.refresh_rules()
 
     @staticmethod
     def _add_item(lst, text, path, keep=None):
@@ -155,6 +237,10 @@ class SettingsDialog(QDialog):
         self.remove.setEnabled(bool(self.list.selectedItems()))
         self.back_button.setEnabled(self._chosen(self.left_list) is not None)
         self.leave_button.setEnabled(bool(library_folders()))
+        if hasattr(self, "rule_list"):
+            chosen = self._chosen(self.rule_list) is not None
+            self.edit_rule_button.setEnabled(chosen)
+            self.remove_rule_button.setEnabled(chosen)
 
     def _leave_out(self):
         roots = library_folders()

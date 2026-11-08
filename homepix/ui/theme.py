@@ -269,6 +269,7 @@ QLabel#pageTitle {{ font-size: 22px; font-weight: 600; }}
 QLabel#pageCount {{ color: {ok}; }}
 QLabel#pageCount[busy="true"] {{ color: {muted}; }}
 QLabel#hint {{ color: {muted}; }}
+QLabel#problem {{ color: {danger}; }}
 QToolButton#pageBack {{ border: none; border-radius: 14px; padding: 4px 12px 4px 6px; color: {muted};
                         font-weight: 500; }}
 QToolButton#pageBack:hover {{ background: {hover}; color: {text}; }}
