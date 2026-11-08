@@ -7,3 +7,5 @@ opencv-python-headless>=4.8
 PySide6-Essentials==6.11.3
 # iPhone .heic photos
 pillow-heif>=0.16
+# The QR code that pairs a phone with Syncthing (pure Python)
+segno>=1.6

@@ -85,6 +85,17 @@ class RuleDialog(QDialog):
         self.watch = QLineEdit(r.watch)
         self.watch.setPlaceholderText("The folder your sync app puts new photos in")
         form.addRow("Import from:", _folder_row(self.watch, self._choose_watch))
+        self.syncthing_button = QPushButton("Set up a phone with Syncthing...")
+        self.syncthing_button.setObjectName("linkButton")
+        self.syncthing_button.setAutoDefault(False)
+        self.syncthing_button.setToolTip(
+            "Pair a phone by scanning a QR code; its photos arrive in the Import from folder"
+        )
+        self.syncthing_button.clicked.connect(self._set_up_syncthing)
+        link = QHBoxLayout()
+        link.addWidget(self.syncthing_button)
+        link.addStretch()
+        form.addRow("", link)
 
         # Import to: a folder in the library, or (organizing) which library folder's year folders
         self.dest = QLineEdit(r.dest if not r.tidy else "")
@@ -174,6 +185,18 @@ class RuleDialog(QDialog):
             self.watch.setText(path)
             if not self.name.text().strip():
                 self.name.setText(os.path.basename(path))
+
+    def _set_up_syncthing(self):
+        from .syncthing_dialog import SyncthingDialog
+
+        dlg = SyncthingDialog(self.watch.text().strip(), self)
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        folder, phone = dlg.folder, dlg.phone_name
+        dlg.deleteLater()  # (gone now, on this thread, not whenever Python gets round to it)
+        if accepted and folder:
+            self.watch.setText(folder)
+            if not self.name.text().strip():
+                self.name.setText(phone)
 
     def _choose_dest(self):
         start = self.dest.text() or (self.folders[0] if self.folders else str(pictures_folder()))
