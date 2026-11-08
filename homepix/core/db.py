@@ -15,7 +15,7 @@ import numpy as np
 
 from .config import data_dir, db_file
 
-VERSION = 13
+VERSION = 14
 
 TABLES = {
     "photos": """CREATE TABLE photos (
@@ -79,6 +79,15 @@ TABLES = {
         b INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
         PRIMARY KEY (a, b)
     )""",
+    # Files auto import has dealt with (imported, or found already in the library), so they're never
+    # dealt with twice: by where they were (size and time too), and by their content
+    "import_seen": """CREATE TABLE import_seen (
+        path TEXT PRIMARY KEY,
+        size INTEGER, mtime REAL,
+        sha256 TEXT NOT NULL,
+        op_id INTEGER REFERENCES ops(id) ON DELETE SET NULL,  -- the import it was part of (undone: not wanted)
+        seen TEXT NOT NULL
+    )""",
 }
 
 INDEXES = [
@@ -87,6 +96,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS photos_sha256 ON photos(sha256)",
     "CREATE INDEX IF NOT EXISTS faces_photo ON faces(photo_id)",
     "CREATE INDEX IF NOT EXISTS faces_person ON faces(person_id)",
+    "CREATE INDEX IF NOT EXISTS import_seen_sha256 ON import_seen(sha256)",
 ]
 
 
@@ -132,7 +142,12 @@ def _to_13(db):
     db.execute("UPDATE photos SET details_done=0 WHERE taken_source='filename'")
 
 
-UPGRADES = {11: _to_12, 12: _to_13}  # version: the step that brings it up to the next one
+def _to_14(db):
+    """Auto import's record of the files it has dealt with."""
+    db.execute(TABLES["import_seen"])
+
+
+UPGRADES = {11: _to_12, 12: _to_13, 13: _to_14}  # version: the step that brings it up to the next one
 
 
 def migrate(db: sqlite3.Connection, path):

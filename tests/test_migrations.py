@@ -94,7 +94,14 @@ def test_1_0_database_drops_what_was_never_used_and_keeps_everything_else(pf):
     assert db.execute("SELECT src, dst, done FROM op_steps").fetchone()[:] == ("/q/a.jpg", "/p/a.jpg", 2)
     assert db.execute("SELECT a, b FROM apart").fetchone()[:] == (1, 2)
     indexes = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL")}
-    assert indexes == {"photos_qhash", "photos_kind", "photos_sha256", "faces_photo", "faces_person"}
+    assert indexes == {
+        "photos_qhash",
+        "photos_kind",
+        "photos_sha256",
+        "faces_photo",
+        "faces_person",
+        "import_seen_sha256",
+    }
     # its foreign keys still hold: deleting a photo takes its faces and duplicate choices with it
     db.execute("DELETE FROM photos WHERE id=1")
     assert db.execute("SELECT COUNT(*) FROM faces").fetchone()[0] == 0

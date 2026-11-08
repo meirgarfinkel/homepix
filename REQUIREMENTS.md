@@ -7,7 +7,9 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 
 1. **Private and local.** Nothing leaves the computer; the only network access is the one-time model download.
 2. **Never changes files on its own.** Indexing, thumbnails and AI analysis run in the background but only read.
-   Renaming, moving, deleting and editing happen only when the user starts them, after a preview.
+   Renaming, moving, deleting and editing happen only when the user starts them, after a preview. The one
+   exception is an auto import rule the user has set up and left on (section 9): it brings new files in from
+   its watch folder by itself, and every batch is journaled and undoable like any other change.
 3. **A file is never lost.** Delete goes to the Trash; moves never overwrite; every change is journaled,
    undoable, and recoverable after a crash.
 4. **The index never drifts from the disk.** Every change made through the app updates the database in the
@@ -32,7 +34,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Photos: JPEG, PNG, HEIC, WebP, GIF, TIFF, DNG (DNG via its embedded preview) | v1 |
 | Videos (MP4, MOV): shown in the timeline and folders with a plain thumbnail, opened in the system player, included in rename/organize and exact dedupe. **No AI** (no search, no faces) | v1 |
 | Live Photos (HEIC + MOV) and sidecars (`.aae`, `.xmp`, `.json`) always kept together as one item | v1 |
-| Import from a folder, SD card or phone: preview, copy into year folders, optional rename, skip what's already in the library | v1 |
+| Import from a folder, SD card or phone: preview, copy into year folders, optional rename, skip what's already in the library. Built as auto import rules (section 9) | v1 |
 | A library folder carries what's known about its photos (faces and names, search, duplicate choices, folders left out) in `.homepix/`, kept up to date by itself: copied to another computer (any path, any system), it's brought back in without indexing again. Photos are matched by content | v1 |
 | Other RAW formats (CR2, NEF, ARW, ...) | v2 |
 
@@ -101,6 +103,27 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Near duplicates (resized/recompressed): perceptual hash, cross-checked with search-model similarity; bursts never touched | v1 |
 | Keeper: highest resolution, then larger file; manual override | v1 |
 | Review screen: side-by-side groups; send extras to the Trash in bulk, with a preview, or skip a group for later; never automatic, and never a `Duplicates/` folder | v1 |
+
+## 9. Auto import (agreed 2026-11-08)
+
+Photos arrive in a **watch folder** by some other app (Syncthing from an Android phone; iCloud for Windows,
+osxphotos or icloudpd for an iPhone) and HomePix brings them into the library. HomePix itself never goes on
+the network and never talks to the phone or the sync app.
+
+| Requirement | Priority |
+|---|---|
+| **Rules** in Settings → Auto import: add, edit, turn off, remove; as many as wanted (one per phone, say) | v1 |
+| Each rule: **name**; **watch folder** (not inside a library folder and not containing one; no two rules on one folder); **Import automatically** (on by default; off = new files wait for Review); **Tidy up** (off by default: rename `YYYY_MM_DD_HH_MM_SS.ext` and file into `<library>/<year>/`, `Unsorted/` with no date, same rules as the organizer); **Destination** (any folder in the library; files keep their names) — with Tidy up on it becomes only a choice of library folder, hidden when there's just one; **After importing**: move out of the watch folder (default) or leave it there | v1 |
+| Checked when the app opens, then **every hour** (no live watching); a **Check now** button in Settings | v1 |
+| A file is only taken once it's been unchanged for 2 minutes; hidden files and sync apps' part-files (`.syncthing.*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
+| Already in the library (same content) → not imported again. With "move out", such a file goes to the Trash so the watch folder empties; with "leave it there" it's left and remembered | v1 |
+| Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
+| After an automatic batch, a notice: "Imported 37 photos from Dad's phone", with **See them** and **Undo**; also in the history of changes | v1 |
+| A rule with Import automatically off: a banner and a sidebar entry with the count; **Review** shows the new files (untick to leave out) with where each will go; Import or Cancel | v1 |
+| A missing or unplugged watch folder or destination: nothing happens and nothing is treated as deleted; the rule shows why it's waiting | v1 |
+| The rule screen and the setup guide warn that "move out" deletes from the phone with two-way sync (Syncthing must be Receive Only on the computer) and from iCloud with iCloud for Windows; icloudpd and iCloud need "leave it there" | v1 |
+| Only while the app is running (a closed app imports when next opened). Start on login, minimised | Later |
+| Settings → Auto import shows, per rule, when it last checked and last imported | v1 |
 
 ## Not planned
 
