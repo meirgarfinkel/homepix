@@ -161,9 +161,9 @@ def test_rules_that_cant_be_saved(pf, lib, tmp_path):
     outer = tmp_path / "Drive"
     (outer / "Pictures").mkdir(parents=True)
     holds = ai.Rule(name="x", watch=str(outer), dest=str(outer / "Pictures"))
-    assert "hold a library folder" in ai.problem(holds, [], [str(outer / "Pictures")])
+    assert "contain a library folder" in ai.problem(holds, [], [str(outer / "Pictures")])
     twice = ai.Rule(name="y", watch=str(tmp_path / "Phone"), dest=str(lib))
-    assert "already watches" in ai.problem(twice, [ok], folders)
+    assert "already imports from" in ai.problem(twice, [ok], folders)
     outside = ai.Rule(name="z", watch=str(tmp_path / "Phone"), dest=str(tmp_path))
     assert "inside your library" in ai.problem(outside, [], folders)
     tidy = ai.Rule(name="t", watch=str(tmp_path / "Phone"), tidy=True)
@@ -184,7 +184,7 @@ def test_rules_are_kept_in_settings(pf, lib, tmp_path):
 def test_a_missing_watch_folder_just_waits(home, lib, tmp_path):
     pf, db = home
     r = ai.Rule(name="USB", watch=str(tmp_path / "unplugged"), dest=str(lib))
-    assert ai.waiting(r, [str(lib)]) == "The watch folder isn't there."
+    assert ai.waiting(r, [str(lib)]) == 'The "Import from" folder isn\'t connected.'
 
 
 def test_several_rules_import_as_one_change(home, lib, tmp_path):
@@ -216,7 +216,7 @@ def test_checking_the_rules_notes_what_each_did(home, lib, tmp_path):
     assert names(lib / "From phone") == ["a.jpg"]  # the review one waits
     assert ai.status(auto.id)["count"] == 1
     assert ai.status(manual.id)["pending"] == 1
-    assert ai.status(gone.id)["waiting"] == "The watch folder isn't there."
+    assert ai.status(gone.id)["waiting"] == 'The "Import from" folder isn\'t connected.'
     assert ai.status(off.id) == {}
 
 
@@ -246,7 +246,7 @@ def test_the_window_imports_says_so_and_undoes(app, pf, lib, tmp_path, monkeypat
         w.close()
 
 
-def test_the_rule_dialog_greys_out_the_destination_when_tidying(app, pf, lib, tmp_path):
+def test_organizing_imports_to_a_library_folder(app, pf, lib, tmp_path):
     from homepix.ui.views.rule_dialog import RuleDialog
 
     (tmp_path / "Phone").mkdir()
@@ -254,7 +254,7 @@ def test_the_rule_dialog_greys_out_the_destination_when_tidying(app, pf, lib, tm
     d.name.setText("Phone")
     d.watch.setText(str(tmp_path / "Phone"))
     d.tidy.setChecked(True)
-    assert not d.dest.isEnabled() and not d.root.isVisible()  # one library folder: nothing to choose
+    assert d.to.currentWidget() is d.root  # organizing: a library folder to import to, nothing greyed out
     d._save()
     assert d.result() == d.DialogCode.Accepted
     assert d.rule.tidy and d.rule.dest == str(lib) and d.rule.after == ai.MOVE and d.rule.auto
@@ -263,7 +263,7 @@ def test_the_rule_dialog_greys_out_the_destination_when_tidying(app, pf, lib, tm
     d2.watch.setText(str(tmp_path / "Phone"))
     d2.dest.setText(str(lib))
     d2._save()
-    assert "already watches" in d2.problem.text()
+    assert "already imports from" in d2.problem.text()
 
 
 def test_a_review_can_leave_some_out_for_next_time(home, lib, tmp_path):

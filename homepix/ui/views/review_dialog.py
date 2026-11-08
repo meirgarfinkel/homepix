@@ -138,8 +138,9 @@ class ReviewDialog(QDialog):
         p, v = b.counts()
         verb = "Move" if b.rule.after == autoimport.MOVE else "Copy"
         self.head.setText(
-            f"<b>{verb} {counted(p, v)} {where_text(b)}.</b> Untick any to leave them for next time; "
-            "hover over one to see where it will go."
+            f"<b>{verb} {counted(p, v)} {where_text(b)}.</b> "
+            "Untick any you don't want now: they'll be offered again next time. "
+            "Hover over one to see where it will go."
         )
         notes = []
         if b.already:

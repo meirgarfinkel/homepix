@@ -40,7 +40,7 @@ class ImportBar(QFrame):
 
 
 class ReviewBar(QFrame):
-    """New files are waiting (rules that don't import by themselves): review them, or later."""
+    """New files are waiting (automations that ask first): review them, or later."""
 
     review = Signal()
 
