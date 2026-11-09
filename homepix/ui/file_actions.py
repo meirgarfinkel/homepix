@@ -25,6 +25,8 @@ class FileActions:
     def __init__(self, window):
         self.w = window
         self.select_after = None  # after files went away: the index of the photo to select instead
+        self.to_trash = []  # photos Delete was pressed on while another change was under way
+        window.ops.history_changed.connect(self._trash_waiting)  # (each change done: the next can go)
         a, Key = window.add_action, QKeySequence.StandardKey
         self.undo = a("Undo", window.ops.undo, [Key.Undo])
         self.redo = a("Redo", window.ops.redo, ["Ctrl+Shift+Z", "Ctrl+Y"])
@@ -156,16 +158,32 @@ class FileActions:
             QGuiApplication.clipboard().clear()  # they're moved: there's nothing left to paste
 
     def trash_them(self):
+        """Delete: to the Trash. In the viewer the next photo shows at once; pressed again while the
+        last one is still going, it waits its turn (never dropped)."""
         items = self.targets()
         if not items:
             return
+        w = self.w
+        if w.stack.currentWidget() is w.viewer:
+            if not w.viewer.drop_current():
+                w.close_viewer()
+        else:
+            self._remember_place(items)
+        have = {it.path for it in self.to_trash}
+        self.to_trash += [it for it in items if it.path not in have]
+        self._trash_waiting()
+
+    def _trash_waiting(self):
+        if not self.to_trash or self.w.ops.busy:
+            return
+        items, self.to_trash = self.to_trash, []
         paths, n = [it.path for it in items], count_of(items)
-        self._remember_place(items)
         self.w.ops.run(
             "trash",
             f"Move {n} to Trash",
             f"Moved {n} to Trash",
             lambda db: files.plan_trash(files.with_companions(db, paths)),
+            quiet=len(items) <= 20,  # (quick: no progress window to get in the way)
         )
 
     def rename_them(self):

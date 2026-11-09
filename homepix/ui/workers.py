@@ -12,6 +12,10 @@ class _Relay(QObject):
 
 _relay = None
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-job")
+# Changes to files (which may wait for indexing to pause) and the viewer's decoding each have their own
+# threads, so neither waits behind the other or behind thumbnails and lists.
+_changes = ThreadPoolExecutor(max_workers=1, thread_name_prefix="homepix-change")
+_viewing = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-view")
 _pending = 0  # jobs submitted to the pool and not finished yet
 _vital = 0  # of those, the ones quitting must wait for
 _idle = threading.Condition()
@@ -49,15 +53,16 @@ def _counted(job, must_finish):
     return run_it
 
 
-def run(fn, callback, *args, must_finish=False):
+def run(fn, callback, *args, must_finish=False, viewing=False):
     """Run fn(*args) on a worker thread, then callback(result, error) on the UI thread.
     error is None on success, else the exception (and result None). must_finish: quitting waits for
-    it however long it takes (changes to the user's files)."""
+    it however long it takes (changes to the user's files). viewing: decoding for the viewer."""
     global _pending, _vital
     with _idle:
         _pending += 1
         _vital += must_finish
-    return _pool.submit(_counted(_job(fn, callback, args), must_finish))
+    pool = _changes if must_finish else _viewing if viewing else _pool
+    return pool.submit(_counted(_job(fn, callback, args), must_finish))
 
 
 def wait_idle(timeout: float) -> bool:

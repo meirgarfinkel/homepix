@@ -109,6 +109,18 @@ class Viewer(QWidget):
         self.update()
         self.current_changed.emit(index)
 
+    def drop_current(self) -> bool:
+        """Take the photo shown out of what's gone through (it's going to the Trash) and show the next
+        one at once. False if it was the last."""
+        if not 0 <= self.index < len(self.items):
+            return False
+        self.items = self.items[: self.index] + self.items[self.index + 1 :]  # (a copy: the grid's list stays)
+        if not self.items:
+            self.index = -1
+            return False
+        self.go(min(self.index, len(self.items) - 1))
+        return True
+
     def set_faces(self, photo_id, faces):
         """The faces in a photo (shown if it's still the one being looked at)."""
         self._faces_of, self.faces = photo_id, faces
@@ -184,7 +196,7 @@ class Viewer(QWidget):
             if self.index == index:
                 self.update()
 
-        workers.run(decode, done, *key, self.items[index].kind == "video")
+        workers.run(decode, done, *key, self.items[index].kind == "video", viewing=True)
 
     def _best_image(self):
         """The sharpest decoded version of the current photo there is: (QImage, original's longest
