@@ -120,7 +120,7 @@ the network and never talks to the phone or the sync app.
 | A file is only taken once it's been unchanged for 2 minutes; hidden files and sync apps' part-files (`.syncthing.*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
 | Already in the library (same content) → not imported again. When emptying the folder, such a file goes to the Trash; otherwise it's left and remembered | v1 |
 | Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
-| After an automatic batch, a notice: "Imported 37 photos from Dad's phone", with **See them** and **Undo** (while it's still the latest change; Edit > Undo names it too) | v1 |
+| After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Edit > Undo names it and takes it back | v1 |
 | An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; hover to see where it will go); Import or Cancel | v1 |
 | A missing or unplugged Import from or Import to folder: nothing happens and nothing is treated as deleted; Settings shows why it's waiting | v1 |
 | The automation screen warns that emptying the folder deletes from the phone with two-way sync (Syncthing must be Receive Only on the computer) and from iCloud with iCloud for Windows; with iCloud or icloudpd, leave it off | v1 |
