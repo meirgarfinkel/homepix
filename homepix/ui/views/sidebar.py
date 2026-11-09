@@ -145,7 +145,7 @@ class Sidebar(QTreeWidget):
         self.setMouseTracking(True)  # (the hand over an arrow)
         self.hover_arrow = None  # the row whose arrow the mouse is over
         self.setUniformRowHeights(True)
-        self.setMinimumWidth(220)
+        self.setMinimumWidth(170)
         self.itemSelectionChanged.connect(self._on_pick)
         self.currentItemChanged.connect(self._embolden)
         self._quiet = False
