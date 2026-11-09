@@ -226,7 +226,7 @@ def test_checking_the_rules_notes_what_each_did(home, lib, tmp_path):
 # --- in the app ---------------------------------------------------------------------------------------
 
 
-def test_the_window_imports_says_so_and_undoes(app, pf, lib, tmp_path, monkeypatch):
+def test_the_window_imports_says_so_and_undo_takes_it_back(app, pf, lib, tmp_path, monkeypatch):
     from conftest import open_window, own_trash, wait_until
 
     own_trash(monkeypatch, tmp_path)
@@ -238,13 +238,13 @@ def test_the_window_imports_says_so_and_undoes(app, pf, lib, tmp_path, monkeypat
     w = open_window(app)
     try:
         w.importer.check()
-        wait_until(app, lambda: w.import_bar.isVisible())
-        assert w.import_bar.label.text() == "Imported 1 photo from Dad's phone."
+        wait_until(app, lambda: w.statusBar().currentMessage() == "Imported 1 photo from Dad's phone.")
         assert names(lib / "From phone") == ["IMG_1.jpg"]
         assert ai.status(r.id)["count"] == 1
-        w.import_bar.undo_button.click()
+        wait_until(app, lambda: not w.ops.busy)
+        w.ops.undo()  # (Edit > Undo)
         wait_until(app, lambda: names(tmp_path / "Phone") == ["IMG_1.jpg"])
-        assert not w.import_bar.isVisible()
+        assert not hasattr(w, "import_bar")  # no bar across the window, just the line at the bottom
     finally:
         w.close()
 
@@ -311,7 +311,7 @@ def test_a_rule_that_waits_offers_a_review(app, pf, lib, tmp_path, monkeypatch):
 
         monkeypatch.setattr(review_dialog.ReviewDialog, "exec", fake_exec)
         w.review_bar.review_button.click()
-        wait_until(app, lambda: w.import_bar.isVisible())
+        wait_until(app, lambda: w.statusBar().currentMessage().startswith("Imported"))
         assert names(lib / "From phone") == ["a.jpg"] and names(tmp_path / "Phone") == ["b.jpg"]
         assert not w.review_bar.isVisible()
     finally:

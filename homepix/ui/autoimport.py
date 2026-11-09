@@ -1,19 +1,17 @@
 """Auto import in the app: the rules' watch folders are checked a little after the window opens, then
 every hour, or when asked (Check now). New files come in for rules that import by themselves, and a
-bar says what came in, with See them and Undo. For the others, a bar says new files are waiting, and
-Review shows them before anything is done."""
+line at the bottom of the window says what came in (Edit > Undo takes it back). For the others, a bar
+says new files are waiting, and Review shows them before anything is done."""
 
 import datetime as dt
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QMessageBox
 
-from ..core import autoimport, fileops
+from ..core import autoimport
 from ..core.db import open_db
 from ..core.settings import library_folders
 from .fileops import counted, plural
 from .views.review_dialog import ReviewDialog
-from .views.sidebar import ALL
 
 FIRST = 30_000  # ms after the window opens (anything interrupted is finished by then)
 HOURLY = 3_600_000
@@ -171,25 +169,5 @@ class AutoImporter(QObject):
             text = "Moved files that were already in your library to the Trash."
         if result.skipped:
             text += f" {plural(len(result.skipped), 'file')} couldn't be brought in and will be tried again."
-        place = ALL
-        if len(came) == 1 and not came[0][0].rule.tidy:
-            place = came[0][0].rule.dest
-        self.window.import_bar.show_import(text, result.op_id, place, imported=bool(came))
+        self.window.statusBar().showMessage(text, 12000)  # (Edit > Undo takes it back)
         self.window._after_change("")
-
-    def undo(self, op_id: int):
-        """Undo the import the bar is about, if it's still the latest change."""
-        db = open_db()
-        try:
-            latest = fileops.can_undo(db)
-        finally:
-            db.close()
-        if latest is None or latest["id"] != op_id:
-            QMessageBox.information(
-                self.window,
-                "Undo",
-                "Other changes were made after this import. Undo those first (Edit > Undo), one at a time.",
-            )
-            return
-        self.window.import_bar.hide()
-        self.window.ops.undo()
