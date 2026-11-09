@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QCompleter,
     QDialog,
     QDialogButtonBox,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QListView,
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 from ...core.people import KNOWN, MAYBE, NEW, by_likeness
 from ...core.thumbs import face_thumb
 from .. import workers
+from .flow import FlowLayout
 from .people import CROP
 
 TILE = 112
@@ -244,6 +244,7 @@ class PersonFaces(QWidget):
         self.person = None
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
+        self.title.setWordWrap(True)  # (a long name never holds the window wide)
         self.hint = QLabel("Tick the faces that aren't them.")
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
@@ -268,13 +269,9 @@ class PersonFaces(QWidget):
         )
         photos = QPushButton("Their photos")
         photos.clicked.connect(self.back)
-        row = QHBoxLayout()
-        for b in (self.not_button, self.else_button, self.hide_button):
+        row = FlowLayout()  # (wraps when the window is narrow)
+        for b in (self.not_button, self.else_button, self.hide_button, self.sort_button, photos):
             row.addWidget(b)
-        row.addSpacing(12)
-        row.addWidget(self.sort_button)
-        row.addStretch(1)
-        row.addWidget(photos)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 18, 24, 12)
         lay.addWidget(self.title)
@@ -336,6 +333,7 @@ class WhoView(QWidget):
         self._give_up.timeout.connect(lambda: self._got_follow_up(None) if self.waiting_for else None)
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
+        self.title.setWordWrap(True)
         self.hint = QLabel()
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
@@ -367,14 +365,10 @@ class WhoView(QWidget):
         )
         self.rest_button.clicked.connect(self._rest_arent_them)
         self.rest_button.hide()
-        row = QHBoxLayout()
-        row.addWidget(self.name, 1)
-        row.addWidget(self.name_button)
-        row.addWidget(self.rest_button)
-        row.addSpacing(12)
-        row.addWidget(self.sort_button)
-        row.addWidget(self.skip_button)
-        row.addWidget(self.hide_button)
+        row = FlowLayout()  # (wraps when the window is narrow)
+        self.name.setMinimumWidth(220)
+        for b in (self.name, self.name_button, self.rest_button, self.sort_button, self.skip_button, self.hide_button):
+            row.addWidget(b)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 18, 24, 12)
         lay.addWidget(self.title)

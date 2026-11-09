@@ -6,7 +6,6 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QHBoxLayout,
     QLabel,
     QListView,
     QPushButton,
@@ -21,6 +20,7 @@ from ...core.settings import set_skipped_duplicates, skipped_duplicates
 from .. import theme
 from ..thumbs import ThumbLoader
 from .changes_dialog import relative
+from .flow import FlowLayout
 
 TILE = 240
 GAP = 22
@@ -319,14 +319,13 @@ class DuplicatesView(QWidget):
         self.hint.setWordWrap(True)
         self.hint.setStyleSheet("color: palette(placeholder-text)")
         lay.addWidget(self.hint)
-        row = QHBoxLayout()
+        row = FlowLayout()  # (wraps when the window is narrow)
         self.trash_button = QPushButton("Move extras to Trash...")
         self.trash_button.setToolTip("Each group keeps its marked copy.")
         self.apart_button = QPushButton("Not duplicates")
         self.apart_button.setToolTip("Never offer these as duplicates again")
         for b in (self.trash_button, self.apart_button):
             row.addWidget(b)
-        row.addStretch()
         lay.addLayout(row)
         self.list = _List(self.loader)
         self.list.is_skipped = self.is_skipped

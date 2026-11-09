@@ -477,3 +477,33 @@ def test_settings_lists_and_changes_the_folders_left_out(pf, app, tmp_path, monk
     assert dlg.back_button.isEnabled()
     dlg._take_back()
     assert excluded_folders() == [str(lib / "b")] and changed == [1, 1]
+
+
+def test_the_window_fits_half_a_screen(app, pf, lib):
+    """Snapped to half a 1920-wide screen (960), the window fits with room to spare: rows of buttons
+    wrap, and the side panels can be narrower."""
+    from conftest import open_window
+    from PySide6.QtWidgets import QPushButton, QWidget
+
+    from homepix.ui.views.flow import FlowLayout
+
+    w = open_window(app)
+    try:
+        assert w.minimumSizeHint().width() <= 820
+    finally:
+        w.close()
+    box = QWidget()
+    row = FlowLayout(box)
+    buttons = [QPushButton(t) for t in ("Someone else...", "Not a face", "Most like ticked", "Their photos")]
+    for b in buttons:
+        row.addWidget(b)
+    wide = row.heightForWidth(2000)
+    narrow = row.heightForWidth(buttons[0].sizeHint().width() + 10)
+    assert narrow > wide * 3  # one per line
+    box.resize(2000, wide)
+    box.show()
+    app.processEvents()
+    assert len({b.y() for b in buttons}) == 1  # all on one line when there's room
+    box.close()
+    box.deleteLater()
+    app.processEvents()

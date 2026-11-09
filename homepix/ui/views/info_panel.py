@@ -44,7 +44,7 @@ class InfoPanel(QScrollArea):
         super().__init__(parent)
         self.setObjectName("info")
         self.setWidgetResizable(True)
-        self.setMinimumWidth(200)
+        self.setMinimumWidth(170)
         body = QWidget()
         body.setObjectName("infoBody")
         lay = QVBoxLayout(body)
