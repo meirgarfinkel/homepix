@@ -104,6 +104,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Near duplicates (resized/recompressed): perceptual hash, cross-checked with search-model similarity; bursts never touched | v1 |
 | Keeper: highest resolution, then larger file; manual override | v1 |
 | Review screen: side-by-side groups; send extras to the Trash in bulk, with a preview, or skip a group for later; never automatic, and never a `Duplicates/` folder | v1 |
+| Before its extras go, the keeper takes what only they have: the date taken (when it has none, or a filler at 00:00:00 and an extra has a real time; it's then renamed if named by its date), the location, the description, and their keywords (added to its own); nothing else it has is replaced; shown in the preview, and undone with the rest | v1 |
 
 ## 9. Import automations (agreed 2026-11-08)
 
