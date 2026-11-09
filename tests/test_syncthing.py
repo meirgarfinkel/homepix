@@ -117,6 +117,7 @@ def test_reads_where_to_reach_it_and_only_ever_on_this_computer(tmp_path):
 
 def test_not_installed_and_not_running_say_so(tmp_path, monkeypatch):
     monkeypatch.setattr(stmod, "config_files", lambda: [tmp_path / "nope.xml"])
+    monkeypatch.setattr(stmod, "find_program", lambda: None)
     with pytest.raises(stmod.NotRunning, match="isn't installed"):
         stmod.connect()
     path = write_config(tmp_path, "127.0.0.1:1")  # nothing listens there
@@ -187,21 +188,147 @@ def test_the_setup_window_pairs_and_fills_in_the_import_from_folder(app, fake, t
         app.processEvents()
 
 
-def test_without_syncthing_it_says_how_to_get_it(app, tmp_path, monkeypatch):
+def test_without_syncthing_install_sets_it_up_and_pairing_starts(app, fake, tmp_path, monkeypatch):
+    from conftest import wait_until
+
+    from homepix.ui.views import syncthing_dialog as sd
+
+    config = tmp_path / "state" / "syncthing" / "config.xml"
+    monkeypatch.setattr(stmod, "config_files", lambda: [config])
+    monkeypatch.setattr(stmod, "find_program", lambda: None)
+    monkeypatch.setattr(stmod, "install_command", lambda: ["pkexec", "apt-get", "install", "-y", "syncthing"])
+    ran = []
+
+    def install(env=None):  # (as if the installer ran and Syncthing started, writing its settings)
+        ran.append(env is not None)
+        write_config(tmp_path, fake.url.split("//")[1])
+        return ""
+
+    monkeypatch.setattr(stmod, "install", install)
+    d = sd.SyncthingDialog()
+    d.show()
+    try:
+        wait_until(app, lambda: d.setup.isVisible())
+        assert "isn't installed" in d.status.text()
+        assert d.install_button.isVisible() and d.install_button.text() == "Install Syncthing"
+        assert d.install_button.isDefault() and not d.use.isDefault()
+        assert "syncthing" in d.by_hand.text.text()  # (the same by hand, to copy into a terminal)
+        d.install_button.click()
+        wait_until(app, lambda: d.pairing.isVisible())
+        assert ran == [True] and d.device_id.text() == MY_ID and not d.setup.isVisible()
+        d.id_row.button.click()
+        assert app.clipboard().text() == MY_ID and d.id_row.button.text() == "Copied"
+    finally:
+        d.close()
+        d.deleteLater()
+        app.processEvents()
+
+
+def test_installed_but_stopped_offers_start(app, tmp_path, monkeypatch):
+    from conftest import wait_until
+
+    from homepix.ui.views import syncthing_dialog as sd
+
+    path = write_config(tmp_path, "127.0.0.1:1")  # nothing listens there
+    monkeypatch.setattr(stmod, "config_files", lambda: [path])
+    monkeypatch.setattr(sd, "WAIT_S", 0)
+    monkeypatch.setattr(stmod, "start", lambda env=None: "Unit syncthing.service not found.")
+    d = sd.SyncthingDialog()
+    d.show()
+    try:
+        wait_until(app, lambda: d.setup.isVisible())
+        assert "isn't running" in d.status.text() and d.install_button.text() == "Start Syncthing"
+        d.install_button.click()
+        wait_until(app, lambda: "didn't work" in d.working.text())
+        assert "Unit syncthing.service not found." in d.working.text() and d.install_button.isEnabled()
+    finally:
+        d.close()
+        d.deleteLater()
+        app.processEvents()
+
+
+def test_with_no_installer_it_points_to_the_download_page(app, tmp_path, monkeypatch):
     from conftest import wait_until
 
     from homepix.ui.views import syncthing_dialog as sd
 
     monkeypatch.setattr(stmod, "config_files", lambda: [tmp_path / "none.xml"])
+    monkeypatch.setattr(stmod, "find_program", lambda: None)
+    monkeypatch.setattr(stmod, "install_command", lambda: None)
     d = sd.SyncthingDialog()
     d.show()
     try:
-        wait_until(app, lambda: d.again.isVisible())
-        assert "isn't installed" in d.status.text() and "syncthing.net/downloads" in d.status.text()
+        wait_until(app, lambda: d.setup.isVisible())
+        assert not d.install_button.isVisible() and d.download_button.isVisible()
+        assert "download page" in d.status.text()
     finally:
         d.close()
         d.deleteLater()
         app.processEvents()
+
+
+def _which(available):
+    return lambda name: f"/usr/bin/{name}" if name in available else None
+
+
+def test_install_uses_the_systems_own_installer(monkeypatch):
+    monkeypatch.setattr(stmod.sys, "platform", "linux")
+    monkeypatch.setattr(stmod.shutil, "which", _which({"pkexec", "apt-get"}))
+    assert stmod.install_command() == ["/usr/bin/pkexec", "/usr/bin/apt-get", "install", "-y", "syncthing"]
+    assert stmod.manual_commands().splitlines() == [
+        "sudo apt install syncthing",
+        "systemctl --user enable --now syncthing",
+    ]
+    monkeypatch.setattr(stmod.shutil, "which", _which({"pkexec", "dnf"}))
+    assert stmod.install_command()[1:] == ["/usr/bin/dnf", "install", "-y", "syncthing"]
+    assert stmod.manual_commands().startswith("sudo dnf install syncthing")
+    monkeypatch.setattr(stmod.shutil, "which", _which({"apt-get"}))  # (no way to ask for the password)
+    assert stmod.install_command() is None
+    monkeypatch.setattr(stmod.sys, "platform", "win32")
+    monkeypatch.setattr(stmod.shutil, "which", _which({"winget"}))
+    cmd = stmod.install_command()
+    assert cmd[:5] == ["/usr/bin/winget", "install", "--exact", "--id", "Syncthing.Syncthing"] and "--silent" in cmd
+    monkeypatch.setattr(stmod.shutil, "which", _which(set()))
+    assert stmod.install_command() is None
+
+
+def test_start_on_linux_uses_its_user_service_else_starts_it_and_at_login(tmp_path, monkeypatch):
+    monkeypatch.setattr(stmod.sys, "platform", "linux")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(stmod, "find_program", lambda: "/usr/bin/syncthing")
+    ran, started = [], []
+    monkeypatch.setattr(stmod, "_start_detached", lambda args, env=None: started.append(args))
+    monkeypatch.setattr(stmod.shutil, "which", _which({"systemctl"}))
+    monkeypatch.setattr(stmod, "_run", lambda args, env=None, timeout=0: ran.append(args) or "")
+    assert stmod.start() == ""
+    assert ran == [["/usr/bin/systemctl", "--user", "enable", "--now", "syncthing.service"]] and started == []
+    monkeypatch.setattr(stmod, "_run", lambda args, env=None, timeout=0: "no such unit")
+    assert stmod.start() == ""
+    assert started == [["/usr/bin/syncthing", "--no-browser"]]
+    assert "Exec=/usr/bin/syncthing --no-browser" in (tmp_path / "autostart" / "syncthing.desktop").read_text()
+
+
+def test_start_on_windows_starts_it_now_and_at_each_login(tmp_path, monkeypatch):
+    monkeypatch.setattr(stmod.sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    exe = r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\syncthing.exe"
+    monkeypatch.setattr(stmod, "find_program", lambda: exe)
+    started = []
+    monkeypatch.setattr(stmod, "_start_detached", lambda args, env=None: started.append(args))
+    assert stmod.start() == ""
+    assert started == [[exe, "--no-browser"]]
+    script = tmp_path / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "Syncthing.vbs"
+    assert script.read_text(encoding="utf-8").startswith(
+        f'CreateObject("WScript.Shell").Run """{exe}"" --no-browser", 0'
+    )
+
+
+def test_never_run_yet_counts_as_installed_but_stopped(tmp_path, monkeypatch):
+    monkeypatch.setattr(stmod, "config_files", lambda: [tmp_path / "nope.xml"])
+    monkeypatch.setattr(stmod, "find_program", lambda: "/usr/bin/syncthing")
+    with pytest.raises(stmod.NotRunning, match="isn't running") as e:
+        stmod.connect()
+    assert e.value.kind == stmod.STOPPED
 
 
 def test_the_qr_code_holds_the_device_id(app):
