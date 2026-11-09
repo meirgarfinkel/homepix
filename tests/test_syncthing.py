@@ -212,7 +212,7 @@ def test_without_syncthing_install_sets_it_up_and_pairing_starts(app, fake, tmp_
         assert "isn't installed" in d.status.text()
         assert d.install_button.isVisible() and d.install_button.text() == "Install Syncthing"
         assert d.install_button.isDefault() and not d.use.isDefault()
-        assert "syncthing" in d.by_hand.text.text()  # (the same by hand, to copy into a terminal)
+        assert "syncthing" in d.by_hand.text.text().lower()  # (the same by hand, to copy into a terminal)
         d.install_button.click()
         wait_until(app, lambda: d.pairing.isVisible())
         assert ran == [True] and d.device_id.text() == MY_ID and not d.setup.isVisible()
