@@ -655,12 +655,14 @@ class MainWindow(QMainWindow):
                 shown.id,
             )
             return
-        if not self.timeline.items:
+        going = {it.path for it in self.files.to_trash}  # (Delete pressed, waiting its turn: gone already)
+        items = [it for it in self.timeline.items if it.path not in going] if going else self.timeline.items
+        if not items:
             return self.close_viewer()
         old = self.viewer.items[self.viewer.index].id if 0 <= self.viewer.index < len(self.viewer.items) else None
-        index = {it.id: i for i, it in enumerate(self.timeline.items)}
-        i = index.get(old, min(self.viewer.index, len(self.timeline.items) - 1))
-        self.viewer.show_items(self.timeline.items, i)
+        index = {it.id: i for i, it in enumerate(items)}
+        i = index.get(old, min(self.viewer.index, len(items) - 1))
+        self.viewer.show_items(items, i)
 
     def _folder_menu(self, path, pos):
         if person_of(path) is not None:
@@ -1147,6 +1149,10 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
         i, back = self.viewer.index, self._viewer_from or self.timeline
+        if 0 <= i < len(self.viewer.items) and back is self.timeline:  # (the viewer's list may be shorter now)
+            ids = [it.id for it in self.timeline.items]
+            shown = self.viewer.items[i].id
+            i = ids.index(shown) if shown in ids else min(i, len(ids) - 1)
         self._viewer_folder = None
         self._switch_to(back)
         if back is self.timeline:

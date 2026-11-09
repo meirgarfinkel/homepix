@@ -494,6 +494,30 @@ def test_delete_in_the_viewer_shows_the_next_photo(window, app):
     assert w.viewer.items[w.viewer.index].path == second != first
 
 
+def test_delete_pressed_quickly_in_a_row_in_the_viewer(window, app, monkeypatch):
+    """Each Delete shows the next photo at once, and none is dropped while the one before is still
+    going to the Trash (even when that waits on something slow)."""
+    import time
+
+    from homepix.core import fileops as core
+
+    w = window
+    real = core.run
+    monkeypatch.setattr(core, "run", lambda *a, **k: (time.sleep(0.3), real(*a, **k))[1])  # a slow one
+    w.open_viewer(0)
+    paths = [it.path for it in w.timeline.items]
+    for n in range(3):
+        w.files.trash.trigger()
+        assert w.viewer.items[w.viewer.index].path == paths[n + 1]  # the next one, without waiting
+    assert w.ops.busy and len(w.files.to_trash) == 2  # the first is going; the others wait their turn
+    wait_until(app, lambda: len(w.timeline.items) == 1 and not w.ops.busy and not w.files.to_trash)
+    assert not any(os.path.exists(p) for p in paths[:3])
+    assert w.stack.currentWidget() is w.viewer and w.viewer.items[w.viewer.index].path == paths[3]
+    w.files.trash.trigger()  # the last one: back to the grid
+    assert w.stack.currentWidget() is not w.viewer
+    wait_until(app, lambda: not w.timeline.items and not w.ops.busy)
+
+
 def test_cut_here_and_paste_into_another_folder(window, lib, app):
     w = window
     (lib / "other").mkdir()

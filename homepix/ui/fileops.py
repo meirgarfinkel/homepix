@@ -117,9 +117,10 @@ class FileOps(QObject):
         """Ask the operation under way to stop at the next file (a move under way always finishes)."""
         self._stop = True
 
-    def run(self, kind: str, summary: str, past: str, plan):
+    def run(self, kind: str, summary: str, past: str, plan, quiet: bool = False) -> bool:
         """plan(db) -> steps (from core.fileops), worked out with the library to ourselves. summary is
-        what Undo names it ("Move 3 photos to Trash"); past says it's done ("Moved 3 photos to Trash")."""
+        what Undo names it ("Move 3 photos to Trash"); past says it's done ("Moved 3 photos to Trash").
+        quiet: no progress window (a quick one). False if another is under way."""
 
         def work(progress, should_stop):
             db = open_db()
@@ -135,11 +136,12 @@ class FileOps(QObject):
             finally:
                 db.close()
 
-        self._in_background(
+        return self._in_background(
             f"{summary}...",
             work,
             lambda res, err: self._report_result(past, res, err),
             rescan=_found_new,
+            quiet=quiet,
         )
 
     def undo(self):
