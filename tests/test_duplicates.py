@@ -211,7 +211,12 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch, app):
         assert w.dupes.title.text() == "3 groups of duplicates, 3 extra copies, 1 skipped"
         w.dupes.trash_button.click()
         wait_until(app, lambda: not w.ops.busy and not planted["b"].exists())
-        assert set(shown[0]) == {"Trash"} and planted["b small"].exists() and planted["c again"].exists()
+        assert shown[0][0] == "Kept, with more details" and set(shown[0][1:]) == {"Trash"}
+        assert planted["b small"].exists() and planted["c again"].exists()
+        from homepix.core import metadata
+
+        kept = metadata.read([planted["b small"]])[str(planted["b small"])]
+        assert kept.taken.isoformat(" ") == "2021-02-02 10:00:00"  # the date only the copy it kept over had
         assert not (lib / "Duplicates").exists()
         wait_until(app, lambda: [planted_name(g, planted) for g in w.dupes.groups] == ["c"])
         assert w.dupes.is_skipped(w.dupes.groups[0])  # still skipped, after the reload
@@ -220,6 +225,7 @@ def test_reviewing_in_the_window(home, lib, planted, monkeypatch, app):
         w.ops.undo()
         wait_until(app, lambda: len(w.dupes.groups) == 4 and not w.ops.busy)
         assert planted["b"].exists()
+        assert metadata.read([planted["b small"]])[str(planted["b small"])].taken is None
     finally:
         w.close()
 
@@ -358,3 +364,78 @@ def test_extras_take_their_sidecars_but_not_the_keepers(home, lib, planted):
     assert (lib / "2023" / "2023_04_04_10_00_00.xmp").exists()
     fo.undo(db)
     assert (lib / "backup" / "IMG_0001.jpg.xmp").exists() and (lib / "2023" / "2023_04_04_10_00_00.png.xmp").exists()
+
+
+# --- the keeper takes what only its copies have ---------------------------------------------------
+
+
+def _pair(home, lib, keeper_date, copy_date, seed=40):
+    """A big keeper (dated keeper_date, nothing else) and a smaller copy with copy_date, a location,
+    a description and keywords. Returns (keeper, copy, its group)."""
+    from homepix.core import metadata
+
+    pf, db = home
+    stamp = keeper_date.replace("-", ":")
+    keeper = save(
+        scene(seed, size=(1200, 900)),
+        lib / "2018" / f"{keeper_date.replace('-', '_').replace(' ', '_').replace(':', '_')}.jpg",
+        stamp,
+    )
+    metadata.write(keeper, {"XMP-dc:Subject": ["Mine"]})
+    copy = save(
+        scene(seed, size=(1200, 900)).resize((400, 300)), lib / "shared" / "IMG_1.jpg", copy_date.replace("-", ":")
+    )
+    metadata.write(
+        copy,
+        {
+            "GPS:GPSLatitude": 31.7767,
+            "GPS:GPSLatitudeRef": "N",
+            "GPS:GPSLongitude": 35.2345,
+            "GPS:GPSLongitudeRef": "E",
+            "XMP-dc:Description": "Grandma's birthday",
+            "XMP-dc:Subject": ["family", "mine"],
+        },
+    )
+    pf.index_folder(lib, want_faces=False)
+    (g,) = [g for g in duplicates.find(db) if g.keeper.path == str(keeper)]
+    assert g.extras[0].path == str(copy)
+    return keeper, copy, g
+
+
+def test_the_keeper_takes_the_details_only_its_copy_has_and_a_real_time_for_a_midnight_filler(home, lib):
+    from homepix.core import metadata
+
+    _, db = home
+    keeper, copy, g = _pair(home, lib, "2018-06-10 00:00:00", "2018-06-10 14:22:05")
+    steps, notes = duplicates.plan_fill(db, [g])
+    assert notes[str(keeper)] == "Date, location, description, keywords from IMG_1.jpg"
+    fo.run(db, "trash", "Trash", duplicates.plan_extras(db, [g]))
+    assert not copy.exists() and not keeper.exists()  # renamed for its real time
+    now = lib / "2018" / "2018_06_10_14_22_05.jpg"
+    d = metadata.read([now])[str(now)]
+    assert d.taken.isoformat(" ") == "2018-06-10 14:22:05"
+    assert d.gps == (31.7767, 35.2345) and d.description == "Grandma's birthday"
+    assert d.keywords == ["Mine", "family"]  # its own kept, the copy's added ("mine" is the same word)
+    taken = db.execute("SELECT taken FROM photos WHERE path=?", (str(now),)).fetchone()[0]
+    assert taken.startswith("2018-06-10 14:22:05") or taken.startswith("2018-06-10T14:22:05")
+
+    fo.undo(db)  # all of it comes back
+    assert keeper.exists() and copy.exists() and not now.exists()
+    d = metadata.read([keeper])[str(keeper)]
+    assert d.taken.isoformat(" ") == "2018-06-10 00:00:00" and d.gps is None and d.description == ""
+    assert d.keywords == ["Mine"]
+
+
+def test_a_real_time_is_never_replaced_and_a_midnight_one_only_by_a_real_time(home, lib):
+    _, db = home
+    _, _, g = _pair(home, lib, "2018-06-10 09:15:00", "2018-06-10 14:22:05")
+    steps, notes = duplicates.plan_fill(db, [g])
+    assert "date" not in next(iter(notes.values())).lower()  # (location and the rest still come)
+    assert not any(s["action"] == "move" for s in steps)
+
+
+def test_a_midnight_copy_doesnt_replace_a_midnight_keeper(home, lib):
+    _, db = home
+    _, _, g = _pair(home, lib, "2018-06-10 00:00:00", "2018-06-11 00:00:00", seed=41)
+    _, notes = duplicates.plan_fill(db, [g])
+    assert next(iter(notes.values())) == "Location, description, keywords from IMG_1.jpg"

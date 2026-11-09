@@ -51,13 +51,22 @@ class Dedupe:
         library = library_folders()
         db = open_db()
         try:
-            steps = duplicates.plan_extras(db, groups)
+            fill, gets = duplicates.plan_fill(db, groups)
+            steps = duplicates.plan_trash(db, groups)
         finally:
             db.close()
         if not steps:
             return
         keeper = {c.path: g.keeper.path for g in groups for c in g.extras}
-        rows = [
+        rows = []
+        for s in fill:  # the keepers taking details from their copies (and a new name for a new date)
+            if s["action"] == "meta":
+                rows.append((relative(s["src"], library), "Kept, with more details", gets.get(s["src"], ""), s["src"]))
+            elif s["action"] == "move":
+                rows.append(
+                    (relative(s["src"], library), relative(s["dst"], library), "Named by its new date", s["src"])
+                )
+        rows += [
             (
                 relative(s["src"], library),
                 "Trash",
@@ -69,6 +78,14 @@ class Dedupe:
         n = len(steps)
         head = f"<b>{plural(n, 'file')}</b> will move to the Trash, from {plural(len(groups), 'group')} of duplicates."
         note = "Each group keeps its marked copy. Undo brings them back."
+        filled = sum(s["action"] == "meta" for s in fill)
+        if filled:
+            note = (
+                f"Each group keeps its marked copy. {plural(filled, 'kept photo')} also "
+                f"{'takes' if filled == 1 else 'take'} the date, location, description or keywords only "
+                f"{'its' if filled == 1 else 'their'} copies have. Undo brings everything back."
+            )
+        steps = fill + steps
         if not self._confirm("Duplicates", head, note, rows, f"Move {plural(n, 'file')} to Trash"):
             return
         self.w.ops.run(

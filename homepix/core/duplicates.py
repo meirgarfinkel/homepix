@@ -285,11 +285,84 @@ def count_unchecked(db) -> int:
 
 
 def plan_extras(db, groups) -> list[dict]:
+    """Steps that give each keeper the details only its extras have (plan_fill), then move every
+    group's extras to the Trash."""
+    return plan_fill(db, groups)[0] + plan_trash(db, groups)
+
+
+def plan_trash(db, groups) -> list[dict]:
     """Steps that move every group's extras to the Trash (a Live Photo's clip goes with its photo,
     unless the copy kept is as much its photo)."""
     from . import fileops
 
     return fileops.plan_trash(fileops.with_companions(db, [c.path for g in groups for c in g.extras]))
+
+
+def _shown_date(db, path):
+    """(date, is it a real one) as the library has it for this file: a placeholder or a guess from
+    when the file changed isn't real."""
+    row = db.execute("SELECT taken, taken_source FROM photos WHERE path=?", (path,)).fetchone()
+    if row is None or row["taken"] is None:
+        return None, False
+    return dt.datetime.fromisoformat(row["taken"]), row["taken_source"] not in (None, "file-modified", "placeholder")
+
+
+def _midnight(d: dt.datetime) -> bool:
+    return d.time() == dt.time()  # (a filler: the day may be right, the time isn't known)
+
+
+def plan_fill(db, groups) -> tuple[list[dict], dict[str, str]]:
+    """Before its extras go, a keeper takes what only they have: the date taken (when it has none, or
+    only a filler at midnight and an extra has a real time), the location, the description, and their
+    keywords (added to its own). Nothing it has is otherwise replaced. Returns (steps, {keeper path: what
+    it gets and from which file}). Exact copies hold the same details, so only near ones are read."""
+    from . import fileops, metadata
+    from .exiftool import available
+
+    near = [g for g in groups if g.how != "exact" and g.keeper.kind == "photo"]
+    if not near or not available():
+        return [], {}
+    paths = [c.path for g in near for c in g.copies]
+    found = {}
+    for i in range(0, len(paths), 200):
+        found.update(metadata.read(paths[i : i + 200]))
+    steps, notes = [], {}
+    for g in near:
+        keep = found.get(os.path.abspath(g.keeper.path))
+        if keep is None:
+            continue
+        edit, got = metadata.Edit(), {}  # got: {what: from which file}
+        date, real = _shown_date(db, g.keeper.path)
+        words = {w.casefold() for w in keep.keywords}
+        for c in g.extras:
+            d = found.get(os.path.abspath(c.path))
+            if d is None:
+                continue
+            name = os.path.basename(c.path)
+            theirs, their_real = _shown_date(db, c.path)
+            if their_real and edit.date is None and (not real or (_midnight(date) and not _midnight(theirs))):
+                edit.date, got["date"] = theirs, name
+            if d.gps and not keep.gps and edit.gps is None:
+                edit.gps, got["location"] = d.gps, name
+            if d.description and not keep.description and edit.description is None:
+                edit.description, got["description"] = d.description, name
+            new = [w for w in d.keywords if w.casefold() not in words]
+            if new:
+                edit.add_keywords += tuple(new)
+                words |= {w.casefold() for w in new}
+                got.setdefault("keywords", name)
+        if not got:
+            continue
+        more, _ = fileops.plan_details(db, [g.keeper.path], edit)
+        if more:
+            steps += more
+            by_file = {}
+            for what, name in got.items():
+                by_file.setdefault(name, []).append(what)
+            notes[os.path.abspath(g.keeper.path)] = "; ".join(
+                f"{', '.join(whats).capitalize()} from {name}" for name, whats in by_file.items()
+            )
+    return steps, notes
 
 
 def plan_apart(db, groups) -> dict | None:
