@@ -6,7 +6,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 ## Ground rules (apply to everything)
 
 1. **Private and local.** Nothing leaves the computer; the only network access is the one-time model download.
-   (Setting up Syncthing, section 9, talks only to the Syncthing running on this computer.)
+   (Setting up Syncthing, section 9, talks only to the Syncthing running on this computer; its Install button hands any download to the system's own installer.)
 2. **Never changes files on its own.** Indexing, thumbnails and AI analysis run in the background but only read.
    Renaming, moving, deleting and editing happen only when the user starts them, after a preview. The one
    exception is an import automation the user has set up and not paused (section 9): it brings new files in from
@@ -126,7 +126,7 @@ the network and never talks to the phone or the sync app.
 | The automation screen warns that emptying the folder deletes from the phone with two-way sync (Syncthing must be Receive Only on the computer) and from iCloud with iCloud for Windows; with iCloud or icloudpd, leave it off | v1 |
 | Only while the app is running (a closed app imports when next opened). Start on login, minimised | Later |
 | Settings shows, per automation, when it last checked and last imported | v1 |
-| **Set up a phone with Syncthing...** (under Import from): finds the Syncthing running on this computer (its own settings file gives the address and key; only ever this computer); shows this computer's ID as a QR code, with steps (Syncthing-Fork on Android, Möbius Sync on iPhone); **Connect** when the phone asks to; the folder the phone then shares is taken as **Receive Only** into the Import from folder (or `~/Phone photos/<phone>`), so emptying it never deletes anything on the phone. Not installed or not running: says how to get it, with Try again | v1 |
+| **Set up a phone with Syncthing...** (under Import from): finds the Syncthing running on this computer (its own settings file gives the address and key; only ever this computer); shows this computer's ID as a QR code, with steps (Syncthing-Fork on Android, Möbius Sync on iPhone); **Connect** when the phone asks to; the folder the phone then shares is taken as **Receive Only** into the Import from folder (or `~/Phone photos/<phone>`), so emptying it never deletes anything on the phone. Device ID has a Copy button. Not installed: **Install Syncthing** hands it to the system's own installer (pkexec with apt/dnf/pacman; winget; Homebrew), then starts it; installed but not running: **Start Syncthing** starts it and has it start at each login (systemd user service, else an autostart entry; a Startup-folder script on Windows; brew services or the app on macOS). Either way the same commands show in a box with Copy, and a Download page button; Try again | v1 |
 
 ## Not planned
 
