@@ -1,20 +1,24 @@
-"""Auto import in the app: the rules' watch folders are checked a little after the window opens, then
-every hour, or when asked (Check now). New files come in for rules that import by themselves, and a
+"""Auto import in the app: the rules' watch folders are checked a little after the window opens, when
+something new has finished arriving in them (they're looked at every minute; a look only lists them),
+every hour whatever, or when asked (Check now). New files come in for rules that import by themselves, and a
 line at the bottom of the window says what came in (Edit > Undo takes it back). For the others, a bar
 says new files are waiting, and Review shows them before anything is done."""
 
 import datetime as dt
+import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..core import autoimport
 from ..core.db import open_db
 from ..core.settings import library_folders
+from . import workers
 from .fileops import counted, plural
 from .views.review_dialog import ReviewDialog
 
 FIRST = 30_000  # ms after the window opens (anything interrupted is finished by then)
-HOURLY = 3_600_000
+LOOK = 60_000  # a look at what's in the watch folders
+HOURLY = 3_600_000  # a full check, new files or not
 RETRY = 120_000  # when something else is changing files: try again in a little while
 
 
@@ -55,17 +59,42 @@ class AutoImporter(QObject):
         super().__init__(window)
         self.window = window
         self.timer = QTimer(self)
-        self.timer.setInterval(HOURLY)
-        self.timer.timeout.connect(self.check)
+        self.timer.setInterval(LOOK)
+        self.timer.timeout.connect(self.look)
+        self._seen = None  # what the last look found
+        self._checked_at = 0.0  # (time.monotonic()) of the last full check started
+        self._looking = False
         self.waiting: dict[str, autoimport.Batch] = {}  # rule id: what it found, for rules that wait for review
 
     def start(self):
         QTimer.singleShot(FIRST, self.check)
         self.timer.start()
 
+    def look(self):
+        """Every minute: a full check only when something new has finished arriving (or it's been an hour)."""
+        if time.monotonic() - self._checked_at >= HOURLY / 1000:
+            self.check()
+            return
+        rules = [r for r in autoimport.load_rules() if r.enabled]
+        if not rules or self._looking:
+            return
+        self._looking = True
+
+        def seen(found, err):
+            self._looking = False
+            if err is not None:
+                print(f"Couldn't look in the import folders: {err!r}", flush=True)
+                return
+            if found != self._seen:
+                self._seen = found
+                self.check()
+
+        workers.run(autoimport.looks, seen, rules)
+
     def check(self, asked: bool = False):
         """Look in every watch folder now. asked: someone pressed Check now (so say what happened,
         and show progress)."""
+        self._checked_at = time.monotonic()
         rules = [r for r in autoimport.load_rules() if r.enabled]
         if not rules:
             if asked:

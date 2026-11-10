@@ -176,7 +176,14 @@ def settled_files(watch: str, now: float | None = None, should_stop=lambda: Fals
     return out
 
 
-_hashes: dict[tuple, str] = {}  # (path, size, time) -> its hash: files waiting for review aren't read every hour
+def looks(rules: list[Rule], now: float | None = None) -> tuple:
+    """What a check would find in the rules' watch folders, in short (each file ready to be taken, by
+    name, size and time): when it's the same as last time, there's nothing new to check. Only lists
+    the folders; no file is read."""
+    return tuple((r.watch, p, st.st_size, st.st_mtime) for r in rules for p, st in settled_files(r.watch, now))
+
+
+_hashes: dict[tuple, str] = {}  # (path, size, time) -> its hash: files waiting for review aren't read at every check
 
 
 def _sha256(path: str, st=None) -> str:

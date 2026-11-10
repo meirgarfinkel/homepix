@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core import junk
+from ..core import background, junk
 from ..core import people as known_people
 from ..core.config import FOLLOW_UP_FACES, data_dir
 from ..core.db import open_db
@@ -592,7 +592,7 @@ class MainWindow(QMainWindow):
         add_row(m, self.full_action, "fullscreen")
         add_row(m, self.settings_action, "settings")
         add_row(m, self.add_action("Check for updates", self.updater.check), "update")
-        add_row(m, self.add_action("Quit", self.close, [QKeySequence.StandardKey.Quit]), "quit")
+        add_row(m, self.add_action("Quit", self.quit_app, [QKeySequence.StandardKey.Quit]), "quit")
 
     # --- files and folders ---------------------------------------------------------------------------
 
@@ -1170,12 +1170,27 @@ class MainWindow(QMainWindow):
         else:
             self.info.show_photo(None)
 
-    def closeEvent(self, e):
-        self.closing.emit()
+    def quit_app(self):
+        """Quit (File > Quit, or to restart): it stops even when set to keep running in the background."""
+        self._quitting = True
+        self.close()
+
+    def _save_window(self):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("state", self.saveState())
         self.settings.setValue("tile", self.timeline.tile)
         self.settings.sync()  # written now: the app quits without waiting
+
+    def closeEvent(self, e):
+        if background.on() and not getattr(self, "_quitting", False):
+            # kept running for the import automations: the window only hides (the menu brings it back)
+            self._save_window()
+            self.copies.flush()
+            self.hide()
+            e.ignore()
+            return
+        self.closing.emit()
+        self._save_window()
         self.watcher.shutdown()
         self.loader.stop()
         self.dupes.stop()

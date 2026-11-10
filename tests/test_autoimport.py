@@ -532,3 +532,43 @@ def test_the_portable_copy_says_where_each_imported_photo_came_from(home, lib, t
     copy = sqlite3.connect(portable.copy_path(lib))
     listed = copy.execute("SELECT path, source FROM came_from").fetchall()
     assert listed == [("From phone/IMG_1.jpg", "Camera/IMG_1.jpg")]
+
+
+def test_a_look_only_changes_when_a_file_has_finished_arriving(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib)
+    empty = ai.looks([r], now=LATER())
+    photo(tmp_path / "Phone" / "IMG_5.jpg")
+    photo(tmp_path / "Phone" / ".syncthing.IMG_6.jpg.tmp")
+    assert ai.looks([r], now=time.time()) == empty  # still arriving: nothing to check yet
+    ready = ai.looks([r], now=LATER())
+    assert [os.path.basename(p) for _, p, _, _ in ready] == ["IMG_5.jpg"]
+    assert ai.looks([r], now=LATER()) == ready  # the same again: no new check
+
+
+def test_the_window_checks_only_when_a_look_finds_something_new(app, pf, lib, tmp_path, monkeypatch):
+    from conftest import open_window, wait_until
+
+    from homepix.ui import autoimport as ui_ai
+
+    monkeypatch.setattr(ai, "SETTLE", 0)
+    pf.add_folder(lib)
+    ai.save_rules([rule(tmp_path, lib)])
+    w = open_window(app)
+    try:
+        checks = []
+        monkeypatch.setattr(w.importer, "check", lambda asked=False: checks.append(asked))
+        w.importer._checked_at = time.monotonic()  # (a full check just ran)
+        w.importer.look()
+        wait_until(app, lambda: checks == [False])  # the first look: what's there is news
+        w.importer.look()
+        wait_until(app, lambda: not w.importer._looking)
+        assert checks == [False]  # nothing new: no check
+        photo(tmp_path / "Phone" / "IMG_7.jpg")
+        w.importer.look()
+        wait_until(app, lambda: checks == [False, False])
+        w.importer._checked_at -= ui_ai.HOURLY / 1000  # an hour on: a full check, new files or not
+        w.importer.look()
+        assert checks == [False, False, False]
+    finally:
+        w.close()

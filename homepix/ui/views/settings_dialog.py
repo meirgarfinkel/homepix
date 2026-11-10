@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ...core import autoimport
+from ...core import autoimport, background
 from ...core.settings import (
     excluded_folders,
     library_folders,
@@ -96,7 +97,7 @@ class SettingsDialog(QDialog):
         lay.addWidget(QLabel("<b>Import automations</b>"))
         note = QLabel(
             "Import new photos by themselves from a folder your sync app fills (from a phone, say). "
-            "Checked every hour while HomePix is open."
+            "Checked every minute while HomePix is running."
         )
         note.setObjectName("hint")
         note.setWordWrap(True)
@@ -121,6 +122,18 @@ class SettingsDialog(QDialog):
         row.addStretch()
         row.addWidget(self.check_now)
         lay.addLayout(row)
+        self.keep_running = QCheckBox("Keep running in the background")
+        self.keep_running.setChecked(background.on())
+        self.keep_running.setToolTip(
+            "HomePix starts hidden when you log in, and closing the window leaves it running, so new photos "
+            "come in with the window closed. File > Quit stops it until you next log in or open it."
+        )
+        self.keep_running.toggled.connect(self._keep_running)
+        lay.addWidget(self.keep_running)
+        note = QLabel("Starts hidden when you log in, so new photos come in with the window closed.")
+        note.setObjectName("hint")
+        note.setWordWrap(True)
+        lay.addWidget(note)
 
         lay.addSpacing(10)
         lay.addWidget(QLabel("<b>Editing photos</b>"))
@@ -153,6 +166,13 @@ class SettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
         self.refresh()
+
+    def _keep_running(self, want: bool):
+        why = background.set_on(want)
+        if why:
+            QMessageBox.warning(
+                self, "Keep running in the background", f"HomePix couldn't be set to start when you log in:\n{why}"
+            )
 
     def _save_editor(self):
         s = load_settings()
