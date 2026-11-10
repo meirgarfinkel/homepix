@@ -32,7 +32,9 @@ when; the rules (which date a photo has, who a face is, what a move does) all li
 | `app.log` | the app's output when it's started from the menu (no terminal) |
 
 **In each library folder**, a hidden `.homepix/library.db`: the portable copy (`core/portable.py`),
-so the folder can move to another computer and bring its people and choices along.
+so the folder can move to another computer and bring its people and choices along. It also says where
+each imported photo came from (its place in the Import from folder), which the Android app uses to find
+the phone's own copy of a photo whose file changed on either side.
 
 **The photos themselves** are only changed when the user asks (moving, renaming, details, turning),
 always through `core/fileops.py`, so that it can be undone.
