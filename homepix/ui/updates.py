@@ -117,7 +117,7 @@ class Updater:
     def _install(self, kind, version, path, ask=True):
         if kind == "windows":  # the installer closes this copy, updates quietly and opens the new one
             os.startfile(str(path), arguments=WINDOWS_QUIET)  # noqa: S606 (our own downloaded, checked installer)
-            self.w.close()
+            self.w.quit_app()
             return
         if kind == "appimage":
             workers.run(_replace_appimage, lambda res, err: self._installed(version, err, ask=ask), str(path))
@@ -233,4 +233,4 @@ def restart(window):
     else:
         app = os.environ.get("APPIMAGE") or sys.executable
         QProcess.startDetached("sh", ["-c", 'sleep 1; exec "$0"', app])
-    window.close()
+    window.quit_app()  # (really quit, even when set to keep running in the background)

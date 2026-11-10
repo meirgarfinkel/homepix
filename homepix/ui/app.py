@@ -4,7 +4,8 @@ Only one runs at a time: opening it again brings the open window forward (showin
 given, if any: "Open With > HomePix" in the file manager). Started from the
 applications menu (no terminal), its output goes to app.log in the data folder.
 `--self-test` checks the parts a build can lose (AI libraries, HEIC, Qt's image plugins, the
-window) and exits 0 if they all work.
+window) and exits 0 if they all work. `--background` is how the login entry starts it (when it's set to
+keep running in the background): no window until it's opened, and nothing at all if it's already open.
 """
 
 import atexit
@@ -52,18 +53,27 @@ def main(argv=None):
 
     if self_test:
         return run_self_test(app)
-    files = given_files(app.arguments()[1:])
+    from ..core import background
+
+    hidden = background.FLAG in argv
+    if hidden and _ask_open_copy(_server_name(), None) != "none":
+        return 0  # started at login, but it's already running
+    files = [] if hidden else given_files([a for a in app.arguments()[1:] if a != background.FLAG])
     server = single_instance(files)
     if server is None:
         return 0  # it was already open: that window has been brought forward (and shown the files)
     add_menu_entry()
+    background.refresh()  # (the login entry points at this copy, if HomePix moved)
+    app.setQuitOnLastWindowClosed(False)  # closing the window may only hide it: the window says when to quit
 
     from .main_window import MainWindow
 
     win = MainWindow()
     server.newConnection.connect(lambda: _listen(server.nextPendingConnection(), win))
     win.closing.connect(server.close)  # a launch from now on opens a new window, not this closing one
-    win.show()
+    win.closing.connect(app.quit)
+    if not hidden:
+        win.show()
     if files:
         win.opener.open(files)
     code = app.exec()
@@ -111,11 +121,15 @@ def single_instance(files=()):
 
 
 def _ask_open_copy(name, files) -> str:
-    """Ask an open copy to show itself (and open the files): "answered", "silent" or "none" (no copy open)."""
+    """Ask an open copy to show itself (and open the files): "answered", "silent" or "none" (no copy open).
+    files None: only see whether one is open ("open" or "none")."""
     probe = QLocalSocket()
     probe.connectToServer(name)
     if not probe.waitForConnected(500):
         return "none"
+    if files is None:
+        probe.abort()
+        return "open"
     if sys.platform == "win32":  # let the open window come to the front (else it only flashes)
         import ctypes
 
