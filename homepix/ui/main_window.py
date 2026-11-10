@@ -56,6 +56,7 @@ from .people_actions import PeopleActions
 from .photo_actions import PhotoActions
 from .status_line import StatusLine
 from .thumbs import ThumbLoader
+from .tray import Tray
 from .updates import Updater
 from .views.banner import Banner
 from .views.duplicates import DuplicatesView
@@ -422,6 +423,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
         QTimer.singleShot(3000, lambda: workers.run(junk.warm, lambda res, err: None, self.search_index))  # Declutter
         QTimer.singleShot(8000, self.updater.check_quietly)  # a newer HomePix: get it, then offer a restart
+        self.tray = Tray(self)  # (an icon while kept running in the background)
+        self.tray.update()
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -1010,6 +1013,7 @@ class MainWindow(QMainWindow):
 
         dlg.add_requested.connect(added)
         dlg.remove_requested.connect(self.remove_library_folder)
+        dlg.background_changed.connect(self.tray.update)
         dlg.left_out_changed.connect(self.reload)
         dlg.rescan_requested.connect(
             lambda: (self.watcher.start(), self.statusBar().showMessage("Looking for new photos...", 5000))
@@ -1191,6 +1195,8 @@ class MainWindow(QMainWindow):
             return
         self.closing.emit()
         self._save_window()
+        if self.tray.icon is not None:
+            self.tray.icon.hide()  # (gone at once, not when the app has quit)
         self.watcher.shutdown()
         self.loader.stop()
         self.dupes.stop()
