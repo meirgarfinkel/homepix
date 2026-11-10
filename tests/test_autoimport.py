@@ -4,6 +4,7 @@ what's already there isn't imported again; and every batch is undoable."""
 import os
 import time
 
+import pytest
 from conftest import photo, trashed_files
 from test_organize import shot
 
@@ -358,3 +359,176 @@ def test_saving_an_import_from_folder_in_the_library_excludes_it(app, pf, lib, m
     d._save()
     assert d.result() == d.DialogCode.Accepted and d.excluded_now
     assert pf.excluded_folders() == [str(lib / "Inbox")]
+
+
+# --- a file that comes back changed: a new version of its photo --------------------------------------
+
+
+def turned_shot(path, orientation=1):
+    """A photo with an orientation tag; turned_copy() changes only that tag, as a phone does."""
+    import numpy as np
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ex = Image.Exif()
+    ex[0x0112] = orientation
+    img = np.random.default_rng(7).integers(0, 255, (40, 60, 3), dtype=np.uint8)
+    Image.fromarray(img).save(path, "JPEG", exif=ex)
+    return path
+
+
+def turned_copy(src, dst, orientation):
+    """src with its orientation tag set to orientation, the pixels left as they are (no re-encoding)."""
+    data = bytearray(src.read_bytes())
+    tiff = data.index(b"Exif\x00\x00") + 6
+    little = data[tiff : tiff + 2] == b"II"
+    entry = b"\x12\x01\x03\x00" if little else b"\x01\x12\x00\x03"
+    at = data.index(entry, tiff) + 8  # the entry's value: a 16-bit number
+    data[at : at + 2] = orientation.to_bytes(2, "little" if little else "big")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(bytes(data))
+    return dst
+
+
+def named_face(db, path):
+    """Someone named in the photo at path, in its top left corner."""
+    pid = db.execute("SELECT id FROM photos WHERE path=?", (str(path),)).fetchone()[0]
+    person = db.execute("INSERT INTO people (name) VALUES ('Anna')").lastrowid
+    db.execute(
+        "INSERT INTO faces (photo_id, x, y, w, h, score, emb, person_id) VALUES (?, .1, .1, .2, .3, .9, ?, ?)",
+        (pid, b"\0" * 16, person),
+    )
+    db.commit()
+    return pid
+
+
+def faces_of(db, path):
+    return db.execute(
+        "SELECT f.x, f.y, f.w, f.h, p.name FROM faces f JOIN photos ph ON ph.id = f.photo_id "
+        "LEFT JOIN people p ON p.id = f.person_id WHERE ph.path=?",
+        (str(path),),
+    ).fetchall()
+
+
+def came_back(tmp_path, name, new):
+    """The phone puts a new version where the old one was (after it was emptied out), a little later."""
+    dst = tmp_path / "Phone" / name
+    new(dst)
+    when = time.time() - 60  # (another time than the first one had, and long enough ago to be still)
+    os.utime(dst, (when, when))
+    return dst
+
+
+def test_a_photo_turned_on_the_phone_replaces_its_old_version_and_keeps_who_is_in_it(home, lib, tmp_path):
+    from homepix.core import metadata
+
+    pf, db = home
+    r = rule(tmp_path, lib)
+    first = turned_shot(tmp_path / "Phone" / "IMG_1.jpg")
+    kept = turned_copy(first, tmp_path / "kept.jpg", 1)  # (what the phone still has)
+    go(db, r, lib)
+    filed = lib / "From phone" / "IMG_1.jpg"
+    pf.index_folder(lib, want_faces=False)
+    pid = named_face(db, filed)
+
+    came_back(tmp_path, "IMG_1.jpg", lambda dst: turned_copy(kept, dst, 6))
+    batch, res = go(db, r, lib)
+    assert batch.summary() == "Update 1 photo from Dad's phone"
+    assert not batch.imports and len(batch.updates) == 1
+    assert names(lib / "From phone") == ["IMG_1.jpg"]  # in its place, not beside it
+    assert names(tmp_path / "Phone") == []
+    assert len(trashed_files(tmp_path)) == 1  # the old version
+    row = db.execute("SELECT id, size, qhash FROM photos WHERE path=?", (str(filed),)).fetchone()
+    assert row["id"] == pid and row["size"] == filed.stat().st_size  # the same photo, now its new bytes
+    ((x, y, w, h, who),) = faces_of(db, filed)
+    assert who == "Anna"
+    assert (x, y, w, h) == pytest.approx(metadata.move_box((0.1, 0.1, 0.2, 0.3), 1, 6))
+    # indexing finds nothing to do again
+    info = pf.index_folder(lib, want_faces=False)
+    assert info["todo"] == 0 and faces_of(db, filed)[0]["name"] == "Anna"
+
+
+def test_an_edited_version_takes_the_place_and_is_indexed_again(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib)
+    photo(tmp_path / "Phone" / "IMG_1.jpg")
+    go(db, r, lib)
+    filed = lib / "From phone" / "IMG_1.jpg"
+    pf.index_folder(lib, want_faces=False)
+    pid = named_face(db, filed)
+    old_qhash = db.execute("SELECT qhash FROM photos WHERE id=?", (pid,)).fetchone()[0]
+
+    came_back(tmp_path, "IMG_1.jpg", photo)  # other pixels: an edit
+    batch, _ = go(db, r, lib)
+    assert len(batch.updates) == 1
+    assert names(lib / "From phone") == ["IMG_1.jpg"]
+    info = pf.index_folder(lib, want_faces=False)
+    assert info["todo"] == 1  # done again: it isn't the same picture
+    row = db.execute("SELECT id, qhash FROM photos WHERE path=?", (str(filed),)).fetchone()
+    assert row["id"] == pid and row["qhash"] != old_qhash
+
+
+def test_undoing_an_update_brings_the_old_version_back_with_its_faces(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib)
+    first = turned_shot(tmp_path / "Phone" / "IMG_1.jpg")
+    kept = turned_copy(first, tmp_path / "kept.jpg", 1)
+    go(db, r, lib)
+    filed = lib / "From phone" / "IMG_1.jpg"
+    pf.index_folder(lib, want_faces=False)
+    named_face(db, filed)
+    old = filed.read_bytes()
+    came_back(tmp_path, "IMG_1.jpg", lambda dst: turned_copy(kept, dst, 6))
+    go(db, r, lib)
+
+    fo.undo(db)
+    assert filed.read_bytes() == old
+    assert faces_of(db, filed)[0][:4] == pytest.approx((0.1, 0.1, 0.2, 0.3))
+    assert names(tmp_path / "Phone") == ["IMG_1.jpg"]  # the new version, back where it came
+    batch, res = go(db, r, lib)  # and not taken again: that update was undone
+    assert res is None and not batch.updates and not batch.imports
+
+
+def test_a_photo_deleted_from_the_library_comes_back_as_a_new_one(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib)
+    photo(tmp_path / "Phone" / "IMG_1.jpg")
+    go(db, r, lib)
+    filed = lib / "From phone" / "IMG_1.jpg"
+    pf.index_folder(lib, want_faces=False)
+    fo.run(db, "trash", "Delete", fo.plan_trash([str(filed)]))
+    came_back(tmp_path, "IMG_1.jpg", photo)
+    batch, _ = go(db, r, lib)
+    assert not batch.updates and len(batch.imports) == 1
+
+
+def test_came_from_follows_a_photo_moved_since(home, lib, tmp_path):
+    pf, db = home
+    r = rule(tmp_path, lib)
+    photo(tmp_path / "Phone" / "Camera" / "IMG_1.jpg")
+    go(db, r, lib)
+    ai.save_rules([r])
+    filed = lib / "From phone" / "IMG_1.jpg"
+    pf.index_folder(lib, want_faces=False)
+    moved = lib / "2026" / "renamed.jpg"
+    fo.run(db, "move", "Move", fo.plan_moves([(str(filed), str(moved))]))
+    prefix = str(lib) + os.sep
+    assert ai.came_from(db, prefix) == [(str(moved), "Camera/IMG_1.jpg")]
+
+
+def test_the_portable_copy_says_where_each_imported_photo_came_from(home, lib, tmp_path):
+    import sqlite3
+
+    from homepix.core import portable
+
+    pf, db = home
+    r = rule(tmp_path, lib)
+    ai.save_rules([r])
+    photo(tmp_path / "Phone" / "Camera" / "IMG_1.jpg")
+    photo(lib / "2020" / "scanned.jpg")  # (not imported: not in the list)
+    go(db, r, lib)
+    pf.index_folder(lib, want_faces=False)
+    portable.write_copy(lib)
+    copy = sqlite3.connect(portable.copy_path(lib))
+    listed = copy.execute("SELECT path, source FROM came_from").fetchall()
+    assert listed == [("From phone/IMG_1.jpg", "Camera/IMG_1.jpg")]

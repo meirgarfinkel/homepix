@@ -7,6 +7,10 @@ organizer does it. After importing, a file is moved out of the watch folder (the
 there. A file whose content is already in the library isn't imported again: with "move" it goes to
 the Trash so the watch folder empties; with "leave" it's left.
 
+A file that comes back to the same place in the watch folder with different content (the phone turned
+or edited it) is a new version of the photo it became: it takes that photo's place in the library, and
+the old version goes to the Trash. The photo keeps who is in it when only its orientation changed.
+
 What happens to each file is remembered (import_seen), by where it was and by its content, so
 nothing is dealt with twice: not a file left in the watch folder, not one that comes back because an
 import was undone (an undone import means those files weren't wanted), and not one deleted from the
@@ -17,6 +21,7 @@ wait. Everything is one journaled operation (fileops), undoable like any other.
 import datetime as dt
 import fnmatch
 import hashlib
+import json
 import os
 import time
 import uuid
@@ -204,6 +209,7 @@ class Batch:
 
     rule: Rule
     imports: list[tuple[Incoming, str]] = field(default_factory=list)  # (file, where it goes)
+    updates: list[tuple[Incoming, str]] = field(default_factory=list)  # (new version, the photo it replaces)
     already: list[Incoming] = field(default_factory=list)  # content already in the library
     unwanted: list[Incoming] = field(default_factory=list)  # part of an import that was undone: left alone
     cant: list[tuple[str, str]] = field(default_factory=list)  # (path, why) couldn't be read
@@ -224,6 +230,7 @@ class Batch:
         b = Batch(
             self.rule,
             [(f, d) for f, d in self.imports if path_key(f.path) not in out],
+            self.updates,
             self.already,
             self.unwanted,
             self.cant,
@@ -260,9 +267,76 @@ def _before(db, sha: str):
     return "imported"
 
 
+class _Trail:
+    """Where files went: every finished move, rename, Trash and restore in the history, to follow a
+    file from where an import put it to where it is now."""
+
+    def __init__(self, db):
+        self.steps: dict[str, list[tuple[int, str]]] = {}
+        for r in db.execute(
+            "SELECT id, src, dst FROM op_steps WHERE done=? AND action IN ('move', 'trash', 'restore') "
+            "AND dst IS NOT NULL ORDER BY id",
+            (fileops.FINISHED,),
+        ):
+            self.steps.setdefault(r["src"], []).append((r["id"], r["dst"]))
+
+    def follow(self, path: str, after: int) -> str:
+        """Where the file at path after step `after` is now."""
+        while True:
+            later = next(((i, d) for i, d in self.steps.get(path, ()) if i > after), None)
+            if later is None:
+                return path
+            after, path = later
+
+
+def _imported(db, path: str = None):
+    """The finished imports of files from a watch folder (just the one from path, if given): rows of
+    (where it was, the step that brought it in, where that put it)."""
+    where = "AND s.path = ?" if path else ""
+    return db.execute(
+        "SELECT s.path, st.id, st.dst FROM import_seen s JOIN ops o ON o.id = s.op_id "
+        "JOIN op_steps st ON st.op_id = s.op_id AND st.src = s.path "
+        f"WHERE o.state != 'undone' AND st.done = ? AND st.action IN ('move', 'copy') {where} ORDER BY st.id",
+        (fileops.FINISHED, path) if path else (fileops.FINISHED,),
+    ).fetchall()
+
+
+def where_now(db, path: str, trail: _Trail | None = None) -> str | None:
+    """Where the file that came in from path is in the library now, followed through the moves,
+    renames, Trash and restores since. None if it never came in, its import was undone, or it's no
+    longer in the library (deleted, or its history was cleared)."""
+    rows = _imported(db, path)
+    if not rows:
+        return None
+    trail = trail or _Trail(db)
+    now = trail.follow(rows[-1]["dst"], rows[-1]["id"])
+    there = db.execute("SELECT 1 FROM photos WHERE path=?", (now,)).fetchone()
+    return now if there and os.path.isfile(now) else None
+
+
+def came_from(db, prefix: str) -> list[tuple[str, str]]:
+    """(where it is now, where it came from) for each photo auto import brought into the library folder
+    at prefix and that's still there. Where it came from is its place in the automation's Import from
+    folder (Camera/PXL_1.jpg), so the phone it came from can find its own copy, even after the file
+    changed on either side."""
+    trail = _Trail(db)
+    watches = [r.watch for r in load_rules()]
+    here = {r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))}
+    out = []
+    for r in _imported(db):
+        now = trail.follow(r["dst"], r["id"])
+        if now not in here:
+            continue
+        watch = next((w for w in watches if within(r["path"], [w])), None)
+        src = os.path.relpath(r["path"], watch) if watch else os.path.basename(r["path"])
+        out.append((now, src.replace(os.sep, "/")))
+    return out
+
+
 def check(db, rule: Rule, folders: list[str], now=None, should_stop=lambda: False) -> Batch:
     """What's new in a rule's watch folder, and what to do with it (nothing is done here)."""
     batch, shas = Batch(rule), set()
+    trail = None  # (read only if a file came back changed)
     for path, st in settled_files(rule.watch, now, should_stop):
         if should_stop():
             break
@@ -280,6 +354,11 @@ def check(db, rule: Rule, folders: list[str], now=None, should_stop=lambda: Fals
             batch.unwanted.append(f)
         elif history == "imported" or sha in shas or _in_library(db, path, st.st_size, sha, rule.watch):
             batch.already.append(f)
+        elif db.execute("SELECT 1 FROM import_seen WHERE path=?", (path,)).fetchone() and (
+            prev := where_now(db, path, trail := trail or _Trail(db))
+        ):
+            shas.add(sha)
+            batch.updates.append((f, prev))  # it came in before, and has changed since
         else:
             shas.add(sha)
             batch.imports.append((f, ""))
@@ -335,7 +414,10 @@ def _destinations(rule: Rule, folders: list[str], files: list[Incoming]) -> list
 
 def _steps(batch: Batch) -> list[dict]:
     action = "move" if batch.rule.after == MOVE else "copy"
-    steps = [{"action": action, "src": f.path, "dst": dst} for f, dst in batch.imports]
+    steps = []
+    for f, prev in batch.updates:  # the old version goes to the Trash first, making room (fileops)
+        steps += [{"action": "trash", "src": prev, "dst": None}, {"action": action, "src": f.path, "dst": prev}]
+    steps += [{"action": action, "src": f.path, "dst": dst} for f, dst in batch.imports]
     if batch.rule.after == MOVE:
         steps += [{"action": "trash", "src": f.path, "dst": None} for f in batch.already]
     return fileops.with_sidecars(steps)
@@ -354,15 +436,19 @@ def _remember(db, files: list[Incoming], op_id):
 def summary(batches: list[Batch]) -> str:
     """What Undo calls a check's imports: "Import 37 photos from Dad's phone", "Import 40 photos and 2
     videos from Dad's phone and Mom's phone"."""
-    photos = videos = already = 0
+    photos = videos = already = updated = 0
     names = []
     for b in batches:
         p, v = b.counts()
-        photos, videos, already = photos + p, videos + v, already + len(b.already)
-        if p or v or (b.already and b.rule.after == MOVE):
+        photos, videos, already, updated = photos + p, videos + v, already + len(b.already), updated + len(b.updates)
+        if p or v or b.updates or (b.already and b.rule.after == MOVE):
             names.append(b.rule.name)
     what = " and ".join(f"{n:,} {w}{'s' if n != 1 else ''}" for n, w in ((photos, "photo"), (videos, "video")) if n)
     where = " and ".join(names) if len(names) < 3 else f"{len(names)} automations"
+    if what and updated:
+        return f"Import {what} and update {updated:,} from {where}"
+    if updated:
+        return f"Update {updated:,} {'photo' if updated == 1 else 'photos'} from {where}"
     if not what:
         return f"Clear {already:,} already imported from {where}"
     return f"Import {what} from {where}"
@@ -386,11 +472,48 @@ def run(db, batches, progress=None, should_stop=None) -> fileops.Result | None:
         for r in db.execute("SELECT src FROM op_steps WHERE op_id=? AND done=?", (result.op_id, fileops.FINISHED))
     }
     for b in batches:
-        handled = [f for f, _ in b.imports] + (b.already if b.rule.after == MOVE else [])
+        for f, prev in b.updates:
+            if f.path in finished:
+                _carried_over(db, result.op_id, f.path, prev)
+        handled = [f for f, _ in b.imports + b.updates] + (b.already if b.rule.after == MOVE else [])
         _remember(db, [f for f in handled if f.path in finished], result.op_id)
     db.commit()
     result.done_paths = finished
     return result
+
+
+def _picture(path: str):
+    """A photo's orientation and a digest of its pixels as stored (before turning), to tell a new
+    version that's only turned from one that's been edited. None if it can't be read."""
+    from PIL import Image
+
+    from . import media  # noqa: F401  (registers the HEIC reader)
+
+    try:
+        with Image.open(path) as im:
+            return im.getexif().get(0x0112, 1), hashlib.sha256(im.tobytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def _carried_over(db, op_id: int, src: str, prev: str):
+    """A new version has taken its photo's place: it keeps the old one's row (who is in it), turned
+    if only its orientation changed. If its place was taken meanwhile, it came in under a new name,
+    as a new photo, and is left to be indexed."""
+    went = db.execute(
+        "SELECT dst FROM op_steps WHERE op_id=? AND src=? AND action IN ('move', 'copy') AND done=?",
+        (op_id, src, fileops.FINISHED),
+    ).fetchone()
+    old = db.execute(
+        "SELECT dst, before FROM op_steps WHERE op_id=? AND src=? AND action='trash' AND done=?",
+        (op_id, prev, fileops.FINISHED),
+    ).fetchone()
+    if went is None or went["dst"] != prev or old is None:
+        return
+    snap = json.loads(old["before"] or "{}").get("snapshot")
+    was, now = _picture(old["dst"]), _picture(prev)  # (the old version is in the Trash now)
+    same = was is not None and now is not None and was[1] == now[1]
+    fileops.carry_over(db, prev, snap, (was[0], now[0]) if same else None)
 
 
 @dataclass
@@ -426,7 +549,7 @@ def check_rules(db, rules: list[Rule], folders: list[str], now=None, progress=No
         batches.append(check(db, r, folders, now, should_stop))
     out = Checked(batches, run(db, [b for b in batches if b.rule.auto], progress, should_stop))
     for b in batches:
-        st = {"checked": _now(), "waiting": None, "pending": 0 if b.rule.auto else len(b.imports)}
+        st = {"checked": _now(), "waiting": None, "pending": 0 if b.rule.auto else len(b.imports) + len(b.updates)}
         if b.rule.auto and (n := out.imported(b)):
             st.update(imported=_now(), count=n)
         set_status(b.rule.id, **st)

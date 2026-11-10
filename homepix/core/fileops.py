@@ -167,12 +167,7 @@ def _apply_meta(db, path, change) -> dict:
     db.execute(f"UPDATE photos SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), row["id"]))
     turn = change.get("orientation")
     if turn and turn[0] != turn[1]:
-        db.execute("UPDATE photos SET phash=NULL WHERE id=?", (row["id"],))  # it looks different now
-        for f in db.execute("SELECT id, x, y, w, h FROM faces WHERE photo_id=?", (row["id"],)).fetchall():
-            db.execute(
-                "UPDATE faces SET x=?, y=?, w=?, h=? WHERE id=?",
-                (*metadata.move_box((f["x"], f["y"], f["w"], f["h"]), *turn), f["id"]),
-            )
+        _turn_faces(db, row["id"], turn)
     elif row["qhash"] and row["qhash"] != qh:  # the picture is the same: so are its thumbnails
         for kind in ("photos", "faces"):
             for old in thumbs_dir(kind).glob(f"{row['qhash']}*.jpg"):
@@ -181,6 +176,40 @@ def _apply_meta(db, path, change) -> dict:
                     with contextlib.suppress(OSError):
                         shutil.copyfile(old, new)  # (a copy, not a rename: an exact copy elsewhere shares them)
     return {}
+
+
+def _turn_faces(db, photo_id, turn):
+    """A photo now shown with orientation turn[1] instead of turn[0]: its face boxes follow."""
+    db.execute("UPDATE photos SET phash=NULL WHERE id=?", (photo_id,))  # it looks different now
+    for f in db.execute("SELECT id, x, y, w, h FROM faces WHERE photo_id=?", (photo_id,)).fetchall():
+        db.execute(
+            "UPDATE faces SET x=?, y=?, w=?, h=? WHERE id=?",
+            (*metadata.move_box((f["x"], f["y"], f["w"], f["h"]), *turn), f["id"]),
+        )
+
+
+def carry_over(db, path, snap, turn=None) -> int | None:
+    """A new version of a photo has just taken its old version's place (an import that updates it): it
+    gets the old one's row, so who is in it and its search vector are kept. turn: (old, new) orientation
+    when it's the same picture, only turned: the face boxes move with it, and its fingerprint, date and
+    details are read again. Without it, the row keeps the old size and time, so indexing does the photo
+    again from scratch (the picture itself changed: an edit). Returns the row's id."""
+    if snap is None:
+        return None
+    db.execute("DELETE FROM photos WHERE path=?", (path,))  # (the new version's own row, if it came along)
+    pid = _insert_snapshot(db, snap, path)
+    if turn is not None:
+        try:
+            _apply_meta(db, path, {"orientation": turn})
+        except (OSError, RuntimeError, ValueError):  # ExifTool missing or failing: the essentials
+            st = os.stat(path)
+            db.execute(
+                "UPDATE photos SET size=?, mtime=?, qhash=?, sha256=NULL WHERE id=?",
+                (st.st_size, st.st_mtime, quick_hash(Path(path), st.st_size), pid),
+            )
+            if turn[0] != turn[1]:
+                _turn_faces(db, pid, turn)
+    return pid
 
 
 # Committing after every file would make a big operation slow (each commit waits for the disk), and

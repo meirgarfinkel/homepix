@@ -6,7 +6,9 @@ The app works on its own database in the data folder, and writes each folder's c
 photo is found by its content, not by where it was, so the folder can be anywhere, on any system.
 
 In the copy: the photos' search vectors, dates and details, their faces and who they are, the people
-named, the pairs said not to be duplicates, and the folders left out of the library. Paths are
+named, the pairs said not to be duplicates, the folders left out of the library, and where each photo
+that auto import brought in came from (came_from: its place in the Import from folder, which is where
+it still is on the phone it came from, so the phone can find its own copy even after either changed). Paths are
 relative to the folder, with / between folders. Not in it: the undo history (it names files on the
 computer it was made on) and thumbnails (made again as needed).
 
@@ -153,6 +155,9 @@ def _write_copy(root: Path) -> int | None:
     try:
         if not photos_in(db, root):
             return None
+        from .autoimport import came_from
+
+        sources = [(now[len(prefix) :].replace(os.sep, "/"), src) for now, src in came_from(db, prefix)]
         out = sqlite3.connect(work)
         db.backup(out)
     finally:
@@ -186,6 +191,8 @@ def _write_copy(root: Path) -> int | None:
             "excluded": json.dumps(excluded),
             "source": source,
         }
+        out.execute("CREATE TABLE came_from (path TEXT PRIMARY KEY, source TEXT NOT NULL)")
+        out.executemany("INSERT OR REPLACE INTO came_from VALUES (?, ?)", sources)
         out.execute("CREATE TABLE portable (key TEXT PRIMARY KEY, value TEXT)")
         out.executemany("INSERT INTO portable VALUES (?, ?)", [(k, str(v)) for k, v in meta.items()])
         out.commit()

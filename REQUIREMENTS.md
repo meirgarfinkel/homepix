@@ -119,6 +119,7 @@ the network and never talks to the phone or the sync app.
 | Checked when the app opens, then **every hour** (no live watching); a **Check now** button in Settings | v1 |
 | A file is only taken once it's been unchanged for 2 minutes; hidden files and sync apps' part-files (`.syncthing.*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
 | Already in the library (same content) → not imported again. When emptying the folder, such a file goes to the Trash; otherwise it's left and remembered | v1 |
+| A file that comes back changed to the same place in Import from (turned or edited on the phone) is a new version of the photo it became: it takes that photo's place, wherever it is now, and the old version goes to the Trash. Who's in it is kept when only its orientation changed (the face boxes turn with it); an edit is indexed again. Undo puts the old version back | v1 |
 | Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
 | After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Edit > Undo names it and takes it back | v1 |
 | An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; hover to see where it will go); Import or Cancel | v1 |
