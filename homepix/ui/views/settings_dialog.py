@@ -42,6 +42,7 @@ class SettingsDialog(QDialog):
     rescan_requested = Signal()
     left_out_changed = Signal()  # a folder excluded, or taken back in
     import_check_requested = Signal()  # Check now, for import automations
+    background_changed = Signal()  # Keep running in the background, turned on or off
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -169,6 +170,7 @@ class SettingsDialog(QDialog):
 
     def _keep_running(self, want: bool):
         why = background.set_on(want)
+        self.background_changed.emit()
         if why:
             QMessageBox.warning(
                 self, "Keep running in the background", f"HomePix couldn't be set to start when you log in:\n{why}"

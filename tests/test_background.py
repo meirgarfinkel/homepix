@@ -70,3 +70,41 @@ def test_closing_the_window_quits_when_not_kept_running(app, pf, autostart):
     w.closing.connect(lambda: closed.append(True))
     w.close()
     assert closed
+
+
+def test_a_tray_icon_shows_while_kept_running(app, pf, autostart, monkeypatch):
+    from conftest import open_window
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+    w = open_window(app, ready=None)
+    try:
+        assert w.tray.icon is None  # (off by default)
+        dlg = SettingsDialog(w)
+        dlg.background_changed.connect(w.tray.update)
+        dlg.keep_running.setChecked(True)
+        assert w.tray.icon is not None
+        assert [a.text() for a in w.tray.icon.contextMenu().actions() if a.text()] == ["Open HomePix", "Quit"]
+        w.hide()
+        w.tray._clicked(QSystemTrayIcon.ActivationReason.Trigger)  # a click on it opens the window
+        assert w.isVisible()
+        dlg.keep_running.setChecked(False)
+        assert w.tray.icon is None
+        dlg.close()
+    finally:
+        w.quit_app()
+
+
+def test_no_tray_icon_where_the_desktop_has_no_tray(app, pf, autostart, monkeypatch):
+    from conftest import open_window
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: False))
+    background.set_on(True)
+    w = open_window(app, ready=None)
+    try:
+        assert w.tray.icon is None
+    finally:
+        w.quit_app()
