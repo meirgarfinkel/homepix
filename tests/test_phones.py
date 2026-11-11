@@ -300,6 +300,8 @@ def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path
     assert phones.load_phones()[0].rule_id == made.id
     assert dlg.phone_list.count() == 1 and "into Pixel 7" in dlg.phone_list.item(0).text()
     assert dlg.rule_list.count() == 2
+    assert dlg.rule_list.item(1).text().endswith("from Pixel 7")  # (which phone uses it)
+    assert "from" not in dlg.rule_list.item(0).text()
 
     # A second phone isn't offered the first one's automation.
     dlg2 = pair_dialog.PairDialog(window.phone_link, rules, [str(lib)])
@@ -315,6 +317,38 @@ def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path
     dlg._unpair()
     assert phones.load_phones() == [] and dlg.phone_list.count() == 0
     assert [r.name for r in ai.load_rules()] == ["Meirs phone"]
+    assert window.phone_link.server is None  # (no phone left: not listening)
+
+
+def test_removing_a_phones_automation_unpairs_it(app, home, lib, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox, QWidget
+
+    from homepix.ui.phone_link import PhoneLink
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    (tmp_path / "Inbox").mkdir()
+    rule = ai.Rule(name="Meirs phone", watch=str(tmp_path / "Inbox"), dest=str(lib), tidy=True)
+    ai.save_rules([rule])
+    phones.open_pairing(rule.id)
+    phones.pair(phones.pairing().code, "Pixel 7")
+    phones.close_pairing()
+    window = QWidget()
+    window.phone_link = PhoneLink(window)
+    monkeypatch.setattr(phone_server.Server, "_announce", lambda self: None)
+    window.phone_link.refresh()
+    dlg = SettingsDialog(window)
+    dlg.rule_list.item(0).setSelected(True)
+    asked = {}
+
+    def answer(parent, title, text, *a, **k):
+        asked["text"] = text
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", answer)
+    dlg._remove_rule()
+    assert "Pixel 7 sends its photos here, so it's unpaired too" in asked["text"]
+    assert ai.load_rules() == [] and phones.load_phones() == []
+    assert dlg.phone_list.count() == 0
     assert window.phone_link.server is None  # (no phone left: not listening)
 
 

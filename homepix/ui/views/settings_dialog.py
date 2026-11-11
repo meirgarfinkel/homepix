@@ -284,10 +284,16 @@ class SettingsDialog(QDialog):
     def refresh_rules(self):
         keep = self._chosen(self.rule_list)
         self.rule_list.clear()
+        senders = self._senders()
         for r in autoimport.load_rules():
-            item = QListWidgetItem(theme.icon("folder", "muted"), f"{r.name}  ·  {describe(r)}")
+            names = ", ".join(p.name for p in senders.get(r.id, []))
+            text = f"{r.name}  ·  {describe(r)}" + (f"  ·  from {names}" if names else "")
+            item = QListWidgetItem(theme.icon("phone" if names else "folder", "muted"), text)
             item.setData(Qt.ItemDataRole.UserRole, r.id)
-            item.setToolTip(f"Import from {r.watch}\nImport to {'the year folders in ' if r.tidy else ''}{r.dest}")
+            tip = f"Import from {r.watch}\nImport to {'the year folders in ' if r.tidy else ''}{r.dest}"
+            if names:
+                tip += f"\nPhotos from {names} (paired) arrive here"
+            item.setToolTip(tip)
             self.rule_list.addItem(item)
             if r.id == keep:
                 item.setSelected(True)
@@ -379,22 +385,45 @@ class SettingsDialog(QDialog):
         else:
             self.refresh_rules()
 
+    @staticmethod
+    def _senders() -> dict:
+        """The paired phones, by the automation their photos go into."""
+        by_rule = {}
+        for p in phones.load_phones():
+            by_rule.setdefault(p.rule_id, []).append(p)
+        return by_rule
+
     def _remove_rule(self):
         chosen = self._chosen(self.rule_list)
         rules = autoimport.load_rules()
         rule = next((r for r in rules if r.id == chosen), None)
         if rule is None:
             return
+        sending = self._senders().get(rule.id, [])
+        also = ""
+        if sending:
+            names = ", ".join(p.name for p in sending)
+            also = (
+                f"\n\n{names} sends its photos here, so it's unpaired too. To send again, pair it again."
+                if len(sending) == 1
+                else f"\n\n{names} send their photos here, so they're unpaired too. To send again, pair them again."
+            )
         answer = QMessageBox.question(
             self,
             "Remove automation",
-            f'Remove "{rule.name}"?\n\nNo photos are touched.',
+            f'Remove "{rule.name}"?{also}\n\nNo photos are touched.',
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )
         if answer == QMessageBox.StandardButton.Yes:
+            for p in sending:
+                phones.forget(p.id)
             autoimport.save_rules([r for r in rules if r.id != rule.id])
-            self.refresh_rules()
+            if sending:
+                link = getattr(self.parent(), "phone_link", None)
+                if link is not None:
+                    link.refresh()
+            self.refresh_rules()  # (and the phones)
 
     @staticmethod
     def _add_item(lst, text, path, keep=None):
