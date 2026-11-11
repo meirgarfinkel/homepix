@@ -3,7 +3,7 @@ faces (to take out the ones that aren't them)."""
 
 import os
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -206,24 +206,75 @@ class NameBox(QLineEdit):
         self.completer_.model().setStringList(sorted(names, key=str.casefold))
 
 
+MATCHES = 5  # names shown under the box at most
+
+
+class _DownToList(QObject):
+    """The down arrow in the name box moves into the names under it."""
+
+    def __init__(self, matches: QListWidget):
+        super().__init__(matches)
+        self.matches = matches
+
+    def eventFilter(self, obj, e):
+        if e.type() == QEvent.Type.KeyPress and e.key() == Qt.Key.Key_Down and self.matches.count():
+            self.matches.setFocus()
+            self.matches.setCurrentRow(0)
+            return True
+        return False
+
+
 def ask_name(parent, title: str, text: str, names, name: str = ""):
-    """A name typed (with the names given offered), or None."""
+    """A name typed, or picked from the names given that match what's typed (shown under the box, inside
+    the window: a click on one is the answer), or None."""
+    names = sorted(names, key=str.casefold)
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
-    box = NameBox(dlg)
-    box.set_names(names)
+    lay = QVBoxLayout(dlg)
+    lay.setContentsMargins(20, 18, 20, 16)
+    lay.setSpacing(10)
+    if text:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        lay.addWidget(label)
+    box = QLineEdit(dlg)
+    box.setPlaceholderText("Their name")
     box.setText(name)
     box.selectAll()
+    matches = QListWidget(dlg)
+    matches.setObjectName("nameMatches")
+    matches.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    matches.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    box.installEventFilter(_DownToList(matches))
+
+    def pick(item):
+        box.setText(item.text())
+        dlg.accept()
+
+    def show_matches(typed: str):
+        typed = typed.strip().casefold()
+        hits = [n for n in names if typed and typed in n.casefold() and n.casefold() != typed][:MATCHES]
+        matches.clear()
+        matches.addItems(hits)
+        if hits:
+            matches.setFixedHeight(matches.sizeHintForRow(0) * len(hits) + matches.frameWidth() * 2)
+        matches.setVisible(bool(hits))
+        dlg.adjustSize()
+
+    matches.itemClicked.connect(pick)
+    matches.itemActivated.connect(pick)  # (Enter on one)
+    box.textEdited.connect(show_matches)
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+    buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Name" if not name else "OK")
     buttons.accepted.connect(dlg.accept)
     buttons.rejected.connect(dlg.reject)
-    lay = QVBoxLayout(dlg)
-    label = QLabel(text)
-    label.setWordWrap(True)
-    lay.addWidget(label)
     lay.addWidget(box)
+    lay.addWidget(matches)
+    lay.addSpacing(4)
     lay.addWidget(buttons)
-    dlg.resize(380, dlg.sizeHint().height())
+    dlg.setFixedWidth(420)
+    show_matches("")
+    dlg.ask = (box, matches)  # (for the tests)
     if not dlg.exec():
         return None
     return box.text().strip() or None
