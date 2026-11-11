@@ -1,16 +1,19 @@
-"""Settings: the folders that make up the library, the folders excluded from it (exclude a folder,
-take one back in), import automations, the app to edit photos in, and the theme."""
+"""Settings, in sections (one panel each): the folders that make up the library, the folders excluded
+from it (exclude a folder, take one back in), import automations, the app to edit photos in, and the
+theme."""
 
 import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -18,7 +21,9 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
 )
 
 from ...core import autoimport, background
@@ -47,17 +52,28 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.resize(640, 800)
-        lay = QVBoxLayout(self)
-        lay.addWidget(QLabel("<b>Library folders</b>"))
-        note = QLabel("The folders HomePix shows and searches.")
-        note.setObjectName("hint")
-        note.setWordWrap(True)
-        lay.addWidget(note)
-        self.list = QListWidget()
+        self.resize(720, 820)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        scroll = QScrollArea()
+        scroll.setObjectName("settingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        page = QWidget()
+        page.setObjectName("settingsPage")
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(16)  # (between the sections)
+        scroll.setWidget(page)
+        outer.addWidget(scroll, 1)
+
+        # --- the library ---
+        card = self._card(lay, "Library folders", "The folders HomePix shows and searches.")
+        self.list = self._folder_list(rows=3)
         self.list.itemSelectionChanged.connect(self._selected_folder)
-        lay.addWidget(self.list, 3)
-        row = QHBoxLayout()
+        card.addWidget(self.list)
         add = QPushButton("Add a folder...")
         add.clicked.connect(self._add_folder)
         self.remove = QPushButton("Remove")
@@ -65,50 +81,34 @@ class SettingsDialog(QDialog):
         rescan = QPushButton("Check for new photos now")
         rescan.setObjectName("checkButton")
         rescan.clicked.connect(self.rescan_requested)
-        row.addWidget(add)
-        row.addWidget(self.remove)
-        row.addStretch()
-        row.addWidget(rescan)
-        lay.addLayout(row)
+        card.addLayout(self._buttons([add, self.remove], [rescan]))
 
-        lay.addSpacing(10)
-        lay.addWidget(QLabel("<b>Excluded folders</b>"))
-        note = QLabel(
+        card = self._card(
+            lay,
+            "Excluded folders",
             "Folders whose photos don't show in All photos, people or search. "
-            "They still show when you open the folder itself."
+            "They still show when you open the folder itself.",
         )
-        note.setObjectName("hint")
-        note.setWordWrap(True)
-        lay.addWidget(note)
-        self.left_list = QListWidget()
-        self.left_list.setMinimumHeight(80)  # (room for a few rows)
+        self.left_list = self._folder_list(rows=2)
         self.left_list.itemSelectionChanged.connect(self._selected_folder)
-        lay.addWidget(self.left_list, 2)
-        row = QHBoxLayout()
+        card.addWidget(self.left_list)
         self.leave_button = QPushButton("Exclude a folder...")
         self.leave_button.clicked.connect(self._leave_out)
         self.back_button = QPushButton("Take back in")
         self.back_button.clicked.connect(self._take_back)
-        row.addWidget(self.leave_button)
-        row.addWidget(self.back_button)
-        row.addStretch()
-        lay.addLayout(row)
+        card.addLayout(self._buttons([self.leave_button, self.back_button]))
 
-        lay.addSpacing(10)
-        lay.addWidget(QLabel("<b>Import automations</b>"))
-        note = QLabel(
+        # --- bringing photos in ---
+        card = self._card(
+            lay,
+            "Import automations",
             "Import new photos by themselves from a folder your sync app fills (from a phone, say). "
-            "Checked every minute while HomePix is running."
+            "Checked every minute while HomePix is running.",
         )
-        note.setObjectName("hint")
-        note.setWordWrap(True)
-        lay.addWidget(note)
-        self.rule_list = QListWidget()
-        self.rule_list.setMinimumHeight(90)  # (room for a few)
+        self.rule_list = self._folder_list(rows=2)
         self.rule_list.itemSelectionChanged.connect(self._selected_folder)
         self.rule_list.itemDoubleClicked.connect(lambda _: self._edit_rule())
-        lay.addWidget(self.rule_list, 2)
-        row = QHBoxLayout()
+        card.addWidget(self.rule_list)
         self.add_rule_button = QPushButton("New automation...")
         self.add_rule_button.clicked.connect(lambda: self._edit_rule(new=True))
         self.edit_rule_button = QPushButton("Edit...")
@@ -118,11 +118,15 @@ class SettingsDialog(QDialog):
         self.check_now = QPushButton("Check now")
         self.check_now.setObjectName("checkButton")
         self.check_now.clicked.connect(self.import_check_requested)
-        for b in (self.add_rule_button, self.edit_rule_button, self.remove_rule_button):
-            row.addWidget(b)
-        row.addStretch()
-        row.addWidget(self.check_now)
-        lay.addLayout(row)
+        card.addLayout(
+            self._buttons([self.add_rule_button, self.edit_rule_button, self.remove_rule_button], [self.check_now])
+        )
+        line = QFrame()
+        line.setObjectName("settingsRule")
+        line.setFixedHeight(1)
+        card.addSpacing(4)
+        card.addWidget(line)
+        card.addSpacing(4)
         self.keep_running = QCheckBox("Keep running in the background")
         self.keep_running.setChecked(background.on())
         self.keep_running.setToolTip(
@@ -130,14 +134,11 @@ class SettingsDialog(QDialog):
             "come in with the window closed. File > Quit stops it until you next log in or open it."
         )
         self.keep_running.toggled.connect(self._keep_running)
-        lay.addWidget(self.keep_running)
-        note = QLabel("Starts hidden when you log in, so new photos come in with the window closed.")
-        note.setObjectName("hint")
-        note.setWordWrap(True)
-        lay.addWidget(note)
+        card.addWidget(self.keep_running)
+        card.addWidget(self._hint("Starts hidden when you log in, so new photos come in with the window closed."))
 
-        lay.addSpacing(10)
-        lay.addWidget(QLabel("<b>Editing photos</b>"))
+        # --- the rest ---
+        card = self._card(lay, "Editing photos", "The app that Open in... uses.")
         self.editor = QLineEdit(load_settings().get("editor", ""))
         self.editor.setPlaceholderText("The usual app for each kind of file")
         self.editor.setToolTip(
@@ -146,27 +147,94 @@ class SettingsDialog(QDialog):
         )
         self.editor.editingFinished.connect(self._save_editor)
         form = QHBoxLayout()
+        form.setSpacing(12)
         form.addWidget(QLabel("Open photos in:"))
         form.addWidget(self.editor, 1)
-        lay.addLayout(form)
-        lay.addSpacing(10)
-        lay.addWidget(QLabel("<b>Theme</b>"))
+        card.addLayout(form)
+
+        card = self._card(lay, "Appearance")
         self.look = QComboBox()
         for key, name in theme.MODES.items():
             self.look.addItem(name, key)
         self.look.setCurrentIndex(self.look.findData(theme.mode()))
         self.look.currentIndexChanged.connect(lambda _: theme.set_mode(self.look.currentData()))
         look = QHBoxLayout()
+        look.setSpacing(12)
         look.addWidget(QLabel("Colours:"))
         look.addWidget(self.look)
         look.addStretch()
-        lay.addLayout(look)
+        card.addLayout(look)
+        lay.addStretch()
+
         for b in self.findChildren(QPushButton):
             b.setAutoDefault(False)  # (none of them is the main one)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
-        lay.addWidget(buttons)
+        bar = QWidget()
+        bar.setObjectName("settingsBar")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(20, 12, 20, 16)
+        row.addWidget(buttons)
+        outer.addWidget(bar)
         self.refresh()
+
+    # --- building the sections ---
+
+    @staticmethod
+    def _hint(text: str) -> QLabel:
+        note = QLabel(text)
+        note.setObjectName("hint")
+        note.setWordWrap(True)
+        return note
+
+    def _card(self, page, title: str, note: str = "") -> QVBoxLayout:
+        """A section: a panel with its title (and what it's for) at the top. Returns its layout."""
+        frame = QFrame()
+        frame.setObjectName("settingsCard")
+        lay = QVBoxLayout(frame)
+        lay.setContentsMargins(18, 16, 18, 18)
+        lay.setSpacing(10)
+        head = QLabel(title)
+        head.setObjectName("settingsTitle")
+        font = head.font()
+        font.setPointSizeF(font.pointSizeF() * 1.25)
+        font.setWeight(QFont.Weight.DemiBold)
+        head.setFont(font)
+        lay.addWidget(head)
+        if note:
+            lay.addWidget(self._hint(note))
+            lay.addSpacing(2)
+        page.addWidget(frame)
+        return lay
+
+    ROW = 38  # a list row's height, in pixels
+
+    @staticmethod
+    def _folder_list(rows: int) -> QListWidget:
+        """A list as tall as what's in it (rows at least, 5 at most, then it scrolls); a long path is
+        shortened in the middle (the whole of it in its tooltip)."""
+        lst = QListWidget()
+        lst.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lst.setProperty("rows", rows)
+        SettingsDialog._fit(lst)
+        return lst
+
+    @staticmethod
+    def _fit(lst: QListWidget):
+        shown = min(max(lst.count(), lst.property("rows")), 5)
+        lst.setFixedHeight(shown * SettingsDialog.ROW + 10)
+
+    @staticmethod
+    def _buttons(left, right=()) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        for b in left:
+            row.addWidget(b)
+        row.addStretch()
+        for b in right:
+            row.addWidget(b)
+        return row
 
     def _keep_running(self, want: bool):
         why = background.set_on(want)
@@ -193,6 +261,8 @@ class SettingsDialog(QDialog):
         self.left_list.clear()
         for f in excluded_folders():
             self._add_item(self.left_list, f, f, keep)
+        self._fit(self.list)
+        self._fit(self.left_list)
         self.refresh_rules()
 
     def refresh_rules(self):
@@ -205,6 +275,7 @@ class SettingsDialog(QDialog):
             self.rule_list.addItem(item)
             if r.id == keep:
                 item.setSelected(True)
+        self._fit(self.rule_list)
         self._selected_folder()
 
     def _edit_rule(self, new: bool = False):
@@ -251,8 +322,12 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _add_item(lst, text, path, keep=None):
+        home = str(Path.home())
+        if text.startswith(home + os.sep):
+            text = "~" + text[len(home) :]  # (the home folder, the short way)
         item = QListWidgetItem(theme.icon("folder", "muted"), text)
         item.setData(Qt.ItemDataRole.UserRole, path)
+        item.setToolTip(path)
         lst.addItem(item)
         if path == keep:
             item.setSelected(True)

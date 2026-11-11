@@ -507,3 +507,24 @@ def test_the_window_fits_half_a_screen(app, pf, lib):
     box.close()
     box.deleteLater()
     app.processEvents()
+
+
+def test_settings_shows_folders_in_the_home_folder_the_short_way(app, pf, tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from homepix.core.settings import load_settings, save_settings
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    (tmp_path / "Pictures").mkdir()
+    s = load_settings()
+    s["folders"] = [str(tmp_path / "Pictures")]
+    save_settings(s)
+    dlg = SettingsDialog()
+    try:
+        item = dlg.list.item(0)
+        assert item.text() == "~/Pictures"
+        assert item.toolTip() == str(tmp_path / "Pictures")  # (the whole path)
+        assert dlg.list.height() == 3 * SettingsDialog.ROW + 10  # (room for a few, not stretched)
+    finally:
+        dlg.close()
