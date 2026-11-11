@@ -523,7 +523,7 @@ def test_settings_shows_folders_in_the_home_folder_the_short_way(app, pf, tmp_pa
     dlg = SettingsDialog()
     try:
         item = dlg.list.item(0)
-        assert item.text() == "~/Pictures"
+        assert item.text() == os.path.join("~", "Pictures")
         assert item.toolTip() == str(tmp_path / "Pictures")  # (the whole path)
         assert dlg.list.height() == 3 * SettingsDialog.ROW + 10  # (room for a few, not stretched)
     finally:
