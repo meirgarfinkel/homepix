@@ -289,7 +289,7 @@ private fun BoxScope.Scrollbar(lib: Library, cells: List<Cell>, items: List<Int>
 private fun PhotoCell(item: Item, size: Int, onClick: () -> Unit) {
     Edits.version // (made again when a photo is turned)
     Box(Modifier.aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClick)) {
-        AsyncImage(Thumb(item.file, item.kind == "video", size, Turns.of(item.file)), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        AsyncImage(Thumb(item.file, item.kind == "video", size, Turns.of(item.file), item.stamp), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         if (item.kind == "video") {
             val d = item.duration?.toInt()
             Text(if (d != null) "%d:%02d".format(d / 60, d % 60) else "▶",
@@ -532,7 +532,7 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
             if (item.kind == "video") {
                 Box(Modifier.fillMaxSize().clickable { chrome = !chrome }.swipeUp(item) { info = true }) {
                     VideoPage(player, item, active, chrome, muted, ACTIONS_HEIGHT, { muted = it }, { play(context, item) }) {
-                        AsyncImage(Thumb(item.file, true, 1080), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                        AsyncImage(Thumb(item.file, true, 1080, stamp = item.stamp), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                     }
                 }
             } else {
@@ -567,7 +567,7 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
                     var shape by remember(item, turn) { mutableStateOf(androidx.compose.ui.geometry.Size.Zero) } // the photo's size in pixels
                     if (z != null && z.scale > 1.3f) sharp = true
                     val request = remember(item, turn, Edits.version, sharp) {
-                        val key = "${item.file.path}:${item.file.lastModified()}:$turn"
+                        val key = "${item.file.path}:${item.stamp}:$turn"
                         ImageRequest.Builder(context).data(item.file)
                             .apply {
                                 if (sharp) size(4096).memoryCacheKey("$key:sharp").placeholderMemoryCacheKey(key)
@@ -618,7 +618,9 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
                 Action(Icons.Outlined.Share, "Share") { share(context, current) }
                 if (current.kind != "video") Action(RotateIcon, "Rotate") {
                     scope.launch {
-                        val inFile = withContext(Dispatchers.IO) { turnInFile(context, current.file) }
+                        val inFile = withContext(Dispatchers.IO) {
+                            turnInFile(context, current.file).also { if (it) current.stamp = current.file.lastModified() }
+                        }
                         if (inFile) Edits.version++ else Turns.turnLeft(current.file)
                     }
                 }

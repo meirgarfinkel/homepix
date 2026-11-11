@@ -27,10 +27,10 @@ import kotlin.math.roundToInt
  * A picture of a photo or video for grids. size: its shorter side in pixels (the grid crops to squares).
  * turn: how far it was turned on this phone (Turns).
  */
-data class Thumb(val file: File, val video: Boolean, val size: Int, val turn: Int = 0, val stamp: Long = file.lastModified())
+data class Thumb(val file: File, val video: Boolean, val size: Int, val turn: Int = 0, val stamp: Long)
 
 /** A person's face, cut from one of their photos (turned as that photo was turned here). */
-data class FaceThumb(val face: Face, val turn: Int = 0, val stamp: Long = face.file.lastModified())
+data class FaceThumb(val face: Face, val turn: Int = 0, val stamp: Long = face.stamp)
 
 const val FACE_SIZE = 384
 

@@ -89,6 +89,12 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            // test builds: note every time the screen's thread waits on the disk or the network
+            android.os.StrictMode.setThreadPolicy(
+                android.os.StrictMode.ThreadPolicy.Builder().detectAll().penaltyLog().build(),
+            )
+        }
         enableEdgeToEdge()
         val loader = ImageLoader.Builder(this)
             .components {
@@ -99,7 +105,7 @@ class MainActivity : ComponentActivity() {
             .crossfade(false)
             .build()
         Coil.setImageLoader(loader)
-        dropOldThumbs(this)
+        Thread { dropOldThumbs(this) }.start() // (a folder to delete: never on the screen's thread)
         Turns.load(this)
         pairCode = intent?.dataString?.let(PairCode::parse)
         Sending.schedule(this)

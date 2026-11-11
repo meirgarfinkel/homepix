@@ -16,6 +16,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import org.json.JSONArray
 import org.json.JSONObject
@@ -343,11 +345,22 @@ object SendState {
 object Sending {
     private val busy = Mutex()
 
+    /**
+     * Sending's own thread, at Android's background priority: reading and checking big videos then never
+     * holds up the screen (which, at the same priority, it could for seconds on a busy phone).
+     */
+    private val slow = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread({
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            r.run()
+        }, "HomePix sending")
+    }.asCoroutineDispatcher()
+
     /** Send what the computer doesn't have yet. False: cut off part way, so try again soon. */
     suspend fun run(context: Context, stopped: () -> Boolean = { false }): Boolean {
         if (!busy.tryLock()) return true
         try {
-            return sendNew(context, stopped)
+            return withContext(slow) { sendNew(context, stopped) }
         } finally {
             busy.unlock()
         }
@@ -405,7 +418,12 @@ object Sending {
                 SendState.note(context, "waiting" to left, "problem" to "")
             }
             SendState.note(context, "problem" to "", "waiting" to 0, "count" to count)
-            if (count > 0) fetchLibrary(context, link) // (with what just came)
+            if (count > 0) {
+                fetchLibrary(context, link)
+                // and again once the computer has taken them into the library (a few seconds after they
+                // come) and looked at them (faces, search): so a photo shows here a few minutes after it's taken
+                later(context)
+            }
             return true
         } catch (e: IOException) {
             SendState.note(context, "problem" to (e.message ?: "Sending stopped."))
@@ -474,9 +492,18 @@ object Sending {
         )
     }
 
+    /** Look again in a couple of minutes (for the library's details of what was just sent). */
+    fun later(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "send-later", ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<SendWorker>().setConstraints(wifi.build())
+                .setInitialDelay(Duration.ofMinutes(2)).build(),
+        )
+    }
+
     fun stop(context: Context) {
         val wm = WorkManager.getInstance(context)
-        listOf("send-every-15-min", "send-new-photos", "send-now").forEach { wm.cancelUniqueWork(it) }
+        listOf("send-every-15-min", "send-new-photos", "send-now", "send-later").forEach { wm.cancelUniqueWork(it) }
     }
 }
 

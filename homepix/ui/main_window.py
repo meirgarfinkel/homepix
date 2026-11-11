@@ -427,6 +427,7 @@ class MainWindow(QMainWindow):
         self.tray = Tray(self)  # (an icon while kept running in the background)
         self.tray.update()
         self.phone_link = PhoneLink(self)  # (answering paired phones, when there are any)
+        self.phone_link.arrived.connect(lambda _name: self.importer.soon())  # (on the phone in a few minutes)
         self.phone_link.refresh()
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
