@@ -9,12 +9,17 @@ Requests (JSON in and out, but the file itself):
 - POST /v1/pair {code, name}: pair, with the QR code's code. Answers {phone, token, computer}.
 - POST /v1/hello: check the secret works. Answers {computer, phone, ready}.
 - POST /v1/need {files: [{path, size, sha256}]}: which to send. Answers {need: [{path, have}]}.
+- POST /v1/library {sizes, sources, version}: what HomePix knows about the phone's photos (see
+  phones.library_for). Answers {same: true} when the phone's version is current, else the file itself
+  (a SQLite database like a folder's portable copy), with its version in X-Version.
 - PUT /v1/file, the file's bytes from X-Offset on, with X-Path (URL-encoded), X-Size, X-Mtime (ms) and
   X-Sha256: answers {have} (all of it once it's in place), or 409 {have} to go on from there.
 """
 
 import json
 import logging
+import os
+import shutil
 import socket
 import ssl
 import threading
@@ -167,6 +172,25 @@ class _Handler(BaseHTTPRequestHandler):
         finally:
             db.close()
         self._send(200, {"need": need})
+
+    def _POST_v1_library(self):
+        body = self._json()
+        phone = self._phone()
+        sizes, sources = body.get("sizes"), body.get("sources", [])
+        if not isinstance(sizes, list) or not isinstance(sources, list):
+            raise phones.Refused("That isn't readable.", 400)
+        version, path = phones.library_for(phone, sizes, sources)
+        if body.get("version") == version:
+            self._send(200, {"same": True, "version": version})
+            return
+        with open(path, "rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.sqlite3")
+            self.send_header("Content-Length", str(size))
+            self.send_header("X-Version", version)
+            self.end_headers()
+            shutil.copyfileobj(f, self.wfile, 1 << 20)
 
     def _PUT_v1_file(self):
         phone = self._phone()

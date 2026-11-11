@@ -286,3 +286,74 @@ def test_settings_lists_phones_and_pairs_one(app, home, lib, tmp_path, monkeypat
     dlg._unpair()
     assert phones.load_phones() == [] and dlg.phone_list.count() == 0
     assert window.phone_link.server is None  # (no phone left: not listening)
+
+
+def library_rows(path):
+    import sqlite3
+
+    with sqlite3.connect(path) as c:
+        photos = sorted(os.path.basename(r[0]) for r in c.execute("SELECT path FROM photos"))
+        came = dict(c.execute("SELECT path, source FROM came_from").fetchall())
+        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    return photos, came, tables
+
+
+def ask_library(phone, sizes, sources=(), version=None):
+    body = json.dumps({"sizes": list(sizes), "sources": list(sources), "version": version}).encode()
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+    c = http.client.HTTPSConnection("127.0.0.1", phone.port, context=ctx, timeout=30)
+    c.request("POST", "/v1/library", body=body, headers={"Authorization": "Bearer " + phone.token})
+    r = c.getresponse()
+    data, version = r.read(), r.getheader("X-Version")
+    c.close()
+    assert r.status == 200
+    return data, version
+
+
+def test_the_phone_gets_only_its_own_photos_details(setup, lib, tmp_path):
+    server, rule, watch, _, db = setup
+    pf_index = __import__("homepix.core.library", fromlist=["index_folder"]).index_folder
+    phone = paired(server, rule)
+    # one photo sent from the phone and imported, two that never were on it
+    sent = photo(tmp_path / "src.jpg").read_bytes()
+    assert phone.send("Camera/PXL_1.jpg", sent)[0] == 200
+    ai.run(db, ai.check(db, rule, [str(lib)], now=time.time() + ai.SETTLE + 5))
+    photo(lib / "Other" / "a.jpg")
+    photo(lib / "Other" / "bigger.jpg")
+    pf_index(lib, want_faces=False)
+    assert db.execute("SELECT COUNT(*) FROM photos").fetchone()[0] == 3
+
+    data, version = ask_library(phone, [len(sent)], ["Camera/PXL_1.jpg"])
+    out = tmp_path / "phone.db"
+    out.write_bytes(data)
+    photos, came, tables = library_rows(out)
+    assert photos == ["PXL_1.jpg"]  # (only the one it has)
+    assert list(came.values()) == ["Camera/PXL_1.jpg"]
+    assert "import_seen" in tables and "portable" in tables
+    assert not any("\\" in p for p in came)  # (paths with / between folders, on Windows too)
+
+    # Asked again with nothing changed: no file, just "the same".
+    data2, _ = ask_library(phone, [len(sent)], ["Camera/PXL_1.jpg"], version)
+    assert json.loads(data2) == {"same": True, "version": version}
+
+    # A photo changed on the phone (another size now): still found by where it came from.
+    data3, version3 = ask_library(phone, [123], ["Camera/PXL_1.jpg"], version)
+    assert version3 != version
+    out.write_bytes(data3)
+    assert len(library_rows(out)[0]) == 1
+
+    # Nothing on the phone: nothing in it.
+    data4, _ = ask_library(phone, [], [], version)
+    out.write_bytes(data4)
+    assert library_rows(out)[0] == []
+
+
+def test_unpairing_drops_the_phones_library_file(setup):
+    server, rule, _, _, _ = setup
+    phone = paired(server, rule)
+    ask_library(phone, [1], [])
+    pid = phones.load_phones()[0].id
+    assert phones._library_files(pid)[0].is_file()
+    phones.forget(pid)
+    assert not phones._library_files(pid)[0].exists()

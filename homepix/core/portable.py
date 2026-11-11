@@ -383,3 +383,70 @@ def _bring_faces(db, cp, new: dict, people: dict) -> int:
         db.execute(f"INSERT INTO faces ({', '.join(fcols)}) VALUES ({', '.join('?' * len(fcols))})", values)
     named.discard(None)
     return len(named)
+
+
+def phone_copy(dst: Path, sizes: set[int], sources: set[str]) -> int:
+    """A copy for a phone with the HomePix app: what HomePix knows about the photos that phone has, from
+    every library folder, in the same form as a folder's copy (so the app reads it the same way). A photo
+    is kept when a file on the phone has its size (the app then matches each by fingerprint), or when it
+    came from that place on the phone (sources: "Camera/PXL_1.jpg"; for one changed since, on either
+    side). Excluded folders' photos are left out. Paths stay whole, so no phone looks for them in a
+    library folder of its own. Written all at once to dst; returns the number of photos in it."""
+    from .autoimport import came_from
+
+    work = data_dir() / "phone-out.tmp.db"
+    work.unlink(missing_ok=True)
+    db = open_db()
+    try:
+        came = [(now, src) for now, src in came_from(db, "") if src in sources]
+        out = sqlite3.connect(work)
+        db.backup(out)
+    finally:
+        db.close()
+    tmp = dst.with_name(dst.name + ".tmp")
+    try:
+        out.execute("PRAGMA foreign_keys = ON")
+        out.execute("PRAGMA journal_mode = OFF")  # a scratch copy: nothing to protect
+        for table in ("op_steps", "ops", "import_seen"):
+            out.execute(f"DELETE FROM {table}")
+        out.execute("CREATE TEMP TABLE want_size (size INTEGER PRIMARY KEY)")
+        out.executemany("INSERT OR IGNORE INTO want_size VALUES (?)", [(int(s),) for s in sizes])
+        out.execute("CREATE TEMP TABLE want_path (path TEXT PRIMARY KEY)")
+        out.executemany("INSERT OR IGNORE INTO want_path VALUES (?)", [(now,) for now, _ in came])
+        out.execute(
+            "DELETE FROM photos WHERE size NOT IN (SELECT size FROM want_size) "
+            "AND path NOT IN (SELECT path FROM want_path)"
+        )
+        for f in load_settings().get("excluded", []):
+            p = folder_prefix(f)
+            out.execute("DELETE FROM photos WHERE substr(path, 1, ?) = ?", (len(p), p))
+        out.execute("DELETE FROM people WHERE id NOT IN (SELECT person_id FROM faces WHERE person_id IS NOT NULL)")
+        out.execute("UPDATE photos SET path = replace(path, ?, '/')", (os.sep,))
+        out.execute("CREATE TABLE came_from (path TEXT PRIMARY KEY, source TEXT NOT NULL)")
+        out.executemany(
+            "INSERT OR REPLACE INTO came_from VALUES (?, ?)", [(now.replace(os.sep, "/"), s) for now, s in came]
+        )
+        n = out.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+        meta = {
+            "library": "phone",
+            "written": dt.datetime.now().isoformat(timespec="seconds"),
+            "app": __version__,
+            "photos": n,
+            "people": out.execute("SELECT COUNT(*) FROM people").fetchone()[0],
+            "excluded": "[]",
+        }
+        out.execute("CREATE TABLE portable (key TEXT PRIMARY KEY, value TEXT)")
+        out.executemany("INSERT INTO portable VALUES (?, ?)", [(k, str(v)) for k, v in meta.items()])
+        out.commit()
+        tmp.unlink(missing_ok=True)
+        out.execute("VACUUM INTO ?", (str(tmp),))
+    finally:
+        out.close()
+        work.unlink(missing_ok=True)
+    done = sqlite3.connect(tmp)
+    try:
+        done.execute("PRAGMA journal_mode = DELETE")
+    finally:
+        done.close()
+    os.replace(tmp, dst)
+    return n
