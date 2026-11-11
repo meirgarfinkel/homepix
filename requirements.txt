@@ -9,7 +9,7 @@ PySide6-Essentials==6.11.3
 PySide6-Addons==6.11.3
 # iPhone .heic photos
 pillow-heif>=0.16
-# The QR code that pairs a phone with Syncthing (pure Python)
+# The QR code that pairs a phone with HomePix (pure Python)
 segno>=1.6
 # Phones sending photos over the home network: the computer's own encryption key, and being found on the network
 cryptography>=42

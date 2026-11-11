@@ -4,13 +4,26 @@ once, for a few minutes (a new one is shown when it runs out), and only while th
 
 import contextlib
 import html
+import io
 import time
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout
 
 from ...core import autoimport, phones
-from .syncthing_dialog import qr_pixmap
+
+
+def qr_pixmap(text: str, scale: int = 6) -> QPixmap:
+    """A QR code of text, black on white (what phone cameras read best), with its quiet border."""
+    import segno
+
+    buf = io.BytesIO()
+    segno.make(text, error="m").save(buf, kind="png", scale=scale, border=4, dark="#000000", light="#ffffff")
+    pm = QPixmap()
+    pm.loadFromData(buf.getvalue(), "PNG")
+    return pm
+
 
 STEPS = (
     "<table cellspacing='0' cellpadding='5'>"

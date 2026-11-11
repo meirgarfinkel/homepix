@@ -6,7 +6,6 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 ## Ground rules (apply to everything)
 
 1. **Private and local.** Nothing leaves the computer; the only network access is the one-time model download.
-   (Setting up Syncthing, section 9, talks only to the Syncthing running on this computer; its Install button hands any download to the system's own installer.)
    The one exception is paired phones (section 10): HomePix answers them on the home network only, encrypted, and
    only phones paired with it. Nothing goes through outside servers.
 2. **Never changes files on its own.** Indexing, thumbnails and AI analysis run in the background but only read.
@@ -110,30 +109,29 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 
 ## 9. Import automations (agreed 2026-11-08)
 
-Photos arrive in a folder (the automation's **Import from** folder) by some other app (Syncthing from an Android phone; iCloud for Windows,
-osxphotos or icloudpd for an iPhone), or from the HomePix phone app (section 10), and HomePix brings them into the library.
+Photos arrive in a folder (the automation's **Import from** folder) by the HomePix phone app (section 10) or some other app
+(iCloud for Windows, osxphotos or icloudpd for an iPhone), and HomePix brings them into the library.
 
 | Requirement | Priority |
 |---|---|
 | **Import automations** in Settings: new, edit, pause, remove; as many as wanted (one per phone, say) | v1 |
 | Each automation: **Name**; **Import from** (not a whole library folder and not containing one; no two automations on one folder; one inside the library is added to Excluded folders, after a confirmation, and its photos never count as already in the library or as duplicates); **Rename and organize into year folders** (right under Name, above Import from, off by default: rename `YYYY_MM_DD_HH_MM_SS.ext` and sort into `<library>/<year>/`, `Unsorted/` with no date, same rules as the organizer; Import to then becomes a choice of library folder); **Import to** (any folder in the library; files keep their names); **Empty the Import from folder after importing** (on by default; off: files are copied and left there); **Ask me before importing** (off by default); **Pause automation** | v1 |
 | Checked when the app opens; then the watch folders are looked at **every minute** (only listed, no file read) and checked when something new has finished arriving, and fully **every hour** (no live watching); a **Check now** button in Settings | v1 |
-| A file is only taken once it's been unchanged for 2 minutes; hidden files and sync apps' part-files (`.syncthing.*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
+| A file is only taken once it's been unchanged for 2 minutes; hidden files and sync apps' part-files (`*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
 | Already in the library (same content) → not imported again. When emptying the folder, such a file goes to the Trash; otherwise it's left and remembered | v1 |
 | A file that comes back changed to the same place in Import from (turned or edited on the phone) is a new version of the photo it became: it takes that photo's place, wherever it is now, and the old version goes to the Trash. Who's in it is kept when only its orientation changed (the face boxes turn with it); an edit is indexed again. Undo puts the old version back | v1 |
 | Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
 | After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Edit > Undo names it and takes it back | v1 |
 | An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; hover to see where it will go); Import or Cancel | v1 |
 | A missing or unplugged Import from or Import to folder: nothing happens and nothing is treated as deleted; Settings shows why it's waiting | v1 |
-| The automation screen warns that emptying the folder deletes from the phone with two-way sync (Syncthing must be Receive Only on the computer) and from iCloud with iCloud for Windows; with iCloud or icloudpd, leave it off | v1 |
+| The automation screen warns that emptying the folder deletes from the phone with two-way sync and from iCloud with iCloud for Windows; with iCloud or icloudpd, leave it off | v1 |
 | Only while the app is running. **Keep running in the background** (Settings, off by default): HomePix starts hidden at each login (an autostart entry on Linux, the Startup folder on Windows, a LaunchAgent on macOS), and closing the window hides it instead of quitting; opening HomePix shows it again; File > Quit stops it until the next login. While it runs this way, an icon in the system tray (where the desktop has one) opens the window, and its menu has Open HomePix and Quit | v1 |
 | Settings shows, per automation, when it last checked and last imported | v1 |
-| **Set up a phone with Syncthing...** (under Import from): finds the Syncthing running on this computer (its own settings file gives the address and key; only ever this computer); shows this computer's ID as a QR code, with steps (Syncthing-Fork on Android, Möbius Sync on iPhone); **Connect** when the phone asks to; the folder the phone then shares is taken as **Receive Only** into the Import from folder (or `~/Phone photos/<phone>`), so emptying it never deletes anything on the phone. Device ID has a Copy button. Not installed: **Install Syncthing** hands it to the system's own installer (pkexec with apt/dnf/pacman; winget; Homebrew), then starts it; installed but not running: **Start Syncthing** starts it and has it start at each login (systemd user service, else an autostart entry; a Startup-folder script on Windows; brew services or the app on macOS). Either way the same commands show in a box with Copy, and a Download page button; Try again | v1 |
 
 ## 10. Phones with the HomePix app (agreed 2026-11-11)
 
 The HomePix Android app sends the phone's new photos and videos straight to HomePix over the home network,
-replacing Syncthing, and HomePix sends back what it knows about the photos on that phone.
+and HomePix sends back what it knows about the photos on that phone.
 
 | Requirement | Priority |
 |---|---|

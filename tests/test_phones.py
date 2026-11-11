@@ -439,3 +439,18 @@ def test_unpairing_drops_the_phones_library_file(setup):
     assert phones._library_files(pid)[0].is_file()
     phones.forget(pid)
     assert not phones._library_files(pid)[0].exists()
+
+
+def test_the_qr_code_holds_the_pairing_link(app):
+    import cv2
+    import numpy as np
+
+    from homepix.ui.views.pair_dialog import qr_pixmap
+
+    link = "homepix:pair?v=1&a=192.168.1.20&p=47820&f=abc&c=123456&n=desk"
+    pm = qr_pixmap(link)
+    assert pm.width() == pm.height() and pm.width() > 150
+    img = pm.toImage().convertToFormat(pm.toImage().Format.Format_Grayscale8)
+    pixels = np.frombuffer(img.constBits(), np.uint8).reshape(img.height(), img.bytesPerLine())[:, : img.width()]
+    text, _, _ = cv2.QRCodeDetector().detectAndDecode(np.ascontiguousarray(pixels))
+    assert text == link  # what the phone's camera reads
