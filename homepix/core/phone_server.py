@@ -28,6 +28,7 @@ from .db import open_db
 log = logging.getLogger(__name__)
 
 MAX_JSON = 4 << 20
+MAX_DRAIN = 64 << 20  # a refused upload's bytes are read and dropped up to this much (else the connection is cut)
 
 
 def _rule(phone: phones.Phone):
@@ -69,7 +70,7 @@ class _Handler(BaseHTTPRequestHandler):
         if n > MAX_JSON:
             raise phones.Refused("That's too much at once.", 413)
         try:
-            body = json.loads(self.rfile.read(n) or b"{}")
+            body = json.loads(self._read(n) or b"{}")
         except ValueError:
             raise phones.Refused("That isn't readable.", 400) from None
         if not isinstance(body, dict):
@@ -89,10 +90,19 @@ class _Handler(BaseHTTPRequestHandler):
             raise phones.Refused("Importing from this phone is paused or removed in HomePix's Settings.", 409)
         return rule.watch
 
+    def _read(self, n: int) -> bytes:
+        data = self.rfile.read(n)
+        self._left -= len(data)
+        return data
+
     def _handle(self, method: str):
         if not phones.private(self.client_address[0]):
             self.close_connection = True
             return
+        try:
+            self._left = max(0, int(self.headers.get("Content-Length", "0")))  # (body bytes not read yet)
+        except ValueError:
+            self._left = 0
         route = getattr(self, f"_{method}_{self.path.split('?')[0].strip('/').replace('/', '_')}", None)
         try:
             if route is None:
@@ -112,8 +122,15 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(500, {"error": "Something went wrong on the computer."})
 
     def _drain(self):
-        """A refused request's body isn't read: the connection can't be used again."""
-        self.close_connection = True
+        """Read what's left of a refused request's body, so the phone gets the answer (cutting the
+        connection with bytes unread makes some systems drop the answer too)."""
+        if self._left > MAX_DRAIN:
+            self.close_connection = True
+            return
+        while self._left > 0:
+            if not self._read(min(self._left, 1 << 20)):
+                self.close_connection = True
+                return
 
     def do_POST(self):
         self._handle("POST")
@@ -161,7 +178,7 @@ class _Handler(BaseHTTPRequestHandler):
             sha = h["X-Sha256"]
         except (KeyError, ValueError, UnicodeDecodeError):
             raise phones.Refused("Something about the file is missing.", 400) from None
-        have = phones.receive(watch, rel, size, mtime, sha, offset, self.rfile.read, self._length())
+        have = phones.receive(watch, rel, size, mtime, sha, offset, self._read, self._length())
         if have == size:
             phones.touch(phone.id, sent=True)
             self.server.events("arrived", phone)
