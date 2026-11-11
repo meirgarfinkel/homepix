@@ -109,7 +109,11 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                 // no ripple when something is touched, anywhere: every tap already shows what it did
                 CompositionLocalProvider(LocalIndication provides NoIndication, LocalRippleConfiguration provides null) {
-                    if (allowed) App(resumes, pairCode) { pairCode = null } else AskForFiles { askForFiles() }
+                    // (the theme's background and text colours for every screen, not only the tabs': in dark
+                    // mode, text outside them was left black)
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        if (allowed) App(resumes, pairCode) { pairCode = null } else AskForFiles { askForFiles() }
+                    }
                 }
             }
         }

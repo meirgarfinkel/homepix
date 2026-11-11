@@ -362,6 +362,11 @@ def test_each_phones_folder_is_its_own(home, lib, own_home):
     (own_home / "Phone photos" / "Mom" / "x.jpg").write_bytes(b"x")  # (someone's files already there)
     mom, _ = phones.make_rule("Mom", "d", [str(lib)], [])
     assert mom.watch.endswith("Mom 2")
+    old = own_home / "Phone photos" / "Dad"  # (a phone unpaired earlier: only empty folders left)
+    (old / "Camera").mkdir(parents=True)
+    (old / phones.INCOMING).mkdir()
+    dad, _ = phones.make_rule("Dad", "e", [str(lib)], [])
+    assert dad.watch == str(old)  # (used again, not "Dad 2")
 
 
 def test_a_phone_folder_inside_the_library_is_excluded(home, own_home):
