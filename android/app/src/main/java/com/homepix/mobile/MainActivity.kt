@@ -172,8 +172,8 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                 status = "No library yet. It comes from your computer the next time this phone reaches it on Wi-Fi."
                 null
             } else if (roots.isEmpty()) {
-                status = "No library found. Sync your library's hidden .homepix folder to a folder on this phone, " +
-                    "for example Pictures/HomePix."
+                status = "No library yet. Pair this phone with HomePix on your computer (Settings, then Phones) " +
+                    "and your photos show here."
                 null
             } else {
                 val t0 = System.currentTimeMillis()
@@ -183,15 +183,23 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
         }
     }
     val l = lib
+    if (l == null) {
+        // Paired, and the computer's file not here yet (just paired, say, even with the pairing screen still
+        // open): look again every few seconds, so the photos show as soon as it comes. A light look: only
+        // whether that one file is there.
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(3000)
+                if (status.startsWith("No library") && Computer.load(context) != null) tries++
+            }
+        }
+    }
     if (l == null && (pairing || pairCode != null)) {
         BackHandler { pairing = false }
         ComputerScreen(pairCode, pairTaken)
         return
     }
     if (l == null) {
-        LaunchedEffect(status, tries) { // (waiting for the computer's file: look again every few seconds)
-            if (status.startsWith("No library yet")) { delay(5000); tries++ }
-        }
         Centered {
             if (!status.startsWith("No library")) CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
