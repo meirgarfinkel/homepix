@@ -42,7 +42,7 @@ class PeopleActions:
         )
 
     def ask_and_name(self, face_ids, title="Who is this?", current=""):
-        name = ask_name(self.w, title, "Their name:", self._all_names(), current)
+        name = ask_name(self.w, title, "", self._all_names(), current)
         if name and name != current:
             self.name(face_ids, name)
 

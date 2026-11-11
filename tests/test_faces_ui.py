@@ -251,8 +251,10 @@ def test_rename_and_forget_from_the_people_page(window, pf, app, monkeypatch):
     assert names(pf)[:5] == ["Anna"] * 5
 
 
-def test_face_boxes_in_the_viewer(window, pf, app):
+def test_face_boxes_in_the_viewer(window, pf, app, monkeypatch):
     from PySide6.QtCore import QPointF
+
+    from homepix.ui import people_actions
 
     window.open_viewer(0)
     v = window.viewer
@@ -265,13 +267,43 @@ def test_face_boxes_in_the_viewer(window, pf, app):
     assert face is not None and face["name"] is None
     assert v._face_at(QPointF(rect.x() + 2, rect.y() + 2)) is None
     v.grab()  # the boxes draw
-    window.naming.name([face["id"]], "Bo")
+    asked = []
+    monkeypatch.setattr(people_actions, "ask_name", lambda *a, **k: asked.append(a[1]) or "Bo")
+    monkeypatch.setattr(QtWidgets.QMenu, "exec", lambda *a: pytest.fail("no menu for a face with no name"))
+    QTest.mouseClick(v, QtCore.Qt.MouseButton.LeftButton, pos=rect.center().toPoint())
+    assert asked == ["Who is this?"]  # (one click: straight to their name)
     settle(app, window)
     wait_until(app, lambda: v._current_faces() and v._current_faces()[0]["name"] == "Bo")
     assert window.stack.currentWidget() is v  # still looking at it
     v.toggle_faces()
     assert not v._current_faces()
     assert window.settings.value("viewer/faces") == "false"
+
+
+def test_the_name_window_offers_the_names_that_match(app, monkeypatch):
+    from homepix.ui.views import faces
+
+    seen = {}
+
+    def answer():
+        dlg = app.activeModalWidget()
+        box, matches = dlg.ask
+        seen["at_first"] = matches.isVisible()
+        for typed in ("ann", "Annie Sample", "zz"):
+            box.setText(typed)
+            box.textEdited.emit(typed)
+            seen[typed] = [matches.item(i).text() for i in range(matches.count())], matches.isVisible()
+        box.setText("hann")
+        box.textEdited.emit("hann")
+        matches.itemClicked.emit(matches.item(0))  # (one click names them)
+
+    QtCore.QTimer.singleShot(0, answer)
+    got = faces.ask_name(None, "Who is this?", "", ["Hannah Demo", "Anna Example", "Annie Sample", "Bob"])
+    assert seen["at_first"] is False
+    assert seen["ann"] == (["Anna Example", "Annie Sample", "Hannah Demo"], True)  # (anywhere in the name)
+    assert seen["Annie Sample"] == ([], False)  # (typed in full: nothing more to offer)
+    assert seen["zz"] == ([], False)
+    assert got == "Hannah Demo"
 
 
 def test_a_face_grid_can_be_drawn_before_it_has_faces(app, monkeypatch):

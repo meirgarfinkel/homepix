@@ -720,15 +720,15 @@ class MainWindow(QMainWindow):
         menu.exec(pos)
 
     def _face_menu(self, face, pos):
-        menu = QMenu(self)
         ids, name, pid = [face["id"]], face["name"], face["person_id"]
-        if name is None:
-            menu.addAction("Who is this?...", lambda: self.naming.ask_and_name(ids))
-        else:
-            menu.addAction(f"{name}'s photos", lambda: self.show_place(person_place(pid)))
-            menu.addSeparator()
-            menu.addAction(f"Not {name}", lambda: self.naming.not_them(ids, pid))
-            menu.addAction("Someone else...", lambda: self.naming.ask_and_name(ids, "Who is it?", name))
+        if name is None:  # (no menu: straight to their name)
+            self.naming.ask_and_name(ids)
+            return
+        menu = QMenu(self)
+        menu.addAction(f"{name}'s photos", lambda: self.show_place(person_place(pid)))
+        menu.addSeparator()
+        menu.addAction(f"Not {name}", lambda: self.naming.not_them(ids, pid))
+        menu.addAction("Someone else...", lambda: self.naming.ask_and_name(ids, "Who is it?", name))
         menu.addAction("Not a face", lambda: self.naming.hide(ids))
         menu.exec(pos)
 
