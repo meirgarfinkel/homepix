@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .config import data_dir
 from .db import open_db
-from .util import folder_prefix
+from .util import folder_prefix, write_atomic
 
 
 def settings_path() -> Path:
@@ -24,9 +24,7 @@ def load_settings() -> dict:
 
 
 def save_settings(s: dict):
-    tmp = settings_path().with_suffix(".tmp")
-    tmp.write_text(json.dumps(s, indent=2), encoding="utf-8")
-    tmp.replace(settings_path())
+    write_atomic(settings_path(), json.dumps(s, indent=2))
 
 
 def library_folders() -> list[str]:
