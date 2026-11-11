@@ -3,6 +3,8 @@
 import hashlib
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -57,3 +59,24 @@ def quick_hash(path: Path, size: int) -> str:
             f.seek(-65536, os.SEEK_END)
             h.update(f.read(65536))
     return h.hexdigest()
+
+
+_writing = threading.Lock()
+
+
+def write_atomic(path: Path, text: str):
+    """Write a small text file whole or not at all. Each write has its own temporary file, so two at
+    once (from different threads) never trip over each other; and on Windows, where a file that's being
+    read can't be replaced for that moment, it tries again."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    with _writing:
+        tmp.write_text(text, encoding="utf-8")
+        for attempt in range(20):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 19:
+                    tmp.unlink(missing_ok=True)
+                    raise
+                time.sleep(0.05)

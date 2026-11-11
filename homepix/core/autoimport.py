@@ -169,8 +169,11 @@ def settled_files(watch: str, now: float | None = None, should_stop=lambda: Fals
                 st = os.stat(p)
             except OSError:
                 continue
-            # (a sync app gives a file its old time when it's done; its change time says when that was)
-            if _cloud_only(st) or now - max(st.st_mtime, st.st_ctime) < SETTLE:
+            # (a sync app gives a file its old time when it's done; its change time says when that was. A
+            # time later than now, from a phone or camera with its clock wrong, is left out: it would hold
+            # the file back until then)
+            last = max((t for t in (st.st_mtime, st.st_ctime) if t <= now), default=now)
+            if _cloud_only(st) or now - last < SETTLE:
                 continue
             out.append((p, st))
     return out

@@ -31,6 +31,7 @@ from pathlib import Path
 
 from .autoimport import MEDIA_EXTS
 from .config import data_dir
+from .util import write_atomic
 
 PORT = 47820  # (another is taken when it's in use, and kept)
 SERVICE = "_homepix._tcp.local."
@@ -147,9 +148,7 @@ def load_phones() -> list[Phone]:
 
 def save_phones(phones: list[Phone]):
     with _lock:
-        tmp = _phones_file().with_suffix(".tmp")
-        tmp.write_text(json.dumps([asdict(p) for p in phones], indent=2), encoding="utf-8")
-        os.replace(tmp, _phones_file())
+        write_atomic(_phones_file(), json.dumps([asdict(p) for p in phones], indent=2))
 
 
 def touch(phone_id: str, sent: bool = False):
