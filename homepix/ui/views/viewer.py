@@ -1,5 +1,6 @@
-"""One photo, big: fit to the window or zoomed, with previous/next. A video shows a frame with a play
-button; playing it opens the system's video player.
+"""One photo, big: fit to the window or zoomed, with previous/next. A video plays right here (see
+video_player.py), starting as soon as it's shown; its controls float over the bottom, and it can still
+be opened in another app.
 
 Photos are decoded with the core's reader (so HEIC and EXIF rotation work like everywhere else),
 first at screen size; zooming in past that loads the full resolution. The next and previous photos
@@ -67,6 +68,9 @@ class Viewer(QWidget):
         # size on screen from one to the next; up and down go to the group before or after.
         self.compare = None
         self._carry_width = None  # (comparing) the zoomed width to show the next copy at
+        self._playback = None  # the video player (made the first time a video is shown)
+        self._controls = None
+        self._fader = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
 
@@ -102,6 +106,7 @@ class Viewer(QWidget):
             self.zoom = None
             self._center = QPointF(0.5, 0.5)
         self._error = None
+        self._play_current()
         self._start_decode(index, self._screen_longest_side())
         for n in (index + 1, index - 1):  # read ahead
             if 0 <= n < len(self.items):
@@ -215,11 +220,20 @@ class Viewer(QWidget):
         p.fillRect(self.rect(), Qt.GlobalColor.black)
         if self.index < 0:
             return
+        frame = self._frame()
+        if frame is not None:  # a video playing (or paused)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.drawImage(self._video_rect(frame), frame)
+            if not self._playback.playing:
+                self._draw_play(p)
+            self._draw_compare(p)
+            p.end()
+            return
         shown = self._best_image()
         if shown is None:
             p.setPen(self.palette().color(QPalette.ColorRole.PlaceholderText))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._error or "")
-            if self._is_video():
+            if self._is_video() and self._error is None and not self._starting():
                 self._draw_play(p)
             p.end()
             return
@@ -229,11 +243,21 @@ class Viewer(QWidget):
             scale = self._carry_width / img.width()
             self.zoom = scale * self.devicePixelRatioF() * max(img.width(), img.height()) / full_side
         self._carry_width = None
+        if self._is_video():  # its still, until the first frame comes
+            rect = self._video_rect(shown[0])
+            p.drawImage(rect, shown[0])
+            if self._error:
+                p.fillRect(self.rect(), QColor(0, 0, 0, 170))
+                p.setPen(QColor(255, 255, 255))
+                p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._error)
+            elif not self._starting():
+                self._draw_play(p)
+            self._draw_compare(p)
+            p.end()
+            return
         rect = self._image_rect(shown)
         p.drawImage(rect, shown[0])
         self._draw_faces(p, rect)
-        if self._is_video():
-            self._draw_play(p)
         self._draw_compare(p)
         p.end()
 
@@ -271,6 +295,11 @@ class Viewer(QWidget):
         p.setPen(QColor(255, 255, 255, 220))
         p.drawText(bar, Qt.AlignmentFlag.AlignCenter, keys)
 
+    def _starting(self) -> bool:
+        """The video shown is on its way (its first frame hasn't come yet)."""
+        pb = self._playback
+        return pb is not None and self._is_video() and pb.path == self.items[self.index].path and pb.playing
+
     def _is_video(self) -> bool:
         return 0 <= self.index < len(self.items) and self.items[self.index].kind == "video"
 
@@ -296,10 +325,93 @@ class Viewer(QWidget):
             )
         )
 
-    def play(self):
-        """Open the video in the system's player (HomePix has none of its own)."""
+    # --- videos ------------------------------------------------------------------------------------
+
+    def _video(self):
+        """The player, made the first time it's needed (Qt's media libraries load then)."""
+        if self._playback is None:
+            from .video_player import Controls, Fader, Playback
+
+            self._playback = Playback(self)
+            self._playback.frame.connect(lambda _: self.update())
+            self._playback.changed.connect(self.update)
+            self._playback.failed.connect(self._cant_play)
+            self._controls = Controls(self._playback, self)
+            self._controls.open_elsewhere.connect(self.open_elsewhere)
+            self._controls.hide()
+            self._fader = Fader(self._controls, self._playback)
+            self._place_controls()
+        return self._playback
+
+    def _play_current(self):
+        """Start the video shown (from the beginning), or stop the one that was."""
+        if self._is_video() and self.isVisible():
+            self._video().play(self.items[self.index].path)
+            self._fader.poke()
+        elif self._playback is not None and self._playback.path is not None:
+            self._playback.stop()
+            self._controls.hide()
+
+    def _cant_play(self, why: str):
         if self._is_video():
+            self._error = f"Can't play this video here:\n{why}\n\nOpen it in another app with the button below."
+            self._playback.image = None
+            self._controls.show()
+            self.update()
+
+    def _frame(self):
+        """The video's frame to draw now, or None (not started yet: its still is shown)."""
+        pb = self._playback
+        if pb is None or not self._is_video() or pb.path != self.items[self.index].path:
+            return None
+        return pb.image
+
+    def toggle_play(self):
+        if not self._is_video():
+            return
+        pb = self._video()
+        if pb.path != self.items[self.index].path:
+            pb.play(self.items[self.index].path)
+        else:
+            pb.toggle()
+        self._fader.poke()
+
+    def play(self):
+        """Enter (or P, K or Space) on a video: play it, or pause it."""
+        self.toggle_play()
+
+    def open_elsewhere(self):
+        """The video in the system's own player."""
+        if self._is_video():
+            if self._playback is not None and self._playback.playing:
+                self._playback.toggle()
             QDesktopServices.openUrl(QUrl.fromLocalFile(self.items[self.index].path))
+
+    def _place_controls(self):
+        if self._controls is not None:
+            w = min(self.width() - 32, 900)
+            self._controls.setGeometry(int((self.width() - w) / 2), self.height() - 72, int(w), 56)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place_controls()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not e.spontaneous():  # (not just the window coming back from the taskbar)
+            self._play_current()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        if self._playback is not None and not e.spontaneous():  # (minimized: it plays on)
+            self._playback.stop()
+            self._controls.hide()
+
+    def _video_rect(self, img) -> QRectF:
+        """A video fills the window (sideways or up and down), keeping its shape."""
+        s = min(self.width() / img.width(), self.height() / img.height())
+        w, h = img.width() * s, img.height() * s
+        return QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
 
     def _scale(self, shown) -> float:
         """Logical pixels per pixel of the decoded image."""
@@ -357,8 +469,9 @@ class Viewer(QWidget):
     def mouseDoubleClickEvent(self, e):
         if self._face_at(e.position()) is not None:
             return
-        if self._is_video():
-            return self.play()
+        if self._is_video():  # (as in other players: full screen, or back)
+            w = self.window()
+            return w.showNormal() if w.isFullScreen() else w.showFullScreen()
         self.set_zoom(None if self.zoom is not None else 1.0, e.position())
 
     def mousePressEvent(self, e):
@@ -369,8 +482,8 @@ class Viewer(QWidget):
         )
         if face is not None:
             self.face_clicked.emit(face, e.globalPosition().toPoint())
-        elif e.button() == Qt.MouseButton.LeftButton and self._is_video() and self._play_rect().contains(e.position()):
-            self.play()
+        elif e.button() == Qt.MouseButton.LeftButton and self._is_video():
+            self.toggle_play()  # a click on the video plays or pauses it
         elif e.button() == Qt.MouseButton.LeftButton and self.zoom is not None:
             self._drag_from = e.position()
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -378,6 +491,8 @@ class Viewer(QWidget):
             self.closed.emit()
 
     def mouseMoveEvent(self, e):
+        if self._fader is not None and self._is_video():
+            self._fader.poke()
         shown = self._best_image()
         if self._drag_from is None or shown is None:
             if self._face_at(e.position()) is not None:
@@ -428,8 +543,13 @@ class Viewer(QWidget):
             ),
         ):
             keys.update(dict.fromkeys(names, do))
-        if self._is_video():
-            keys.update(dict.fromkeys((K.Key_Return, K.Key_Enter, K.Key_P), self.play))
+        if self._is_video():  # play or pause, a jump back or ahead, sound on or off
+            keys.update(dict.fromkeys((K.Key_Return, K.Key_Enter, K.Key_P, K.Key_K, K.Key_Space), self.toggle_play))
+            keys[K.Key_J] = lambda: self._playback is not None and self._playback.skip(-10)
+            keys[K.Key_L] = lambda: self._playback is not None and self._playback.skip(10)
+            keys[K.Key_M] = lambda: self._playback is not None and self._playback.set_muted(
+                not self._playback.audio.isMuted()
+            )
         if self.compare is not None:  # a duplicate's copies: up and down go to the next group, K keeps this one
             keys[K.Key_Up] = lambda: self.compare[2](self.index, -1)
             keys[K.Key_Down] = lambda: self.compare[2](self.index, 1)

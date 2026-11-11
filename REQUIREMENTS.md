@@ -33,7 +33,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 |---|---|
 | Several library folders, including removable drives; a disconnected drive's photos stay browsable as offline | v1 |
 | Photos: JPEG, PNG, HEIC, WebP, GIF, TIFF, DNG (DNG via its embedded preview) | v1 |
-| Videos (MP4, MOV): shown in the timeline and folders with a plain thumbnail, opened in the system player, included in rename/organize and exact dedupe. **No AI** (no search, no faces) | v1 |
+| Videos (MP4, MOV): shown in the timeline and folders with a plain thumbnail, **played in the viewer** (Qt Multimedia with FFmpeg: H.264, HEVC and more; turned the way the phone held it), included in rename/organize and exact dedupe. **No AI** (no search, no faces) | v1 |
 | Live Photos (HEIC + MOV) and sidecars (`.aae`, `.xmp`, `.json`) always kept together as one item | v1 |
 | Import from a folder, SD card or phone: preview, copy into year folders, optional rename, skip what's already in the library. Built as import automations (section 9) | v1 |
 | A library folder carries what's known about its photos (faces and names, search, duplicate choices, folders left out) in `.homepix/`, kept up to date by itself: copied to another computer (any path, any system), it's brought back in without indexing again. Photos are matched by content | v1 |
@@ -47,7 +47,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 | Folders: the library's real folder tree | v1 |
 | People: a page per person | v1 |
 | Search results | v1 |
-| Viewer: full screen, zoom, previous/next; videos open in the system player | v1 |
+| Viewer: full screen, zoom, previous/next. A video plays as soon as it's shown, with controls over its bottom that fade while it plays: play/pause, time, a bar to jump with, sound on/off (kept while the app runs), open in another app. Click or Space/K/Enter plays or pauses, J and L jump 10 s, M mutes, double-click is full screen; it stops on leaving it | v1 |
 | Info panel: date **and where it came from**, camera, size, dimensions, GPS, people, path | v1 |
 
 ## 3. Organizing (real folders only; no virtual albums)

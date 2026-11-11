@@ -5,6 +5,8 @@ opencv-python-headless>=4.8
 # The app's window: Qt's core modules only (no web engine, no QML).
 # 6.12.0 miscounts references in QPainter calls and crashes the app (tests/test_ui.py checks for it)
 PySide6-Essentials==6.11.3
+# Playing videos in the viewer (Qt Multimedia, with FFmpeg); only that part of the add-ons is bundled
+PySide6-Addons==6.11.3
 # iPhone .heic photos
 pillow-heif>=0.16
 # The QR code that pairs a phone with Syncthing (pure Python)

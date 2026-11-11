@@ -218,6 +218,28 @@ def _refresh_menu(folder):
 # --- self-test ---------------------------------------------------------------------------------------
 
 
+def _self_test_video(app, clip: Path):
+    """A short video made here plays (Qt Multimedia and its FFmpeg are in the build)."""
+    import cv2
+
+    from .views.video_player import Playback
+
+    out = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 10, (64, 48))
+    for _ in range(10):
+        out.write(cv2.UMat(48, 64, cv2.CV_8UC3, (30, 120, 200)).get())
+    out.release()
+    playback = Playback()
+    playback.set_muted(True)
+    playback.play(str(clip))
+    end = time.time() + 15
+    while time.time() < end and playback.image is None:
+        app.processEvents()
+        time.sleep(0.02)
+    if playback.image is None:
+        raise RuntimeError("a video didn't play (Qt Multimedia or its FFmpeg is missing from this build)")
+    playback.stop()
+
+
 def run_self_test(app) -> int:
     def ok(what):
         print(f"SELF-TEST: {what}", flush=True)
@@ -259,7 +281,9 @@ def run_self_test(app) -> int:
             if (d.description, d.keywords) != ("HomePix ✓", ["a", "b"]):
                 raise RuntimeError(f"ExifTool didn't write what it should ({d.description!r}, {d.keywords})")
             exiftool.exiftool().close()
-        ok("details can be written into photos (ExifTool).")
+            ok("details can be written into photos (ExifTool).")
+            _self_test_video(app, Path(tmp) / "test.mp4")
+        ok("videos play.")
         white = Image.new("RGB", (640, 480), "white")
         if model_path("face_detect.onnx").exists() and model_path("face_embed.onnx").exists():
             Faces().find(white)

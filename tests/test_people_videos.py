@@ -273,13 +273,44 @@ def test_videos_in_the_grid_and_the_viewer(window, pf, lib, app, monkeypatch):
     monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
     vi = next(i for i, it in enumerate(window.timeline.items) if it.kind == "video")
     window.open_viewer(vi)
-    wait_until(app, lambda: window.viewer._best_image() is not None)  # its frame shows
-    assert opened == []  # stepping onto a video doesn't start it
-    QTest.keyClick(window.viewer, Qt.Key.Key_Return)
+    viewer = window.viewer
+    viewer._video().set_muted(True)
+    wait_until(app, lambda: viewer._frame() is not None)  # it plays right here, at once
+    pb = viewer._playback
+    assert pb.playing and opened == []
+    assert viewer._controls.isVisible()
+    QTest.keyClick(viewer, Qt.Key.Key_Return)  # Enter pauses...
+    assert not pb.playing
+    QTest.keyClick(viewer, Qt.Key.Key_K)  # ...and K plays again
+    assert pb.playing
+    viewer._controls.elsewhere.click()  # still: open it in another app
     assert [os.path.normpath(p) for p in opened] == [str(lib / "clip.mp4")]
-    window.viewer.go(1 - vi)  # to the photo: Enter there doesn't play anything
-    QTest.keyClick(window.viewer, Qt.Key.Key_Return)
-    assert len(opened) == 1
+    assert not pb.playing  # (paused, not playing in two places)
+    viewer.go(1 - vi)  # to the photo: the video stops, and Enter there doesn't play anything
+    assert pb.path is None and not viewer._controls.isVisible()
+    QTest.keyClick(viewer, Qt.Key.Key_Return)
+    assert len(opened) == 1 and pb.path is None
+
+
+def test_leaving_the_viewer_stops_the_video(window, pf, lib, app):
+    make_video(lib / "clip.mp4", 6)
+    pf.add_folder(lib)
+    pf.index_folder(lib, want_faces=False)
+    window.reload()
+    wait_until(app, lambda: len(window.timeline.items) == 1)
+    window.open_viewer(0)
+    window.viewer._video().set_muted(True)
+    wait_until(app, lambda: window.viewer._frame() is not None)
+    window.viewer.closed.emit()  # (Esc)
+    wait_until(app, lambda: window.viewer._playback.path is None)
+
+
+def test_video_times_read_like_a_player():
+    from homepix.ui.views.video_player import clock
+
+    assert clock(0) == "0:00"
+    assert clock(65_400) == "1:05"
+    assert clock(3_725_000) == "1:02:05"
 
 
 def test_counting_photos_and_videos():
