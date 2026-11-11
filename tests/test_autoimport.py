@@ -224,6 +224,16 @@ def test_checking_the_rules_notes_what_each_did(home, lib, tmp_path):
     assert ai.status(off.id) == {}
 
 
+def test_a_photo_dated_in_the_future_still_settles(tmp_path):
+    """A phone or camera with its clock wrong: the file's time is ahead, but it's taken once still."""
+    f = tmp_path / "Phone" / "IMG_9.jpg"
+    photo(f)
+    ahead = time.time() + 365 * 86400
+    os.utime(f, (ahead, ahead))
+    assert ai.settled_files(str(tmp_path / "Phone"), now=time.time()) == []  # (only just arrived)
+    assert [p for p, _ in ai.settled_files(str(tmp_path / "Phone"), now=LATER())] == [str(f)]
+
+
 # --- in the app ---------------------------------------------------------------------------------------
 
 
