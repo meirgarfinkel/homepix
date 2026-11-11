@@ -1,0 +1,288 @@
+"""Phones sending photos straight to HomePix: pairing with the QR code's one-time code, only paired
+phones being answered, only what's needed being sent, an upload going on after it's cut off, and files
+landing whole, in place, ready for the import automation."""
+
+import base64
+import hashlib
+import http.client
+import json
+import os
+import ssl
+import time
+from urllib.parse import parse_qs, quote, urlparse
+
+import pytest
+from conftest import photo
+
+from homepix.core import autoimport as ai
+from homepix.core import phone_server, phones
+
+
+@pytest.fixture
+def setup(home, lib, tmp_path):
+    """A running server, an automation from an Inbox folder, and the computer's fingerprint."""
+    _, db = home
+    watch = tmp_path / "Inbox"
+    watch.mkdir()
+    rule = ai.Rule(name="Phone", watch=str(watch), dest=str(lib), tidy=True)
+    ai.save_rules([rule])
+    events = []
+    server = phone_server.Server(lambda kind, phone: events.append((kind, phone.name)), port=0, announce=False)
+    server.start()
+    yield server, rule, watch, events, db
+    server.stop()
+    phones.close_pairing()
+
+
+class Phone:
+    """What the phone app does: an encrypted connection that trusts only the computer's fingerprint."""
+
+    def __init__(self, port, fingerprint, token=""):
+        self.port, self.fingerprint, self.token = port, fingerprint, token
+
+    def call(self, method, path, body=b"", headers=None):
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE  # (checked below, against the QR code's fingerprint)
+        c = http.client.HTTPSConnection("127.0.0.1", self.port, context=ctx, timeout=10)
+        c.connect()
+        seen = hashlib.sha256(c.sock.getpeercert(binary_form=True)).hexdigest()
+        assert seen == self.fingerprint
+        h = {"Content-Length": str(len(body)), **(headers or {})}
+        if self.token:
+            h["Authorization"] = "Bearer " + self.token
+        c.request(method, path, body=body, headers=h)
+        r = c.getresponse()
+        out = r.status, json.loads(r.read() or b"{}")
+        c.close()
+        return out
+
+    def post(self, path, obj):
+        return self.call("POST", path, json.dumps(obj).encode(), {"Content-Type": "application/json"})
+
+    def send(self, rel, data, offset=0, upto=None, sha=None, mtime_ms=1_700_000_000_000):
+        chunk = data[offset:upto]
+        return self.call(
+            "PUT",
+            "/v1/file",
+            chunk,
+            {
+                "X-Path": quote(rel),
+                "X-Size": str(len(data)),
+                "X-Mtime": str(mtime_ms),
+                "X-Sha256": sha or hashlib.sha256(data).hexdigest(),
+                "X-Offset": str(offset),
+            },
+        )
+
+
+def fingerprint(qr) -> str:
+    return base64.urlsafe_b64decode(qr["f"][0] + "=").hex()
+
+
+def paired(server, rule):
+    p = phones.open_pairing(rule.id)
+    qr = parse_qs(urlparse(phones.qr_text(p, server.port)).query)
+    phone = Phone(server.port, fingerprint(qr))
+    status, body = phone.post("/v1/pair", {"code": qr["c"][0], "name": "Pixel 7"})
+    assert status == 200
+    phone.token = body["token"]
+    return phone
+
+
+def file_info(rel, data):
+    return {"path": rel, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def test_pairing_gives_the_phone_a_secret_once(setup):
+    server, rule, _, events, _ = setup
+    p = phones.open_pairing(rule.id)
+    qr = parse_qs(urlparse(phones.qr_text(p, server.port)).query)
+    assert qr["p"] == [str(server.port)] and qr["c"] == [p.code]
+    phone = Phone(server.port, fingerprint(qr))
+
+    assert phone.post("/v1/pair", {"code": "wrong", "name": "x"})[0] == 403
+    status, body = phone.post("/v1/pair", {"code": p.code, "name": "Pixel 7"})
+    assert status == 200 and body["token"]
+    assert [x.name for x in phones.load_phones()] == ["Pixel 7"]
+    assert body["token"] not in phones._phones_file().read_text()  # (only its fingerprint is kept)
+    assert ("paired", "Pixel 7") in events
+    assert phone.post("/v1/pair", {"code": p.code, "name": "Again"})[0] == 403  # (once only)
+
+    phone.token = body["token"]
+    status, hello = phone.post("/v1/hello", {})
+    assert status == 200 and hello["phone"] == "Pixel 7" and hello["ready"]
+
+
+def test_pairing_closes_after_its_time(setup, monkeypatch):
+    server, rule, _, _, _ = setup
+    p = phones.open_pairing(rule.id)
+    monkeypatch.setattr(p, "expires", time.time() - 1)
+    phone = Phone(server.port, phones.identity().fingerprint)
+    assert phone.post("/v1/pair", {"code": p.code, "name": "x"})[0] == 403
+
+
+def test_only_paired_phones_are_answered(setup):
+    server, rule, _, _, _ = setup
+    stranger = Phone(server.port, phones.identity().fingerprint, token="made-up")
+    assert stranger.post("/v1/hello", {})[0] == 401
+    assert stranger.post("/v1/need", {"files": []})[0] == 401
+    assert stranger.send("Camera/a.jpg", b"x")[0] == 401
+
+    phone = paired(server, rule)
+    phones.forget(phones.load_phones()[0].id)
+    assert phone.post("/v1/hello", {})[0] == 401  # (unpaired: its secret stops working)
+
+
+def test_the_computer_keeps_its_key():
+    a = phones.identity()
+    assert phones.identity().fingerprint == a.fingerprint
+    if os.name != "nt":
+        assert oct(a.key.stat().st_mode & 0o777) == "0o600"
+
+
+def test_a_photo_arrives_whole_in_place_with_the_phones_time(setup, tmp_path):
+    server, rule, watch, events, _ = setup
+    phone = paired(server, rule)
+    data = photo(tmp_path / "src.jpg").read_bytes()
+
+    status, body = phone.post("/v1/need", {"files": [file_info("Camera/IMG_1.jpg", data)]})
+    assert status == 200 and body["need"] == [{"path": "Camera/IMG_1.jpg", "have": 0}]
+    assert phone.send("Camera/IMG_1.jpg", data) == (200, {"have": len(data)})
+
+    got = watch / "Camera" / "IMG_1.jpg"
+    assert got.read_bytes() == data
+    assert int(got.stat().st_mtime) == 1_700_000_000
+    assert ("arrived", "Pixel 7") in events
+    assert list((watch / phones.INCOMING).iterdir()) == []
+    # (here, waiting for the import: not needed again)
+    assert phone.post("/v1/need", {"files": [file_info("Camera/IMG_1.jpg", data)]})[1]["need"] == []
+
+
+def test_an_upload_cut_off_goes_on_from_where_it_stopped(setup, tmp_path):
+    server, rule, watch, _, _ = setup
+    phone = paired(server, rule)
+    data = os.urandom(300_000)
+    rel = "Camera/VID_1.mp4"
+
+    assert phone.send(rel, data, 0, 100_000) == (200, {"have": 100_000})
+    assert not (watch / "Camera" / "VID_1.mp4").exists()  # (half a file is never where the import looks)
+    assert phone.post("/v1/need", {"files": [file_info(rel, data)]})[1]["need"] == [{"path": rel, "have": 100_000}]
+
+    status, body = phone.send(rel, data, 0)  # (the phone thinks it's starting over)
+    assert status == 409 and body["have"] == 100_000
+    assert phone.send(rel, data, 100_000) == (200, {"have": len(data)})
+    assert (watch / "Camera" / "VID_1.mp4").read_bytes() == data
+
+
+def test_a_file_that_arrives_wrong_is_thrown_away(setup):
+    server, rule, watch, _, _ = setup
+    phone = paired(server, rule)
+    data = os.urandom(1000)
+    status, _ = phone.send("Camera/a.jpg", data, sha=hashlib.sha256(b"something else").hexdigest())
+    assert status == 422
+    assert not (watch / "Camera" / "a.jpg").exists()
+    assert list((watch / phones.INCOMING).iterdir()) == []
+
+
+def test_imported_content_is_never_sent_again(setup, lib, tmp_path):
+    server, rule, watch, _, db = setup
+    phone = paired(server, rule)
+    data = photo(tmp_path / "src.jpg").read_bytes()
+    assert phone.send("Camera/IMG_2.jpg", data)[0] == 200
+    later = time.time() + ai.SETTLE + 5
+    batch = ai.check(db, rule, [str(lib)], now=later)
+    ai.run(db, batch)
+    assert not (watch / "Camera" / "IMG_2.jpg").exists()  # (imported: the folder is emptied)
+
+    # Asked again (after the app was reinstalled, say), at the same place or any other: not needed.
+    files = [file_info("Camera/IMG_2.jpg", data), file_info("Camera/copy.jpg", data)]
+    assert phone.post("/v1/need", {"files": files})[1]["need"] == []
+
+
+def test_a_changed_photo_replaces_the_one_waiting(setup, tmp_path):
+    server, rule, watch, _, _ = setup
+    phone = paired(server, rule)
+    a = photo(tmp_path / "a.jpg").read_bytes()
+    b = photo(tmp_path / "b.jpg").read_bytes()
+    assert phone.send("Camera/IMG_3.jpg", a)[0] == 200
+    assert phone.post("/v1/need", {"files": [file_info("Camera/IMG_3.jpg", b)]})[1]["need"]
+    assert phone.send("Camera/IMG_3.jpg", b)[0] == 200
+    assert (watch / "Camera" / "IMG_3.jpg").read_bytes() == b
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "../a.jpg",
+        "Camera/../../a.jpg",
+        "/etc/a.jpg",
+        ".hidden/a.jpg",
+        "Camera/.a.jpg",
+        "a\\b.jpg",
+        "a.exe",
+        "",
+        "CON.jpg",
+    ],
+)
+def test_no_way_out_of_the_folder(setup, rel):
+    server, rule, watch, _, _ = setup
+    phone = paired(server, rule)
+    assert phone.send(rel, b"data")[0] == 400
+    assert phone.post("/v1/need", {"files": [file_info(rel, b"data")]})[1]["need"] == []
+
+
+def test_a_paused_automation_takes_nothing(setup):
+    server, rule, _, _, _ = setup
+    phone = paired(server, rule)
+    rule.enabled = False
+    ai.save_rules([rule])
+    assert phone.post("/v1/hello", {})[1]["ready"] is False
+    assert phone.send("Camera/a.jpg", b"x")[0] == 409
+
+
+def test_only_the_home_network_is_answered():
+    for ok in ("192.168.1.5", "10.0.0.16", "172.16.4.1", "127.0.0.1", "::1", "fe80::1%wlan0", "::ffff:192.168.0.2"):
+        assert phones.private(ok), ok
+    for no in ("8.8.8.8", "1.1.1.1", "2001:4860::8888", "::ffff:8.8.8.8", "nonsense"):
+        assert not phones.private(no), no
+
+
+def test_settings_lists_phones_and_pairs_one(app, home, lib, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox, QWidget
+
+    from homepix.ui.phone_link import PhoneLink
+    from homepix.ui.views import pair_dialog
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    (tmp_path / "Inbox").mkdir()
+    rule = ai.Rule(name="Meirs phone", watch=str(tmp_path / "Inbox"), dest=str(lib), tidy=True)
+    ai.save_rules([rule])
+    window = QWidget()
+    window.phone_link = PhoneLink(window)
+    monkeypatch.setattr(phone_server.Server, "_announce", lambda self: None)  # (not on the real network)
+    seen = {}
+
+    def pair_and_look(dlg):
+        seen["qr"] = not dlg.qr.pixmap().isNull()
+        seen["listening"] = window.phone_link.server is not None
+        window.phone_link._event("paired", phones.pair(phones.pairing().code, "Pixel 7")[0])
+        app.processEvents()
+        seen["status"] = dlg.status.text()
+        return dlg.done(1)
+
+    monkeypatch.setattr(pair_dialog.PairDialog, "exec", pair_and_look)
+    dlg = SettingsDialog(window)
+    assert dlg.phone_list.count() == 0 and not dlg.unpair_button.isEnabled()
+    dlg._pair()
+    assert seen["qr"] and seen["listening"] and "Pixel 7" in seen["status"]
+    assert phones.pairing() is None  # (closed with the window)
+    assert window.phone_link.server is not None  # (a phone is paired: still answering)
+    assert dlg.phone_list.count() == 1
+    assert "Meirs phone" in dlg.phone_list.item(0).text() and "nothing sent yet" in dlg.phone_list.item(0).text()
+
+    dlg.phone_list.item(0).setSelected(True)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    dlg._unpair()
+    assert phones.load_phones() == [] and dlg.phone_list.count() == 0
+    assert window.phone_link.server is None  # (no phone left: not listening)

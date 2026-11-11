@@ -7,6 +7,8 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 
 1. **Private and local.** Nothing leaves the computer; the only network access is the one-time model download.
    (Setting up Syncthing, section 9, talks only to the Syncthing running on this computer; its Install button hands any download to the system's own installer.)
+   The one exception is paired phones (section 10): HomePix answers them on the home network only, encrypted, and
+   only phones paired with it. Nothing goes through outside servers.
 2. **Never changes files on its own.** Indexing, thumbnails and AI analysis run in the background but only read.
    Renaming, moving, deleting and editing happen only when the user starts them, after a preview. The one
    exception is an import automation the user has set up and not paused (section 9): it brings new files in from
@@ -109,8 +111,7 @@ Agreed 2026-10-27. **v1** = first release, **v2** = next release, **Later** = no
 ## 9. Import automations (agreed 2026-11-08)
 
 Photos arrive in a folder (the automation's **Import from** folder) by some other app (Syncthing from an Android phone; iCloud for Windows,
-osxphotos or icloudpd for an iPhone) and HomePix brings them into the library. HomePix itself never goes on
-the network and never talks to the phone or the sync app.
+osxphotos or icloudpd for an iPhone), or from the HomePix phone app (section 10), and HomePix brings them into the library.
 
 | Requirement | Priority |
 |---|---|
@@ -129,8 +130,26 @@ the network and never talks to the phone or the sync app.
 | Settings shows, per automation, when it last checked and last imported | v1 |
 | **Set up a phone with Syncthing...** (under Import from): finds the Syncthing running on this computer (its own settings file gives the address and key; only ever this computer); shows this computer's ID as a QR code, with steps (Syncthing-Fork on Android, Möbius Sync on iPhone); **Connect** when the phone asks to; the folder the phone then shares is taken as **Receive Only** into the Import from folder (or `~/Phone photos/<phone>`), so emptying it never deletes anything on the phone. Device ID has a Copy button. Not installed: **Install Syncthing** hands it to the system's own installer (pkexec with apt/dnf/pacman; winget; Homebrew), then starts it; installed but not running: **Start Syncthing** starts it and has it start at each login (systemd user service, else an autostart entry; a Startup-folder script on Windows; brew services or the app on macOS). Either way the same commands show in a box with Copy, and a Download page button; Try again | v1 |
 
+## 10. Phones with the HomePix app (agreed 2026-11-11)
+
+The HomePix Android app sends the phone's new photos and videos straight to HomePix over the home network,
+replacing Syncthing. (The library's details going back to the phone come next, in step 2.)
+
+| Requirement | Priority |
+|---|---|
+| **Phones** in Settings: the paired phones (name, the automation its photos go into, when it last sent one); **Pair a phone...**; **Unpair** (its secret stops working at once; photos already sent stay) | v2 |
+| **Pairing:** choose the import automation; a QR code holds this computer's addresses, its key's fingerprint and a one-time code (works once, for 10 minutes, only while the window is open; a new one is shown when it runs out; 20 wrong codes close it). The phone trades the code for a secret of its own; only its SHA-256 is kept on the computer | v2 |
+| **Encrypted:** TLS 1.2 or newer, with this computer's own key, made once (kept in the data folder, readable only by the user); the phone trusts only the key whose fingerprint was in the QR code. No certificates to buy or renew | v2 |
+| **Home network only:** addresses outside private, loopback and link-local ranges are never answered; nothing goes through outside servers. Works with the computer on a cable or Wi-Fi, as long as both are on the same home network | v2 |
+| **Found on the network:** announced as `_homepix._tcp` (mDNS), so a phone finds the computer when its address changes; the QR code's addresses, and the last one that worked, are tried too (for routers that block the announcements). Port 47820, or another kept for next time when that's taken | v2 |
+| **Only what's needed is sent:** the phone asks first, by content (SHA-256). Content in the library, or imported before (even if since deleted, or its import undone), is never sent again; so neither a reinstall nor a lost record sends everything again | v2 |
+| **Arrives whole:** a file is written to a hidden folder in Import from (`.homepix-incoming`), its content checked, given the phone's time, and only then put at the phone's place for it (Camera/..., WhatsApp/...). An upload cut off goes on from where it stopped. A changed photo (turned on the phone) replaces the one at that place, so the automation updates the library's copy (section 9) | v2 |
+| **Deletes never travel,** either way | v2 |
+| Paths checked: no way out of the folder, no hidden or odd names, photos and videos only. A file isn't taken when it would leave less than 1 GB free | v2 |
+| Answers only while HomePix runs (Keep running in the background covers a closed window) and a phone is paired or being paired; a paused or removed automation takes nothing (the phone is told why) | v2 |
+
 ## Not planned
 
 Virtual albums and smart albums; map view; crop and image adjustments; drag-and-drop out of the app;
 video search and video faces; star ratings (built in 0.5.0, then dropped as not needed); cloud sync;
-multiple users; mobile app; online sharing.
+multiple users; online sharing.
