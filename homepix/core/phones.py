@@ -117,6 +117,7 @@ class Phone:
     paired: str = ""
     seen: str = ""  # when it last got in touch
     sent: str = ""  # when a file from it last arrived
+    own_rule: bool = False  # its automation was made for it when it paired (and goes when it's unpaired)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     @classmethod
@@ -200,6 +201,7 @@ class Refused(Exception):
 @dataclass
 class Pairing:
     rule_id: str
+    new_rule: bool = False  # the automation is made for the phone once it has paired
     code: str = field(default_factory=lambda: secrets.token_urlsafe(16))
     expires: float = field(default_factory=lambda: time.time() + PAIR_MINUTES * 60)
     tries: int = 0
@@ -209,11 +211,12 @@ class Pairing:
 _pairing: Pairing | None = None
 
 
-def open_pairing(rule_id: str) -> Pairing:
-    """Start pairing a phone to an automation (one at a time; a new one replaces the last)."""
+def open_pairing(rule_id: str | None = None) -> Pairing:
+    """Start pairing a phone: to an automation, or (None) to one made for it once it has paired (see
+    make_rule). One at a time; a new one replaces the last."""
     global _pairing
     with _lock:
-        _pairing = Pairing(rule_id)
+        _pairing = Pairing(rule_id or uuid.uuid4().hex[:12], new_rule=rule_id is None)
         return _pairing
 
 
@@ -241,10 +244,46 @@ def pair(code: str, name: str) -> tuple[Phone, str]:
             raise Refused("That code isn't right. Scan the code on the computer again.")
         token = secrets.token_urlsafe(32)
         name = " ".join(str(name).split())[:60] or "Phone"
-        phone = Phone(name=name, rule_id=p.rule_id, token_sha=_sha(token), paired=_now())
+        phone = Phone(name=name, rule_id=p.rule_id, token_sha=_sha(token), paired=_now(), own_rule=p.new_rule)
         save_phones([*load_phones(), phone])
         p.phone = phone
         return phone, token
+
+
+def free_rules(rules: list) -> list:
+    """The automations no paired phone sends to: a phone can be paired to one of these. (Two phones on one
+    would mix up files with the same names, like WhatsApp's.)"""
+    taken = {p.rule_id for p in load_phones()}
+    return [r for r in rules if r.id not in taken]
+
+
+def _folder_name(name: str) -> str:
+    bare = "".join(c for c in name if c not in '<>:"/\\|?*' and ord(c) >= 32).strip(" .")
+    return bare if bare and bare.split(".")[0].lower() not in _BAD_NAMES else "Phone"
+
+
+def make_rule(name: str, rule_id: str, folders: list[str], rules: list):
+    """The import automation made for a phone when it pairs: its photos arrive in a folder of its own,
+    "Phone photos/<its name>" in the home folder (made now), and are named by date into year folders in
+    the first library folder. Returns (the automation, whether its folder had to be excluded from the
+    library: when the library holds the home folder)."""
+    from .autoimport import Rule
+    from .settings import excluded_folders, set_excluded
+    from .util import within
+
+    base, n = Path.home() / "Phone photos", 1
+    while True:
+        watch = base / (_folder_name(name) + (f" {n}" if n > 1 else ""))
+        taken = any(within(str(watch), [r.watch]) or within(r.watch, [str(watch)]) for r in rules)
+        if not taken and not (watch.is_dir() and any(watch.iterdir())):
+            break
+        n += 1
+    watch.mkdir(parents=True, exist_ok=True)
+    rule = Rule(name=name, watch=str(watch), dest=folders[0], tidy=True, id=rule_id)
+    inside = within(str(watch), folders) and not within(str(watch), excluded_folders())
+    if inside:
+        set_excluded(str(watch), True)
+    return rule, inside
 
 
 def _now() -> str:
@@ -447,10 +486,12 @@ def _library_files(phone_id: str) -> tuple[Path, Path]:
     return folder() / f"{phone_id}.db", folder() / f"{phone_id}.version"
 
 
-def library_for(phone: Phone, sizes: list, sources: list) -> tuple[str, Path]:
+def library_for(phone: Phone, sizes: list, sources: list, watch: str | None) -> tuple[str, Path]:
     """What HomePix knows about the photos this phone has (a phone tells the sizes of its files and
     their places, as it sends them: "Camera/PXL_1.jpg"), as a small library file: (its version, the
-    file). Made again only when the library, its settings or the phone's files have changed since."""
+    file). watch: the phone's Import from folder (photos are found by where they came from only among
+    those imported from it). Made again only when the library, its settings or the phone's files have
+    changed since."""
     from .portable import db_stamp, phone_copy
     from .settings import load_settings
 
@@ -462,11 +503,11 @@ def library_for(phone: Phone, sizes: list, sources: list) -> tuple[str, Path]:
         raise Refused("That isn't readable.", 400) from None
     sources = sorted({str(x) for x in sources})
     s = load_settings()
-    stamp = json.dumps([db_stamp(), s.get("folders"), s.get("excluded"), sizes, sources])
+    stamp = json.dumps([db_stamp(), s.get("folders"), s.get("excluded"), watch, sizes, sources])
     version = hashlib.sha256(stamp.encode()).hexdigest()[:32]
     db, ver = _library_files(phone.id)
     with _busy(str(db)):
         if not (db.is_file() and ver.is_file() and ver.read_text() == version):
-            phone_copy(db, set(sizes), set(sources))
+            phone_copy(db, set(sizes), set(sources), watch)
             ver.write_text(version)
     return version, db

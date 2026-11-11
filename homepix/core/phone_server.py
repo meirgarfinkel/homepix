@@ -36,11 +36,11 @@ MAX_JSON = 4 << 20
 MAX_DRAIN = 64 << 20  # a refused upload's bytes are read and dropped up to this much (else the connection is cut)
 
 
-def _rule(phone: phones.Phone):
-    """The automation a phone's photos go to, while it's there and on."""
+def _rule(phone: phones.Phone, paused_too: bool = False):
+    """The automation a phone's photos go to, while it's there and on (or paused_too: there at all)."""
     for r in load_rules():
         if r.id == phone.rule_id:
-            return r if r.enabled else None
+            return r if r.enabled or paused_too else None
     return None
 
 
@@ -179,7 +179,8 @@ class _Handler(BaseHTTPRequestHandler):
         sizes, sources = body.get("sizes"), body.get("sources", [])
         if not isinstance(sizes, list) or not isinstance(sources, list):
             raise phones.Refused("That isn't readable.", 400)
-        version, path = phones.library_for(phone, sizes, sources)
+        rule = _rule(phone, paused_too=True)
+        version, path = phones.library_for(phone, sizes, sources, rule.watch if rule else None)
         if body.get("version") == version:
             self._send(200, {"same": True, "version": version})
             return

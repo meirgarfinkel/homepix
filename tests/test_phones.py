@@ -9,6 +9,7 @@ import json
 import os
 import ssl
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
@@ -248,7 +249,17 @@ def test_only_the_home_network_is_answered():
         assert not phones.private(no), no
 
 
-def test_settings_lists_phones_and_pairs_one(app, home, lib, tmp_path, monkeypatch):
+@pytest.fixture
+def own_home(tmp_path, monkeypatch):
+    """A home folder of the test's own (where "Phone photos" is made)."""
+    h = tmp_path / "home"
+    h.mkdir()
+    monkeypatch.setenv("HOME", str(h))
+    monkeypatch.setenv("USERPROFILE", str(h))
+    return h
+
+
+def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path, own_home, monkeypatch):
     from PySide6.QtWidgets import QMessageBox, QWidget
 
     from homepix.ui.phone_link import PhoneLink
@@ -256,14 +267,15 @@ def test_settings_lists_phones_and_pairs_one(app, home, lib, tmp_path, monkeypat
     from homepix.ui.views.settings_dialog import SettingsDialog
 
     (tmp_path / "Inbox").mkdir()
-    rule = ai.Rule(name="Meirs phone", watch=str(tmp_path / "Inbox"), dest=str(lib), tidy=True)
-    ai.save_rules([rule])
+    old = ai.Rule(name="Meirs phone", watch=str(tmp_path / "Inbox"), dest=str(lib), tidy=True)
+    ai.save_rules([old])
     window = QWidget()
     window.phone_link = PhoneLink(window)
     monkeypatch.setattr(phone_server.Server, "_announce", lambda self: None)  # (not on the real network)
     seen = {}
 
     def pair_and_look(dlg):
+        seen["choices"] = [dlg.rule.itemText(i) for i in range(dlg.rule.count())]
         seen["qr"] = not dlg.qr.pixmap().isNull()
         seen["listening"] = window.phone_link.server is not None
         window.phone_link._event("paired", phones.pair(phones.pairing().code, "Pixel 7")[0])
@@ -275,17 +287,87 @@ def test_settings_lists_phones_and_pairs_one(app, home, lib, tmp_path, monkeypat
     dlg = SettingsDialog(window)
     assert dlg.phone_list.count() == 0 and not dlg.unpair_button.isEnabled()
     dlg._pair()
+    assert seen["choices"] == ["Its own new import automation", "Meirs phone (an existing automation)"]
     assert seen["qr"] and seen["listening"] and "Pixel 7" in seen["status"]
     assert phones.pairing() is None  # (closed with the window)
     assert window.phone_link.server is not None  # (a phone is paired: still answering)
-    assert dlg.phone_list.count() == 1
-    assert "Meirs phone" in dlg.phone_list.item(0).text() and "nothing sent yet" in dlg.phone_list.item(0).text()
 
+    rules = ai.load_rules()
+    made = rules[1]
+    assert made.name == "Pixel 7" and made.watch == str(own_home / "Phone photos" / "Pixel 7")
+    assert os.path.isdir(made.watch) and made.tidy and made.dest == str(lib)
+    assert ai.problem(made, rules, [str(lib)]) is None
+    assert phones.load_phones()[0].rule_id == made.id
+    assert dlg.phone_list.count() == 1 and "into Pixel 7" in dlg.phone_list.item(0).text()
+    assert dlg.rule_list.count() == 2
+
+    # A second phone isn't offered the first one's automation.
+    dlg2 = pair_dialog.PairDialog(window.phone_link, rules, [str(lib)])
+    assert [dlg2.rule.itemText(i) for i in range(dlg2.rule.count())] == [
+        "Its own new import automation",
+        "Meirs phone (an existing automation)",
+    ]
+    dlg2.done(0)
+
+    # Unpairing takes away the automation made for it (nothing was waiting in its folder).
     dlg.phone_list.item(0).setSelected(True)
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     dlg._unpair()
     assert phones.load_phones() == [] and dlg.phone_list.count() == 0
+    assert [r.name for r in ai.load_rules()] == ["Meirs phone"]
     assert window.phone_link.server is None  # (no phone left: not listening)
+
+
+def test_each_phones_folder_is_its_own(home, lib, own_home):
+    a, _ = phones.make_rule("Pixel 7", "a", [str(lib)], [])
+    b, _ = phones.make_rule("Pixel 7", "b", [str(lib)], [a])  # (two phones with one name)
+    assert a.watch != b.watch and b.watch.endswith("Pixel 7 2")
+    odd, _ = phones.make_rule('Dad\'s "phone"/2', "c", [str(lib)], [a, b])
+    assert os.path.basename(odd.watch) == "Dad's phone2"
+    (own_home / "Phone photos" / "Mom").mkdir()
+    (own_home / "Phone photos" / "Mom" / "x.jpg").write_bytes(b"x")  # (someone's files already there)
+    mom, _ = phones.make_rule("Mom", "d", [str(lib)], [])
+    assert mom.watch.endswith("Mom 2")
+
+
+def test_a_phone_folder_inside_the_library_is_excluded(home, own_home):
+    from homepix.core.settings import excluded_folders
+
+    rule, excluded = phones.make_rule("Pixel 7", "a", [str(own_home)], [])  # (the home folder is the library)
+    assert excluded and rule.watch in excluded_folders()
+
+
+def test_two_phones_with_the_same_names_never_mix(setup, lib, tmp_path, own_home):
+    server, rule_a, watch_a, _, db = setup
+    rule_b, _ = phones.make_rule("Phone B", "rule-b", [str(lib)], [rule_a])
+    ai.save_rules([rule_a, rule_b])
+    a = paired(server, rule_a)
+    b = paired(server, rule_b)
+    mine = photo(tmp_path / "a.jpg").read_bytes()
+    theirs = photo(tmp_path / "b.jpg").read_bytes()
+    rel = "WhatsApp/IMG-20261111-WA0001.jpg"  # (WhatsApp's names repeat from one phone to the next)
+
+    assert a.send(rel, mine)[0] == 200
+    ai.run(db, ai.check(db, rule_a, [str(lib)], now=time.time() + ai.SETTLE + 5))
+    assert b.send(rel, theirs)[0] == 200
+    assert (Path(rule_b.watch) / rel).read_bytes() == theirs  # (in phone B's folder, not phone A's)
+    batch = ai.check(db, rule_b, [str(lib)], now=time.time() + ai.SETTLE + 5)
+    assert len(batch.imports) == 1 and not batch.updates  # (a new photo, not a new version of A's)
+    ai.run(db, batch)
+    from homepix.core.library import index_folder
+
+    index_folder(lib, want_faces=False)
+    contents = sorted(Path(p).read_bytes() for (p,) in db.execute("SELECT path FROM photos").fetchall())
+    assert contents == sorted([mine, theirs])
+
+    # Phone B's library file doesn't take phone A's photo for its own by name.
+    data, _ = ask_library(b, [len(theirs) + 1], [rel])
+    out = tmp_path / "b.db"
+    out.write_bytes(data)
+    photos_b, came_b, _ = library_rows(out)
+    assert len(photos_b) == 1 and list(came_b.values()) == [rel]
+    path_b = list(came_b)[0]
+    assert Path(path_b.replace("/", os.sep)).read_bytes() == theirs
 
 
 def library_rows(path):

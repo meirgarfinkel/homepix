@@ -385,12 +385,13 @@ def _bring_faces(db, cp, new: dict, people: dict) -> int:
     return len(named)
 
 
-def phone_copy(dst: Path, sizes: set[int], sources: set[str]) -> int:
+def phone_copy(dst: Path, sizes: set[int], sources: set[str], watch: str | None) -> int:
     """A copy for a phone with the HomePix app: what HomePix knows about the photos that phone has, from
     every library folder, in the same form as a folder's copy (so the app reads it the same way). A photo
     is kept when a file on the phone has its size (the app then matches each by fingerprint), or when it
     came from that place on the phone (sources: "Camera/PXL_1.jpg"; for one changed since, on either
-    side). Excluded folders' photos are left out. Paths stay whole, so no phone looks for them in a
+    side; only among those imported from watch, the phone's own Import from folder, since another phone's
+    can have the same names). Excluded folders' photos are left out. Paths stay whole, so no phone looks for them in a
     library folder of its own. Written all at once to dst; returns the number of photos in it."""
     from .autoimport import came_from
 
@@ -398,7 +399,7 @@ def phone_copy(dst: Path, sizes: set[int], sources: set[str]) -> int:
     work.unlink(missing_ok=True)
     db = open_db()
     try:
-        came = [(now, src) for now, src in came_from(db, "") if src in sources]
+        came = [(now, src) for now, src in came_from(db, "", watch) if src in sources] if watch else []
         out = sqlite3.connect(work)
         db.backup(out)
     finally:

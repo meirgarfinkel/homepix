@@ -1,6 +1,6 @@
-"""Pairing a phone with the HomePix app: choose the import automation its photos go to, then scan the QR
-code with the app. The code works once, for a few minutes (a new one is shown when it runs out), and only
-while this window is open."""
+"""Pairing a phone with the HomePix app: its photos go into an import automation of its own, made once it
+has paired (or one no other phone uses), and the phone scans the QR code with the app. The code works
+once, for a few minutes (a new one is shown when it runs out), and only while this window is open."""
 
 import contextlib
 import html
@@ -23,19 +23,29 @@ STEPS = (
 
 
 class PairDialog(QDialog):
-    def __init__(self, link, rules: list[autoimport.Rule], parent=None):
+    def __init__(self, link, rules: list[autoimport.Rule], folders: list[str], parent=None):
+        """rules: all the automations (those another phone uses aren't offered); folders: the library's."""
         super().__init__(parent)
         self.setWindowTitle("Pair a phone")
         self.setMinimumWidth(440)
         self.link = link
         self.phone_name = ""
+        self.rules, self.folders = rules, folders
+        self.made_rule = None  # the automation made for the phone, once it has paired
+        self.excluded_now = False  # (its folder was inside the library, so it was excluded)
+        self.pending = None  # the pairing open now
         lay = QVBoxLayout(self)
         lay.setSpacing(12)
         row = QHBoxLayout()
         row.addWidget(QLabel("Photos go to:"))
         self.rule = QComboBox()
-        for r in rules:
-            self.rule.addItem(r.name, r.id)
+        self.rule.addItem("Its own new import automation", None)
+        for r in phones.free_rules(rules):
+            self.rule.addItem(f"{r.name} (an existing automation)", r.id)
+        self.rule.setToolTip(
+            'Its own: its photos arrive in "Phone photos/<its name>" in your home folder, and are renamed by '
+            "date into year folders in your library. You can change that later under Import automations."
+        )
         self.rule.currentIndexChanged.connect(lambda _: self._new_code())
         row.addWidget(self.rule, 1)
         lay.addLayout(row)
@@ -60,10 +70,7 @@ class PairDialog(QDialog):
         self.timer.start()
 
     def _new_code(self):
-        rule_id = self.rule.currentData()
-        if rule_id is None:
-            return
-        p = phones.open_pairing(rule_id)
+        p = self.pending = phones.open_pairing(self.rule.currentData())
         if not self.link.refresh():
             self.qr.clear()
             self.status.setText(self.link.problem)
@@ -84,6 +91,10 @@ class PairDialog(QDialog):
 
     def _paired(self, name: str):
         self.phone_name = name
+        p = self.pending
+        if p is not None and p.new_rule:
+            self.made_rule, self.excluded_now = phones.make_rule(name, p.rule_id, self.folders, self.rules)
+            autoimport.save_rules([*autoimport.load_rules(), self.made_rule])
         self.timer.stop()
         phones.close_pairing()
         self.qr.hide()
