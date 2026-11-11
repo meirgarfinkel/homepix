@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HomePix's desktop icon (homepix-icon.svg): a roof with a chimney over a camera lens. Its 64-unit
+     circle is fitted to the 72 dp a launcher shows of the 108 dp icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="18" android:translateY="18" android:scaleX="1.125" android:scaleY="1.125">
+        <group android:translateX="-3.84" android:translateY="-3.91" android:scaleX="1.12" android:scaleY="1.12">
+            <path android:fillColor="#FFFFFF"
+                android:pathData="M40.8,16.5h2.4a0.8,0.8 0,0 1,0.8 0.8v5.9a0.8,0.8 0,0 1,-0.8 0.8h-2.4a0.8,0.8 0,0 1,-0.8 -0.8v-5.9a0.8,0.8 0,0 1,0.8 -0.8z" />
+            <path android:strokeColor="#FFFFFF" android:strokeWidth="4"
+                android:strokeLineCap="round" android:strokeLineJoin="round"
+                android:pathData="M12,30.9L32,15.3L52,30.9" />
+            <path android:strokeColor="#328EB9" android:strokeWidth="3.4"
+                android:pathData="M21,39a11,11 0,1 0,22 0a11,11 0,1 0,-22 0z" />
+            <path android:strokeColor="#FFFFFF" android:strokeWidth="2.2" android:strokeLineCap="round"
+                android:pathData="M25.9,36.8A6.5,6.5 0,0 1,29.8 32.9" />
+        </group>
+    </group>
+</vector>
