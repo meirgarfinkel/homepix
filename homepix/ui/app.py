@@ -240,6 +240,41 @@ def _self_test_video(app, clip: Path):
     playback.stop()
 
 
+def _self_test_phones(tmp: Path):
+    """Phones can connect: a key is made, an encrypted connection works, and the network announcement
+    loads (a key of the test's own, on this computer only)."""
+    import socket
+    import ssl
+    import threading
+
+    import zeroconf  # noqa: F401
+
+    from ..core import phones
+
+    phones.addresses()
+    cert, key = tmp / "test.crt", tmp / "test.key"
+    phones._make_identity(cert, key)
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(cert, key)
+    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    client_ctx.check_hostname, client_ctx.verify_mode = False, ssl.CERT_NONE
+    with socket.create_server(("127.0.0.1", 0)) as listener:
+        port = listener.getsockname()[1]
+
+        def answer():
+            conn, _ = listener.accept()
+            with server_ctx.wrap_socket(conn, server_side=True) as s:
+                s.sendall(s.recv(5))
+
+        t = threading.Thread(target=answer, daemon=True)
+        t.start()
+        with client_ctx.wrap_socket(socket.create_connection(("127.0.0.1", port), timeout=10)) as c:
+            c.sendall(b"hello")
+            if c.recv(5) != b"hello":
+                raise RuntimeError("an encrypted connection didn't work")
+        t.join(10)
+
+
 def run_self_test(app) -> int:
     def ok(what):
         print(f"SELF-TEST: {what}", flush=True)
@@ -283,7 +318,9 @@ def run_self_test(app) -> int:
             exiftool.exiftool().close()
             ok("details can be written into photos (ExifTool).")
             _self_test_video(app, Path(tmp) / "test.mp4")
-        ok("videos play.")
+            ok("videos play.")
+            _self_test_phones(Path(tmp))
+        ok("phones can connect.")
         white = Image.new("RGB", (640, 480), "white")
         if model_path("face_detect.onnx").exists() and model_path("face_embed.onnx").exists():
             Faces().find(white)

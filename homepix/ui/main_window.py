@@ -53,6 +53,7 @@ from .menu import MenuButton, add_heading, add_row
 from .open_files import Opener, folder_items, photos_in
 from .organizer import Organizer
 from .people_actions import PeopleActions
+from .phone_link import PhoneLink
 from .photo_actions import PhotoActions
 from .status_line import StatusLine
 from .thumbs import ThumbLoader
@@ -425,6 +426,8 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(8000, self.updater.check_quietly)  # a newer HomePix: get it, then offer a restart
         self.tray = Tray(self)  # (an icon while kept running in the background)
         self.tray.update()
+        self.phone_link = PhoneLink(self)  # (answering paired phones, when there are any)
+        self.phone_link.refresh()
 
     def _dock(self, title, name, widget, area) -> QDockWidget:
         dock = QDockWidget(title, self)
@@ -1197,6 +1200,7 @@ class MainWindow(QMainWindow):
         self._save_window()
         if self.tray.icon is not None:
             self.tray.icon.hide()  # (gone at once, not when the app has quit)
+        self.phone_link.stop()
         self.watcher.shutdown()
         self.loader.stop()
         self.dupes.stop()

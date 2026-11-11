@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core import autoimport, background
+from ...core import autoimport, background, phones
 from ...core.settings import (
     excluded_folders,
     library_folders,
@@ -37,7 +37,7 @@ from ...core.settings import (
 )
 from ...core.util import within
 from .. import theme
-from ..autoimport import describe
+from ..autoimport import describe, when
 from .rule_dialog import RuleDialog
 
 
@@ -136,6 +136,22 @@ class SettingsDialog(QDialog):
         self.keep_running.toggled.connect(self._keep_running)
         card.addWidget(self.keep_running)
         card.addWidget(self._hint("Starts hidden when you log in, so new photos come in with the window closed."))
+
+        # --- phones with the HomePix app ---
+        card = self._card(
+            lay,
+            "Phones",
+            "Phones with the HomePix app send their new photos here by themselves, over your home network "
+            "(encrypted, and only to this computer). They go in through an import automation.",
+        )
+        self.phone_list = self._folder_list(rows=1)
+        self.phone_list.itemSelectionChanged.connect(self._selected_folder)
+        card.addWidget(self.phone_list)
+        self.pair_button = QPushButton("Pair a phone...")
+        self.pair_button.clicked.connect(self._pair)
+        self.unpair_button = QPushButton("Unpair")
+        self.unpair_button.clicked.connect(self._unpair)
+        card.addLayout(self._buttons([self.pair_button, self.unpair_button]))
 
         # --- the rest ---
         card = self._card(lay, "Editing photos", "The app that Open in... uses.")
@@ -276,7 +292,63 @@ class SettingsDialog(QDialog):
             if r.id == keep:
                 item.setSelected(True)
         self._fit(self.rule_list)
+        self.refresh_phones()
+
+    def refresh_phones(self):
+        keep = self._chosen(self.phone_list)
+        self.phone_list.clear()
+        names = {r.id: r.name for r in autoimport.load_rules()}
+        for p in phones.load_phones():
+            to = names.get(p.rule_id)
+            where = f"into {to}" if to else "nowhere: its automation was removed"
+            sent = f"last sent {when(p.sent)}" if p.sent else "nothing sent yet"
+            item = QListWidgetItem(theme.icon("phone", "muted"), f"{p.name}  ·  {where}  ·  {sent}")
+            item.setData(Qt.ItemDataRole.UserRole, p.id)
+            item.setToolTip(f"Paired {p.paired}" + (f"\nLast in touch {p.seen}" if p.seen else ""))
+            self.phone_list.addItem(item)
+            if p.id == keep:
+                item.setSelected(True)
+        self._fit(self.phone_list)
         self._selected_folder()
+
+    def _pair(self):
+        from .pair_dialog import PairDialog
+
+        rules = autoimport.load_rules()
+        if not rules:
+            QMessageBox.information(
+                self,
+                "Pair a phone",
+                "First add an import automation (New automation... above): a phone's photos come in through one.",
+            )
+            return
+        link = getattr(self.parent(), "phone_link", None)
+        if link is None:
+            return
+        dlg = PairDialog(link, rules, self)
+        dlg.exec()
+        dlg.deleteLater()
+        self.refresh_phones()
+
+    def _unpair(self):
+        chosen = self._chosen(self.phone_list)
+        phone = next((p for p in phones.load_phones() if p.id == chosen), None)
+        if phone is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            "Unpair",
+            f'Unpair "{phone.name}"? It stops sending photos here. Photos already sent stay in the library.\n\n'
+            "To send again, pair it again.",
+            QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            phones.forget(phone.id)
+            link = getattr(self.parent(), "phone_link", None)
+            if link is not None:
+                link.refresh()
+            self.refresh_phones()
 
     def _edit_rule(self, new: bool = False):
         folders = library_folders()
@@ -345,6 +417,8 @@ class SettingsDialog(QDialog):
             chosen = self._chosen(self.rule_list) is not None
             self.edit_rule_button.setEnabled(chosen)
             self.remove_rule_button.setEnabled(chosen)
+        if hasattr(self, "phone_list"):
+            self.unpair_button.setEnabled(self._chosen(self.phone_list) is not None)
 
     def _leave_out(self):
         roots = library_folders()

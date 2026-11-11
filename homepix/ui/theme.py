@@ -572,6 +572,9 @@ def _draw_icon(name: str, p: QPainter):  # noqa: C901 (one plain branch per icon
         path.quadTo(3.5, 19, 3.5, 17)
         path.closeSubpath()
         p.drawPath(path)
+    elif name == "phone":
+        p.drawRoundedRect(QRectF(7, 3, 10, 18), 2.2, 2.2)
+        p.drawLine(QPointF(10.5, 18), QPointF(13.5, 18))
     elif name == "faces":
         p.drawEllipse(QPointF(12, 9), 3.6, 3.6)
         path = QPainterPath(QPointF(5, 19.5))
