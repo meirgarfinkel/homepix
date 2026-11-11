@@ -162,7 +162,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _POST_v1_need(self):
         body = self._json()
-        watch = self._watch(self._phone())
+        phone = self._phone()
+        phones.touch(phone.id)  # (in touch: Settings shows when)
+        watch = self._watch(phone)
         files = body.get("files")
         if not isinstance(files, list):
             raise phones.Refused("That isn't readable.", 400)

@@ -261,6 +261,10 @@ def _folder_name(name: str) -> str:
     return bare if bare and bare.split(".")[0].lower() not in _BAD_NAMES else "Phone"
 
 
+def _has_files(folder: Path) -> bool:
+    return any(files for _, _, files in os.walk(folder))
+
+
 def make_rule(name: str, rule_id: str, folders: list[str], rules: list):
     """The import automation made for a phone when it pairs: its photos arrive in a folder of its own,
     "Phone photos/<its name>" in the home folder (made now), and are named by date into year folders in
@@ -274,7 +278,7 @@ def make_rule(name: str, rule_id: str, folders: list[str], rules: list):
     while True:
         watch = base / (_folder_name(name) + (f" {n}" if n > 1 else ""))
         taken = any(within(str(watch), [r.watch]) or within(r.watch, [str(watch)]) for r in rules)
-        if not taken and not (watch.is_dir() and any(watch.iterdir())):
+        if not taken and not _has_files(watch):  # (a phone's old folder, left empty, is used again)
             break
         n += 1
     watch.mkdir(parents=True, exist_ok=True)

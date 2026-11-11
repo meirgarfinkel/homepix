@@ -48,7 +48,7 @@ import javax.net.ssl.X509TrustManager
 
 private const val SERVICE = "_homepix._tcp."
 private const val CONNECT_MS = 3000
-private const val BATCH = 200
+private const val BATCH = 20 // (asked about, and noted as done, a few at a time: a run cut short loses little)
 
 /** The computer this phone is paired with, kept in the app's own private storage. */
 data class Computer(
@@ -363,6 +363,13 @@ object Sending {
         }
         if (host != computer.last || port != computer.port) computer.copy(last = host, port = port).save(context)
         val link = Link(host, port, computer.fingerprint, computer.token)
+        // The library's details first: the computer has most of the phone's photos already (the first time,
+        // checking every photo here takes a while), so they show at once.
+        try {
+            fetchLibrary(context, link)
+        } catch (e: IOException) {
+            android.util.Log.w("HomePix", "library: ${e.message}")
+        }
         val sentFile = File(context.filesDir, "sent.tsv")
         val sent = HashSet<String>().apply { if (sentFile.isFile) sentFile.forEachLine { add(it) } }
         val todo = cameraFiles(context).filter { it.key !in sent }.sortedByDescending { it.modified }
@@ -395,10 +402,10 @@ object Sending {
                     sentFile.appendText(f.key + "\n")
                     left--
                 }
-                SendState.note(context, "waiting" to left)
+                SendState.note(context, "waiting" to left, "problem" to "")
             }
             SendState.note(context, "problem" to "", "waiting" to 0, "count" to count)
-            fetchLibrary(context, link)
+            if (count > 0) fetchLibrary(context, link) // (with what just came)
             return true
         } catch (e: IOException) {
             SendState.note(context, "problem" to (e.message ?: "Sending stopped."))
