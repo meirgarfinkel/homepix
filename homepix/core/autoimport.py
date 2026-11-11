@@ -152,6 +152,14 @@ def _cloud_only(st) -> bool:
     return bool(getattr(st, "st_file_attributes", 0) & _CLOUD_ONLY)
 
 
+_whole: set[str] = set()  # files a phone put in place whole (checked against its fingerprint): no waiting
+
+
+def arrived_whole(path):
+    """A paired phone's file is in place, whole: it's taken at the next check, without SETTLE's wait."""
+    _whole.add(os.path.abspath(path))
+
+
 def settled_files(watch: str, now: float | None = None, should_stop=lambda: False) -> list[tuple[str, os.stat_result]]:
     """The photos and videos in a watch folder (and its folders) ready to be taken: not hidden, not still
     arriving, not cloud-only placeholders, and still for SETTLE seconds."""
@@ -173,7 +181,7 @@ def settled_files(watch: str, now: float | None = None, should_stop=lambda: Fals
             # time later than now, from a phone or camera with its clock wrong, is left out: it would hold
             # the file back until then)
             last = max((t for t in (st.st_mtime, st.st_ctime) if t <= now), default=now)
-            if _cloud_only(st) or now - last < SETTLE:
+            if _cloud_only(st) or (now - last < SETTLE and os.path.abspath(p) not in _whole):
                 continue
             out.append((p, st))
     return out

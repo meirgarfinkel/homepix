@@ -22,6 +22,13 @@ class Item(
     val keywords: List<String> = emptyList(),
     private val moment: String? = null,
 ) {
+    /**
+     * When its file last changed, read with the library (not while it's shown: asking the phone's storage
+     * on the screen's thread can wait seconds while it's busy, sending videos say). Read again when it's
+     * turned here.
+     */
+    var stamp: Long = 0L
+
     val month: String get() = taken.take(7)
 
     /**
@@ -34,7 +41,7 @@ class Item(
 }
 
 /** Where a person's face is in one photo: the box as parts of the shown photo. */
-class Face(val file: File, val x: Float, val y: Float, val w: Float, val h: Float)
+class Face(val file: File, val x: Float, val y: Float, val w: Float, val h: Float, val stamp: Long)
 
 class Person(val name: String, val items: List<Int>, val face: Face?)
 
@@ -155,6 +162,7 @@ class Library(
                                     keywordList(c.getString(11)),
                                     c.getString(12),
                                 )
+                                item.stamp = file.lastModified()
                                 byId[c.getLong(0)] = item
                                 all += item
                                 if (all.size % 2000 == 0) say("Reading ${root.name}… ${all.size} photos")
@@ -173,7 +181,7 @@ class Library(
                             val item = byId[c.getLong(1)] ?: continue
                             val key = c.getString(0).lowercase()
                             names.putIfAbsent(key, c.getString(0))
-                            val face = Face(item.file, c.getFloat(2), c.getFloat(3), c.getFloat(4), c.getFloat(5))
+                            val face = Face(item.file, c.getFloat(2), c.getFloat(3), c.getFloat(4), c.getFloat(5), item.stamp)
                             val size = if (c.isNull(6)) 0f else c.getFloat(6)
                             val theirs = faces.getOrPut(key) { LinkedHashMap() }
                             if (item !in theirs) theirs[item] = null

@@ -29,6 +29,7 @@ import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from . import autoimport
 from .autoimport import MEDIA_EXTS
 from .config import data_dir
 from .util import write_atomic
@@ -467,6 +468,7 @@ def receive(watch: str, rel: str, size: int, mtime_ms: int, sha: str, offset: in
         os.utime(part, ns=(time.time_ns(), mtime_ms * 1_000_000))
         target.parent.mkdir(parents=True, exist_ok=True)
         os.replace(part, target)
+        autoimport.arrived_whole(target)
         return size
     finally:
         lock.release()

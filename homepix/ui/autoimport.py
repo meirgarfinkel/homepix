@@ -19,6 +19,7 @@ from .views.review_dialog import ReviewDialog
 FIRST = 30_000  # ms after the window opens (anything interrupted is finished by then)
 LOOK = 60_000  # a look at what's in the watch folders
 HOURLY = 3_600_000  # a full check, new files or not
+SOON = 10_000  # after a phone's file arrives (the timer restarts with each one)
 RETRY = 120_000  # when something else is changing files: try again in a little while
 
 
@@ -69,6 +70,16 @@ class AutoImporter(QObject):
     def start(self):
         QTimer.singleShot(FIRST, self.check)
         self.timer.start()
+
+    def soon(self):
+        """A phone's file has arrived: check in a few seconds (once the rest of what it's sending is in),
+        so it's in the library, and on the phone, a few minutes after it was taken."""
+        if not hasattr(self, "_soon"):
+            self._soon = QTimer(self)
+            self._soon.setSingleShot(True)
+            self._soon.setInterval(SOON)
+            self._soon.timeout.connect(self.check)
+        self._soon.start()  # (each file that comes puts it off a little: one check for a batch)
 
     def look(self):
         """Every minute: a full check only when something new has finished arriving (or it's been an hour)."""

@@ -7,6 +7,7 @@ import hashlib
 import http.client
 import json
 import os
+import shutil
 import ssl
 import time
 from pathlib import Path
@@ -158,6 +159,10 @@ def test_a_photo_arrives_whole_in_place_with_the_phones_time(setup, tmp_path):
     assert list((watch / phones.INCOMING).iterdir()) == []
     # (here, waiting for the import: not needed again)
     assert phone.post("/v1/need", {"files": [file_info("Camera/IMG_1.jpg", data)]})[1]["need"] == []
+    # It came whole, so it's taken at once, not after the wait for files still being copied in
+    assert [p for p, _ in ai.settled_files(str(watch))] == [str(got)]
+    shutil.copy(got, watch / "Camera" / "copied.jpg")  # (put there some other way: it waits)
+    assert [p for p, _ in ai.settled_files(str(watch))] == [str(got)]
 
 
 def test_an_upload_cut_off_goes_on_from_where_it_stopped(setup, tmp_path):
