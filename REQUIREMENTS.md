@@ -133,7 +133,7 @@ osxphotos or icloudpd for an iPhone), or from the HomePix phone app (section 10)
 ## 10. Phones with the HomePix app (agreed 2026-11-11)
 
 The HomePix Android app sends the phone's new photos and videos straight to HomePix over the home network,
-replacing Syncthing. (The library's details going back to the phone come next, in step 2.)
+replacing Syncthing, and HomePix sends back what it knows about the photos on that phone.
 
 | Requirement | Priority |
 |---|---|
@@ -146,6 +146,7 @@ replacing Syncthing. (The library's details going back to the phone come next, i
 | **Arrives whole:** a file is written to a hidden folder in Import from (`.homepix-incoming`), its content checked, given the phone's time, and only then put at the phone's place for it (Camera/..., WhatsApp/...). An upload cut off goes on from where it stopped. A changed photo (turned on the phone) replaces the one at that place, so the automation updates the library's copy (section 9) | v2 |
 | **Deletes never travel,** either way | v2 |
 | Paths checked: no way out of the folder, no hidden or odd names, photos and videos only. A file isn't taken when it would leave less than 1 GB free | v2 |
+| **The library's details, back to the phone:** the phone tells the sizes of its photos and videos and the places of those in DCIM; HomePix answers with a small file in the same form as a folder's portable copy, holding only the photos that could be the phone's (same size, or imported from that place), their faces, the people in them and their search data, without excluded folders or the undo history. Made again only when the library, its folders or the phone's files changed; otherwise "the same" (no file). Deleted with the phone when it's unpaired | v2 |
 | Answers only while HomePix runs (Keep running in the background covers a closed window) and a phone is paired or being paired; a paused or removed automation takes nothing (the phone is told why) | v2 |
 
 ## Not planned

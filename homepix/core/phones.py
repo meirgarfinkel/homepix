@@ -166,6 +166,8 @@ def touch(phone_id: str, sent: bool = False):
 def forget(phone_id: str):
     """Unpair a phone: its secret stops working at once."""
     save_phones([p for p in load_phones() if p.id != phone_id])
+    for f in _library_files(phone_id):
+        f.unlink(missing_ok=True)
 
 
 def _sha(token: str) -> str:
@@ -434,3 +436,37 @@ class Elsewhere(Refused):
     def __init__(self, have: int):
         super().__init__("Go on from where it stopped.", 409)
         self.have = have
+
+
+# --- the library's details, back to the phone ----------------------------------------------------------
+
+MAX_FILES = 200_000  # files a phone can tell about at once
+
+
+def _library_files(phone_id: str) -> tuple[Path, Path]:
+    return folder() / f"{phone_id}.db", folder() / f"{phone_id}.version"
+
+
+def library_for(phone: Phone, sizes: list, sources: list) -> tuple[str, Path]:
+    """What HomePix knows about the photos this phone has (a phone tells the sizes of its files and
+    their places, as it sends them: "Camera/PXL_1.jpg"), as a small library file: (its version, the
+    file). Made again only when the library, its settings or the phone's files have changed since."""
+    from .portable import db_stamp, phone_copy
+    from .settings import load_settings
+
+    if len(sizes) > MAX_FILES or len(sources) > MAX_FILES:
+        raise Refused("That's too many files at once.", 413)
+    try:
+        sizes = sorted({int(x) for x in sizes})
+    except (TypeError, ValueError):
+        raise Refused("That isn't readable.", 400) from None
+    sources = sorted({str(x) for x in sources})
+    s = load_settings()
+    stamp = json.dumps([db_stamp(), s.get("folders"), s.get("excluded"), sizes, sources])
+    version = hashlib.sha256(stamp.encode()).hexdigest()[:32]
+    db, ver = _library_files(phone.id)
+    with _busy(str(db)):
+        if not (db.is_file() and ver.is_file() and ver.read_text() == version):
+            phone_copy(db, set(sizes), set(sources))
+            ver.write_text(version)
+    return version, db
