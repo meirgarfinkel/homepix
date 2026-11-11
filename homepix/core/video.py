@@ -1,6 +1,6 @@
 """Videos (MP4, MOV): when they were recorded, how long they are, and a frame to show.
 
-No AI looks at videos; they're browsed, opened in the system's player, and organized like photos.
+No AI looks at videos; they're browsed, played in the viewer, and organized like photos.
 The date comes from the file itself: Apple's creation date (local time, as recorded) when it's there,
 else the movie header's creation time (UTC, turned into local time).
 """

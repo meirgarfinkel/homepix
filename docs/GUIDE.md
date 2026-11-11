@@ -46,7 +46,7 @@ Press Ctrl+F and describe what's in the photo, in plain words: "dog on the beach
 
 ## Viewing a photo
 
-- **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos open in your video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
+- **Viewer:** double-click a photo (or press Enter) to see it large: zoom with the mouse wheel or double-click, flick through with the arrow keys, F for full screen. Videos play right there: click or press Space to pause, J and L jump 10 seconds, M turns the sound off; the button at the end of the controls opens one in your usual video player. A Live Photo's moving part stays with its photo instead of showing as a video of its own.
 - **Info** (I): description, keywords, when it was taken and where that date came from, camera, size, place, people, folder.
 
 ## Dates
