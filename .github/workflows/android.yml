@@ -2,8 +2,8 @@
 # Pushing a tag like android-v0.2 also publishes the APK as a GitHub Release. Phone releases are never
 # marked "latest": the desktop app's update check reads the latest release, which stays the desktop's.
 #
-# The APK is signed with this machine's own debug key, so it can't be installed over one built on
-# another computer (uninstall that first).
+# A tag build signs the APK with the repo's release key (secrets ANDROID_KEYSTORE, base64, and
+# ANDROID_KEYSTORE_PASSWORD), so each release installs over the last. Pull requests use a throwaway key.
 
 name: Build the phone app
 
@@ -42,7 +42,17 @@ jobs:
             android/app/src/main/assets/clip_text.onnx
             android/app/src/main/assets/clip_tokenizer.json
           key: clip-text-mobileclip-s0
+      - if: startsWith(github.ref, 'refs/tags/android-v')
+        name: Unpack the release key
+        run: |
+          [ -n "$KEYSTORE" ] || { echo "::error::The ANDROID_KEYSTORE secret isn't set"; exit 1; }
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "HOMEPIX_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
       - run: ./gradlew assembleRelease testDebugUnitTest
+        env:
+          HOMEPIX_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       - if: startsWith(github.ref, 'refs/tags/android-v')
         uses: actions/upload-artifact@v4
         with:
