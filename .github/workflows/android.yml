@@ -1,0 +1,69 @@
+# Builds the HomePix phone app (android/) and runs its unit tests, when something in android/ changes.
+# Pushing a tag like android-v0.2 also publishes the APK as a GitHub Release. Phone releases are never
+# marked "latest": the desktop app's update check reads the latest release, which stays the desktop's.
+#
+# The APK is signed with this machine's own debug key, so it can't be installed over one built on
+# another computer (uninstall that first).
+
+name: Build the phone app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["android-v*"]
+  pull_request:
+    branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/cache@v4  # the search model the build downloads (42 MB), kept between runs
+        with:
+          path: |
+            android/app/src/main/assets/clip_text.onnx
+            android/app/src/main/assets/clip_tokenizer.json
+          key: clip-text-mobileclip-s0
+      - run: ./gradlew assembleRelease testDebugUnitTest
+      - if: startsWith(github.ref, 'refs/tags/android-v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: HomePix-Android
+          path: android/dist/HomePix-dev.apk
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    needs: [android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HomePix-Android
+      - run: |
+          mv HomePix-dev.apk HomePix.apk
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --latest=false \
+            --title "Phone app ${GITHUB_REF_NAME#android-}" --generate-notes HomePix.apk
+        env:
+          GH_TOKEN: ${{ github.token }}

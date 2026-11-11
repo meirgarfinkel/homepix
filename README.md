@@ -177,6 +177,8 @@ homepix/
   ui/     the desktop app (PySide6 / Qt): the window, its pages and menus
 tests/    pytest suite, with fake AI models so it runs in seconds
 packaging/  build scripts for the Windows installer, Mac disk image, AppImage and .deb
+android/  the phone app (Kotlin, Jetpack Compose): sends new photos to HomePix and shows
+          the phone's own photos with their people and search (see android/README.md)
 ```
 
 **Where to read next:**

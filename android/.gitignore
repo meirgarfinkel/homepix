@@ -1,0 +1,11 @@
+# Build output, this computer's settings, and APKs
+build/
+.gradle/
+.kotlin/
+local.properties
+dist/
+*.apk
+# The search model: fetched by the build (see app/build.gradle.kts)
+app/src/main/assets/clip_text.onnx
+app/src/main/assets/clip_tokenizer.json
+app/src/main/assets/*.part
