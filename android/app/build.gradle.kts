@@ -1,4 +1,20 @@
+import java.io.File
 import java.net.URI
+import java.util.Properties
+
+// The key every published HomePix.apk is signed with, so each new one installs over the last. GitHub's
+// build gets it from the repo's secrets (HOMEPIX_KEYSTORE, HOMEPIX_KEYSTORE_PASSWORD); a computer from the
+// file homepix.signing names in ~/.gradle/gradle.properties. Without either, the build is signed with
+// that computer's debug key, which is fine for trying a change.
+val releaseKey: Pair<File, String>? = run {
+    System.getenv("HOMEPIX_KEYSTORE")?.takeIf { it.isNotEmpty() }?.let { path ->
+        return@run File(path) to System.getenv("HOMEPIX_KEYSTORE_PASSWORD").orEmpty()
+    }
+    val file = providers.gradleProperty("homepix.signing").orNull?.let(::File)?.takeIf { it.isFile }
+        ?: return@run null
+    val p = Properties().apply { file.inputStream().use { load(it) } }
+    File(p.getProperty("homepix.signing.store")) to p.getProperty("homepix.signing.password")
+}
 
 plugins {
     id("com.android.application")
@@ -14,15 +30,26 @@ android {
         applicationId = "com.homepix.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2"
+        versionCode = 3
+        versionName = "0.3"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // the phone, and the emulator
+    }
+
+    signingConfigs {
+        releaseKey?.let { (store, password) ->
+            create("release") {
+                storeFile = store
+                storePassword = password
+                keyAlias = "homepix"
+                keyPassword = password
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug") // a demo: installed by hand, never published
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

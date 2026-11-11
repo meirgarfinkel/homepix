@@ -36,3 +36,13 @@ whose key was in the QR code.
 
 Not paired: the app falls back to a library folder copied to the phone with its hidden `.homepix`
 folder (it looks up to 3 folders deep), as before.
+
+## Updating
+
+Open the [releases page](https://github.com/meirgarfinkel/homepix/releases) in the phone's browser, tap
+**HomePix.apk** under the newest "Phone app" release, and install it. It installs over the copy you have
+and stays paired. (From version 0.3; a copy older than that has to be uninstalled once first.)
+
+Releases are signed with one permanent key, kept as the repo's `ANDROID_KEYSTORE` and
+`ANDROID_KEYSTORE_PASSWORD` secrets. Losing it means everyone uninstalls once to move to a new key, so keep
+a backup of it.
