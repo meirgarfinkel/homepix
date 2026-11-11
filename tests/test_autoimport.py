@@ -119,7 +119,7 @@ def test_files_still_arriving_wait(home, lib, tmp_path):
     pf, db = home
     r = rule(tmp_path, lib)
     photo(tmp_path / "Phone" / "fresh.jpg")
-    photo(tmp_path / "Phone" / ".syncthing.IMG_3.jpg.tmp")
+    photo(tmp_path / "Phone" / ".IMG_3.jpg.tmp")
     photo(tmp_path / "Phone" / "IMG_4.jpg.part")
     batch = ai.check(db, r, [str(lib)], now=time.time())
     assert not batch.imports  # fresh.jpg has only just arrived
@@ -539,7 +539,7 @@ def test_a_look_only_changes_when_a_file_has_finished_arriving(home, lib, tmp_pa
     r = rule(tmp_path, lib)
     empty = ai.looks([r], now=LATER())
     photo(tmp_path / "Phone" / "IMG_5.jpg")
-    photo(tmp_path / "Phone" / ".syncthing.IMG_6.jpg.tmp")
+    photo(tmp_path / "Phone" / ".IMG_6.jpg.tmp")
     assert ai.looks([r], now=time.time()) == empty  # still arriving: nothing to check yet
     ready = ai.looks([r], now=LATER())
     assert [os.path.basename(p) for _, p, _, _ in ready] == ["IMG_5.jpg"]

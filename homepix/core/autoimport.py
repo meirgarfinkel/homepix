@@ -1,5 +1,5 @@
 """Auto import: rules that bring new photos and videos in from a watch folder, where some other app
-(Syncthing, iCloud for Windows, icloudpd ...) puts them. HomePix itself never goes on the network.
+(the HomePix phone app, iCloud for Windows, icloudpd ...) puts them. HomePix itself never goes on the network.
 
 A rule (kept in settings.json) names a watch folder and where its files go: into a folder of the
 library as they are, or, with tidy on, named by date into the library's year folders as the
