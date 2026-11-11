@@ -314,41 +314,45 @@ class SettingsDialog(QDialog):
     def _pair(self):
         from .pair_dialog import PairDialog
 
-        rules = autoimport.load_rules()
-        if not rules:
-            QMessageBox.information(
-                self,
-                "Pair a phone",
-                "First add an import automation (New automation... above): a phone's photos come in through one.",
-            )
+        folders = library_folders()
+        if not folders:
+            QMessageBox.information(self, "Pair a phone", "Add a library folder first: the phone's photos go into it.")
             return
         link = getattr(self.parent(), "phone_link", None)
         if link is None:
             return
-        dlg = PairDialog(link, rules, self)
+        dlg = PairDialog(link, autoimport.load_rules(), folders, self)
         dlg.exec()
+        excluded = dlg.excluded_now
         dlg.deleteLater()
-        self.refresh_phones()
+        self.refresh()  # (a new automation, and maybe its folder excluded)
+        if excluded:
+            self.left_out_changed.emit()
 
     def _unpair(self):
         chosen = self._chosen(self.phone_list)
         phone = next((p for p in phones.load_phones() if p.id == chosen), None)
         if phone is None:
             return
+        rule = next((r for r in autoimport.load_rules() if r.id == phone.rule_id), None) if phone.own_rule else None
+        waiting = rule is not None and bool(autoimport.settled_files(rule.watch, now=float("inf")))
+        also = f'\n\nIts automation "{rule.name}" is removed too.' if rule is not None and not waiting else ""
         answer = QMessageBox.question(
             self,
             "Unpair",
-            f'Unpair "{phone.name}"? It stops sending photos here. Photos already sent stay in the library.\n\n'
-            "To send again, pair it again.",
+            f'Unpair "{phone.name}"? It stops sending photos here. Photos already sent stay in the library.{also}'
+            "\n\nTo send again, pair it again.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
             QMessageBox.StandardButton.Cancel,
         )
         if answer == QMessageBox.StandardButton.Yes:
             phones.forget(phone.id)
+            if also:
+                autoimport.save_rules([r for r in autoimport.load_rules() if r.id != rule.id])
             link = getattr(self.parent(), "phone_link", None)
             if link is not None:
                 link.refresh()
-            self.refresh_phones()
+            self.refresh_rules()  # (and the phones)
 
     def _edit_rule(self, new: bool = False):
         folders = library_folders()

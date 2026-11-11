@@ -321,16 +321,18 @@ def where_now(db, path: str, trail: _Trail | None = None) -> str | None:
     return now if there and os.path.isfile(now) else None
 
 
-def came_from(db, prefix: str) -> list[tuple[str, str]]:
+def came_from(db, prefix: str, watch: str | None = None) -> list[tuple[str, str]]:
     """(where it is now, where it came from) for each photo auto import brought into the library folder
     at prefix and that's still there. Where it came from is its place in the automation's Import from
     folder (Camera/PXL_1.jpg), so the phone it came from can find its own copy, even after the file
-    changed on either side."""
+    changed on either side. watch: only those imported from that folder (one phone's)."""
     trail = _Trail(db)
     watches = [r.watch for r in load_rules()]
     here = {r[0] for r in db.execute("SELECT path FROM photos WHERE substr(path, 1, ?) = ?", (len(prefix), prefix))}
     out = []
     for r in _imported(db):
+        if watch is not None and not within(r["path"], [watch]):
+            continue
         now = trail.follow(r["dst"], r["id"])
         if now not in here:
             continue
