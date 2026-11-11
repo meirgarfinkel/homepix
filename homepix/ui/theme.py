@@ -356,6 +356,10 @@ QComboBox QAbstractItemView::item:selected, QListView#popup::item:selected {{ ba
 QDialog QListWidget, QDialog QTreeView, QDialog QTableView {{ background: {field}; border: none;
     border-radius: 10px; padding: 4px; outline: 0; }}
 QDialog QListWidget::item {{ padding: 6px 8px; border-radius: 8px; }}
+QScrollArea#settingsScroll, QWidget#settingsPage {{ background: transparent; }}
+QFrame#settingsCard {{ background: {side}; border: 1px solid {border}; border-radius: 14px; }}
+QFrame#settingsRule {{ background: {border}; border: none; }}
+QWidget#settingsBar {{ border-top: 1px solid {border}; }}
 QDialog QListWidget::item:selected {{ background: {accentSoft}; color: {accentText}; }}
 
 QListWidget#people {{ background: {bg}; border: none; outline: 0; padding: 8px 16px; }}
