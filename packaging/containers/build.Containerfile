@@ -12,6 +12,8 @@ RUN dnf -y install epel-release \
       mesa-libGL mesa-libEGL mesa-libgbm libdrm \
       nss nspr alsa-lib libXcomposite libXdamage libXrandr libXtst libxshmfence libxkbfile \
       dbus-libs glib2 \
+      # Qt's video player links the sound library (PulseAudio's, which PipeWire also speaks)
+      pulseaudio-libs \
       # ExifTool's Perl (only the parts it uses are bundled); curl-minimal is already there
       perl \
  && dnf clean all

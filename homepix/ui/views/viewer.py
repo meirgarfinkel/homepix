@@ -48,6 +48,8 @@ class Viewer(QWidget):
     face_clicked = Signal(dict, QPoint)  # a face (as from core.people.face_rows), where (global)
     faces_toggled = Signal(bool)
 
+    no_player = False  # Qt's video player couldn't load here
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.items = []
@@ -328,9 +330,17 @@ class Viewer(QWidget):
     # --- videos ------------------------------------------------------------------------------------
 
     def _video(self):
-        """The player, made the first time it's needed (Qt's media libraries load then)."""
+        """The player, made the first time it's needed (Qt's media libraries load then). None where it
+        can't load (a system without its sound library): videos then open in the system's player."""
         if self._playback is None:
-            from .video_player import Controls, Fader, Playback
+            if Viewer.no_player:
+                return None
+            try:
+                from .video_player import Controls, Fader, Playback
+            except ImportError as e:
+                print(f"Videos open in the system's player: {e}", flush=True)
+                Viewer.no_player = True
+                return None
 
             self._playback = Playback(self)
             self._playback.frame.connect(lambda _: self.update())
@@ -345,8 +355,8 @@ class Viewer(QWidget):
 
     def _play_current(self):
         """Start the video shown (from the beginning), or stop the one that was."""
-        if self._is_video() and self.isVisible():
-            self._video().play(self.items[self.index].path)
+        if self._is_video() and self.isVisible() and self._video() is not None:
+            self._playback.play(self.items[self.index].path)
             self._fader.poke()
         elif self._playback is not None and self._playback.path is not None:
             self._playback.stop()
@@ -370,6 +380,8 @@ class Viewer(QWidget):
         if not self._is_video():
             return
         pb = self._video()
+        if pb is None:
+            return self.open_elsewhere()
         if pb.path != self.items[self.index].path:
             pb.play(self.items[self.index].path)
         else:

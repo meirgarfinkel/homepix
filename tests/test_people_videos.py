@@ -320,3 +320,25 @@ def test_counting_photos_and_videos():
     assert counted(1234, 2) == "1,234 photos and 2 videos"
     assert counted(0, 1) == "1 video"
     assert counted(0, 0) == "0 photos"
+
+
+def test_without_the_video_player_videos_open_in_the_system_player(window, pf, lib, app, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtTest import QTest
+
+    from homepix.ui.views.viewer import Viewer
+
+    make_video(lib / "clip.mp4", 2)
+    pf.add_folder(lib)
+    pf.index_folder(lib, want_faces=False)
+    window.reload()
+    wait_until(app, lambda: len(window.timeline.items) == 1)
+    monkeypatch.setattr(Viewer, "no_player", True)  # (as where Qt's player can't load)
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toLocalFile())))
+    window.open_viewer(0)
+    wait_until(app, lambda: window.viewer._best_image() is not None)  # its still shows
+    assert window.viewer._playback is None and opened == []
+    QTest.keyClick(window.viewer, Qt.Key.Key_Return)
+    assert [os.path.normpath(p) for p in opened] == [str(lib / "clip.mp4")]
