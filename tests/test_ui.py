@@ -394,7 +394,7 @@ def test_the_info_panel_says_when_it_was_taken(pf, lib, app):
 def test_size_slider_jumps_to_a_click_and_drags_from_there(app):
     from PySide6.QtCore import Qt as _Qt
 
-    from homepix.ui.main_window import JumpSlider
+    from homepix.ui.views.widgets import JumpSlider
 
     s = JumpSlider(_Qt.Orientation.Horizontal)
     s.setRange(90, 360)
