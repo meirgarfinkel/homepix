@@ -9,7 +9,9 @@ it plays and the mouse is still.
 from PySide6.QtCore import QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame, QVideoSink
-from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QSlider, QWidget
+from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QWidget
+
+from .widgets import JumpSlider
 
 HIDE_AFTER_MS = 2500  # the controls fade this long after the mouse stops, while playing
 
@@ -189,7 +191,7 @@ class Controls(QWidget):
         self.play_button.clicked.connect(playback.toggle)
         self.time = QLabel("0:00")
         self.time.setStyleSheet("color: white; background: transparent;")
-        self.bar = QSlider(Qt.Orientation.Horizontal)
+        self.bar = JumpSlider(Qt.Orientation.Horizontal)  # (a click anywhere on it jumps there)
         self.bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.bar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.bar.sliderMoved.connect(playback.seek)

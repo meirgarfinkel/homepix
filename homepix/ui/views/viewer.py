@@ -20,6 +20,7 @@ from ...core.media import load_photo
 from ...core.video import video_frame, video_size
 from .. import theme, workers
 from ..thumbs import to_qimage
+from .widgets import leave_full_screen, toggle_full_screen
 
 FULL = 1 << 15  # "no limit" for load_photo
 MAX_ZOOM = 8.0
@@ -62,6 +63,7 @@ class Viewer(QWidget):
         self.zoom = None  # None: fit to window; else device pixels per image pixel
         self._center = QPointF(0.5, 0.5)  # the image point (0-1) at the window's center
         self._drag_from = None
+        self._wheel = 0  # wheel turns not yet a whole step (a touchpad sends many small ones)
         self.show_faces = False
         self.faces = []  # the faces in the photo shown, when show_faces
         self._faces_of = None  # whose: the photo's id
@@ -189,8 +191,15 @@ class Viewer(QWidget):
             return
         self._pending.add(key)
 
+        def job(path, max_side, video):
+            if not self._wanted(path):  # (gone past while it waited: holding an arrow key, say)
+                return None
+            return decode(path, max_side, video)
+
         def done(res, err):
             self._pending.discard(key)
+            if err is None and res is None:
+                return
             if err is not None:
                 if self.index == index:
                     self._error = f"Can't show this photo:\n{err}"
@@ -203,7 +212,12 @@ class Viewer(QWidget):
             if self.index == index:
                 self.update()
 
-        workers.run(decode, done, *key, self.items[index].kind == "video", viewing=True)
+        workers.run(job, done, *key, self.items[index].kind == "video", viewing=True)
+
+    def _wanted(self, path: str) -> bool:
+        """Is this photo the one shown or one beside it? (Asked from the decoding threads.)"""
+        items, i = self.items, self.index
+        return any(0 <= n < len(items) and items[n].path == path for n in (i, i + 1, i - 1))
 
     def _best_image(self):
         """The sharpest decoded version of the current photo there is: (QImage, original's longest
@@ -465,9 +479,15 @@ class Viewer(QWidget):
             if (self.items[self.index].path, FULL) not in self._images:
                 self._start_decode(self.index, FULL)  # zooming in: get every pixel
             rect = self._image_rect(shown)
-            if around is not None and rect.contains(around):
-                self._center = QPointF((around.x() - rect.x()) / rect.width(), (around.y() - rect.y()) / rect.height())
             zoom = max(0.05, min(MAX_ZOOM, zoom))
+            if around is not None and rect.contains(around):  # the point under the cursor stays under it
+                x, y = (around.x() - rect.x()) / rect.width(), (around.y() - rect.y()) / rect.height()
+                self.zoom = zoom
+                new = self._image_rect(shown)
+                self._center = QPointF(
+                    min(1, max(0, x - (around.x() - self.width() / 2) / new.width())),
+                    min(1, max(0, y - (around.y() - self.height() / 2) / new.height())),
+                )
         self.zoom = zoom
         self.update()
 
@@ -475,15 +495,24 @@ class Viewer(QWidget):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier or self.zoom is not None:
             steps = e.angleDelta().y() / 120
             self.set_zoom(self._current_zoom() * (1.2**steps), e.position())
-        else:  # wheel without Ctrl flicks through photos while fitted
-            self.go(self.index + (1 if e.angleDelta().y() < 0 else -1))
+        else:  # wheel without Ctrl flicks through photos while fitted, a photo per notch
+            dy = e.angleDelta().y()
+            if dy == 0:  # (sideways)
+                return
+            if (self._wheel > 0) != (dy > 0):
+                self._wheel = 0  # (turned the other way)
+            self._wheel += dy
+            while abs(self._wheel) >= 120:
+                step = 1 if self._wheel < 0 else -1
+                self._wheel += 120 * step
+                self.go(self.index + step)
 
     def mouseDoubleClickEvent(self, e):
         if self._face_at(e.position()) is not None:
             return
         if self._is_video():  # (as in other players: full screen, or back)
-            w = self.window()
-            return w.showNormal() if w.isFullScreen() else w.showFullScreen()
+            self.toggle_play()  # (the double-click's first press played or paused it: undone)
+            return toggle_full_screen(self.window())
         self.set_zoom(None if self.zoom is not None else 1.0, e.position())
 
     def mousePressEvent(self, e):
@@ -546,12 +575,12 @@ class Viewer(QWidget):
             ((K.Key_1,), lambda: self.set_zoom(1.0)),
             (
                 (K.Key_Escape,),
-                lambda: self.window().showNormal() if self.window().isFullScreen() else self.closed.emit(),
+                lambda: leave_full_screen(self.window()) if self.window().isFullScreen() else self.closed.emit(),
             ),
             ((K.Key_N,), self.toggle_faces),
             (
                 (K.Key_F, K.Key_F11),
-                lambda: self.window().showNormal() if self.window().isFullScreen() else self.window().showFullScreen(),
+                lambda: toggle_full_screen(self.window()),
             ),
         ):
             keys.update(dict.fromkeys(names, do))

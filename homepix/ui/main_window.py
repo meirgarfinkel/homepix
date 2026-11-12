@@ -17,10 +17,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QSizePolicy,
-    QSlider,
     QStackedWidget,
-    QStyle,
-    QStyleOptionSlider,
     QToolBar,
     QToolButton,
     QVBoxLayout,
@@ -71,6 +68,7 @@ from .views.timeline import MAX_TILE, MIN_TILE, TimelineView
 from .views.update_bar import UpdateBar
 from .views.viewer import Viewer
 from .views.welcome import Welcome
+from .views.widgets import JumpSlider, leave_full_screen, toggle_full_screen
 
 
 def _folder_of(place):
@@ -174,23 +172,6 @@ def _spacer(width: int, stretch: bool = False) -> QWidget:
     else:
         w.setFixedWidth(width)
     return w
-
-
-class JumpSlider(QSlider):
-    """A slider that jumps to where it's clicked (rather than a step toward it), and drags from there."""
-
-    def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
-            opt = QStyleOptionSlider()
-            self.initStyleOption(opt)
-            style = self.style()
-            groove = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderGroove, self)
-            handle = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt, QStyle.SubControl.SC_SliderHandle, self)
-            if not handle.contains(e.position().toPoint()):
-                span = groove.width() - handle.width()
-                x = round(e.position().x()) - groove.x() - handle.width() // 2
-                self.setValue(QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), x, span, opt.upsideDown))
-        super().mousePressEvent(e)  # (now on the handle: a drag carries on from here)
 
 
 class SearchBox(QLineEdit):
@@ -531,7 +512,7 @@ class MainWindow(QMainWindow):
         self.addAction(reload)
         full = self.full_action = QAction("Full screen", self)
         full.setShortcut(QKeySequence("F11"))
-        full.triggered.connect(lambda: self.showNormal() if self.isFullScreen() else self.showFullScreen())
+        full.triggered.connect(lambda: toggle_full_screen(self))
         self.addAction(full)
 
     @staticmethod
@@ -809,7 +790,7 @@ class MainWindow(QMainWindow):
 
     def bring_forward(self):
         if self.isMinimized():
-            self.showNormal()
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)  # (maximized stays so)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1144,8 +1125,7 @@ class MainWindow(QMainWindow):
         if self.stack.currentWidget() is not self.viewer:
             return
         self.viewer.compare = None
-        if self.isFullScreen():
-            self.showNormal()
+        leave_full_screen(self)
         i, back = self.viewer.index, self._viewer_from or self.timeline
         if 0 <= i < len(self.viewer.items) and back is self.timeline:  # (the viewer's list may be shorter now)
             ids = [it.id for it in self.timeline.items]
