@@ -11,7 +11,12 @@ import kotlin.math.sqrt
 
 /** Search by description, the way HomePix does: the phrase becomes a vector, compared with every photo's. */
 class Search(context: Context) {
-    private val env = OrtEnvironment.getEnvironment()
+    private val env = run {
+        // ONNX Runtime would send usage data to Microsoft: off before it's loaded (and its starter is
+        // taken out of the manifest)
+        android.system.Os.setenv("ORT_DISABLE_TELEMETRY", "1", true)
+        OrtEnvironment.getEnvironment().also { runCatching { it.setTelemetry(false) } }
+    }
     private val session: OrtSession
     private val tokenizer: Tokenizer
 

@@ -8,7 +8,8 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 
 1. **Private and local.** No photo or anything about one leaves the computer. The only internet access is the
    one-time model download and the update check (an installed copy asks GitHub for the newest release at
-   startup and downloads it quietly; a copy run from the source code never does).
+   startup and downloads it quietly; a copy run from the source code never does). The AI library's own
+   usage reports (ONNX Runtime's, to Microsoft) are turned off on the computer and the phone.
    The one exception is paired phones (section 10): HomePix answers them on the home network only, encrypted, and
    only phones paired with it. Nothing goes through outside servers.
 2. **Never changes files on its own.** Indexing, thumbnails and AI analysis run in the background but only read.

@@ -79,6 +79,7 @@ def ensure_models(names):
 def _ort_session(path: Path):
     import onnxruntime as ort
 
+    ort.disable_telemetry_events()  # (and ORT_DISABLE_TELEMETRY, set in homepix/__init__.py)
     opts = ort.SessionOptions()
     opts.intra_op_num_threads = max(1, (os.cpu_count() or 2) // 2)  # leave half the CPU free
     opts.inter_op_num_threads = 1
