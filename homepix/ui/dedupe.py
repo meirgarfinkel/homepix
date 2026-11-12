@@ -44,7 +44,7 @@ class Dedupe:
         self.w.sidebar.set_count(DUPES, f"{n:,}" if n else "")
 
     def _confirm(self, title, head, note, rows, go) -> bool:
-        return bool(ChangesDialog(title, head, note, rows, go, self.w).exec())
+        return bool(ChangesDialog(title, head, note, rows, go, self.w, trash=True).exec())
 
     def trash_extras(self, groups):
         """Move the groups' extras to the Trash (after a preview)."""

@@ -439,3 +439,67 @@ def test_a_midnight_copy_doesnt_replace_a_midnight_keeper(home, lib):
     _, _, g = _pair(home, lib, "2018-06-10 00:00:00", "2018-06-11 00:00:00", seed=41)
     _, notes = duplicates.plan_fill(db, [g])
     assert next(iter(notes.values())) == "Location, description, keywords from IMG_1.jpg"
+
+
+def _fake_groups(*sizes):
+    import types
+
+    groups = []
+    for k, n in enumerate(sizes):
+        cs = [
+            types.SimpleNamespace(
+                id=k * 10 + j, qhash=f"q{k}{j}", path=f"/lib/IMG_{k}{j}.jpg", width=40, height=30, size=9
+            )
+            for j in range(n)
+        ]
+        g = types.SimpleNamespace(copies=cs, keeper=cs[0], extras=cs[1:], how="similar")
+        g.keep = lambda pid, g=g: setattr(g, "keeper", next(c for c in g.copies if c.id == pid))
+        groups.append(g)
+    return groups
+
+
+def test_copies_that_dont_fit_the_width_wrap(pf, app):
+    """Five copies in a narrow window: each is drawn, below the others if need be (they used to be
+    left out, and still went to the Trash)."""
+    from homepix.ui.views.duplicates import DuplicatesView
+
+    v = DuplicatesView()
+    v.resize(760, 900)
+    v.show()
+    v.set_groups(_fake_groups(5, 2), ["/lib"], 0)
+    app.processEvents()
+    lst, d = v.list, v.list.itemDelegate()
+    rect = lst.visualRect(lst.model().index(0))
+    tiles = [d.tile_rect(rect, i) for i in range(5)]
+    assert all(rect.contains(t) for t in tiles)  # every one inside its row
+    assert len({(t.x(), t.y()) for t in tiles}) == 5 and len({t.y() for t in tiles}) > 1  # wrapped
+    assert all(d.tile_at(rect, t.center(), 5) == i for i, t in enumerate(tiles))  # and each can be clicked
+    v.close()
+
+
+def test_the_copy_chosen_to_keep_is_remembered(pf, app):
+    from homepix.ui.views.duplicates import DuplicatesView
+
+    v = DuplicatesView()
+    v.set_groups(_fake_groups(3), ["/lib"], 0)
+    v._keep(0, 2)
+    v.close()
+    again = DuplicatesView()  # (the next start)
+    groups = _fake_groups(3)
+    again.set_groups(groups, ["/lib"], 0)
+    assert groups[0].keeper.id == 2
+    again.close()
+
+
+def test_enter_in_the_trash_preview_is_cancel(app):
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from homepix.ui.views.changes_dialog import ChangesDialog
+
+    rows = [("a.jpg", "Trash", "an extra copy", "a.jpg")]
+    trash = ChangesDialog("Duplicates", "Move 1 file to Trash", "", rows, "Move 1 file to Trash", trash=True)
+    assert trash.buttons.button(QDialogButtonBox.StandardButton.Cancel).isDefault() and not trash.go.isDefault()
+    tidy = ChangesDialog("Organize", "Rename 1", "", rows, "Organize")
+    assert tidy.go.isDefault()  # (organizing moves nothing to the Trash, and Undo puts it back)
+    trash.close()
+    tidy.close()

@@ -498,3 +498,18 @@ def test_place_parsing():
     assert parse_place("https://www.openstreetmap.org/?mlat=31.7&mlon=35.2#map=16/31.7/35.2") == (31.7, 35.2)
     assert parse_place("") == ()
     assert parse_place("north") is None and parse_place("95, 10") is None
+    # The letters count, and only a link's place is read (these were Kyrgyzstan, (31, 46) and (10, 51.5)):
+    assert parse_place("40.7128° N, 74.0060° W") == (40.7128, -74.006)
+    lat, lon = parse_place("31°46'41\"N 35°14'06\"E")
+    assert round(lat, 4) == 31.7781 and lon == 35.235
+    link = "https://www.google.com/maps/place/10+Downing+St,+London/@51.5033635,-0.1276248,17z"
+    assert parse_place(link) == (51.5033635, -0.1276248)
+    assert parse_place("S 33.86, E 151.21") == (-33.86, 151.21)
+    assert parse_place("https://maps.google.com/?q=31.7,35.2") == (31.7, 35.2)
+    assert parse_place("https://www.openstreetmap.org/#map=16/31.7/35.2") == (31.7, 35.2)
+    assert parse_place("geo:31.7,35.2") == (31.7, 35.2)
+    for unsure in ("10 Downing St", "40.7 E, 74 N", "31 46 41 N", "https://example.com/10/20", "1, 2, 3"):
+        assert parse_place(unsure) is None, unsure
+    from homepix.ui.views.details_dialogs import place_text
+
+    assert place_text((40.7128, -74.006)) == "40.71280° N, 74.00600° W"

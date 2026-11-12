@@ -26,18 +26,67 @@ from PySide6.QtWidgets import (
 from ...core import dates
 from ...core.metadata import Edit
 
+_NUM = r"[-+]?\d+(?:\.\d+)?"
+# one coordinate: degrees (decimal, or with minutes and seconds), and N/S/E/W before or after
+_COORD = r"([NSEW])?\s*(" + _NUM + r")\s*°?\s*(?:(\d+(?:\.\d+)?)\s*['′]\s*)?(?:(\d+(?:\.\d+)?)\s*[\"″]\s*)?([NSEW])?"
+_PAIR = re.compile(_COORD + r"\s*[,;]?\s*" + _COORD, re.IGNORECASE)
+_LINK = [  # where a map link names its place (only there: a house number or a zoom isn't a place)
+    re.compile(r"[?&#]mlat=(" + _NUM + r").*?[?&#]mlon=(" + _NUM + r")"),
+    re.compile(r"@(" + _NUM + r"),(" + _NUM + r")"),
+    re.compile(r"[?&](?:ll|q|query|center|destination|daddr|sll)=(" + _NUM + r")(?:,|%2C)\s*(" + _NUM + r")", re.I),
+    re.compile(r"[#&?]map=\d+(?:\.\d+)?/(" + _NUM + r")/(" + _NUM + r")"),
+]
+
+
+def _degrees(sign_before, deg, minutes, seconds, sign_after, letters: str):
+    """One coordinate's value, or None if its N/S/E/W is the wrong kind (or given twice)."""
+    if sign_before and sign_after:
+        return None
+    letter = (sign_before or sign_after or "").upper()
+    if letter and letter not in letters:
+        return None
+    value = abs(float(deg)) + float(minutes or 0) / 60 + float(seconds or 0) / 3600
+    if (minutes and float(minutes) >= 60) or (seconds and float(seconds) >= 60):
+        return None
+    negative = deg.startswith("-") or letter in ("S", "W")
+    return -value if negative else value
+
 
 def parse_place(text: str):
-    """ "31.778, 35.235" (or with spaces, or a map link holding them) -> (lat, lon); "" -> (); None if
-    it can't be read."""
+    """ "31.778, 35.235", "40.7128° N, 74.0060° W", 31°46'41"N 35°14'06"E, or a map link that names
+    the place -> (lat, lon); "" -> (); None if it can't be read for sure (nothing is guessed: the
+    place is written into the files)."""
     text = text.strip()
     if not text:
         return ()
-    nums = re.findall(r"-?\d+(?:\.\d+)?", text)  # (a map link's first two numbers are the place too)
-    if len(nums) < 2:
-        return None
-    lat, lon = float(nums[0]), float(nums[1])
+    if text.lower().startswith("geo:"):
+        text = text[4:].split("?")[0]
+    if "/" in text or "=" in text:  # a link
+        for pat in _LINK:
+            m = pat.search(text)
+            if m:
+                lat, lon = float(m.group(1)), float(m.group(2))
+                break
+        else:
+            return None
+    else:
+        m = _PAIR.fullmatch(text)
+        if m is None:
+            return None
+        lat, lon = _degrees(*m.groups()[:5], "NS"), _degrees(*m.groups()[5:], "EW")
+        if lat is None or lon is None:
+            return None
     return (lat, lon) if -90 <= lat <= 90 and -180 <= lon <= 180 else None
+
+
+def place_text(place) -> str:
+    """How a parsed place reads: "31.77806° N, 35.23500° E"."""
+    if place is None:
+        return "Can't read a place in that."
+    if not place:
+        return ""
+    lat, lon = place
+    return f"{abs(lat):.5f}° {'N' if lat >= 0 else 'S'}, {abs(lon):.5f}° {'E' if lon >= 0 else 'W'}"
 
 
 def _common(values):
@@ -82,21 +131,28 @@ class DetailsDialog(QDialog):
         self.place = QLineEdit("" if not place else f"{place[0]:.6f}, {place[1]:.6f}")
         self.place.setPlaceholderText("Different in each" if place is None and n > 1 else "e.g. 31.778, 35.235")
         self.place.textEdited.connect(lambda: self._touched.add("place"))
+        self.place.textEdited.connect(self._show_place)
         form.addRow("Location:", self.place)
+        self.place_reads = QLabel()  # how what's typed is read, as it's typed (it's written into the files)
+        self.place_reads.setObjectName("hint")
+        form.addRow("", self.place_reads)
 
         lay = QVBoxLayout(self)
         lay.addLayout(form)
         self.error = QLabel()
-        self.error.setStyleSheet("color: #c0392b")
+        self.error.setObjectName("problem")
         lay.addWidget(self.error)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         lay.addWidget(buttons)
 
+    def _show_place(self):
+        self.place_reads.setText(place_text(parse_place(self.place.text())))
+
     def accept(self):
         if "place" in self._touched and parse_place(self.place.text()) is None:
-            self.error.setText("Type a location like 31.778, 35.235.")
+            self.error.setText("Type a location like 31.778, 35.235, or paste a map link to the place.")
             return
         super().accept()
 
