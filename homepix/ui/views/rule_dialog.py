@@ -27,8 +27,9 @@ from ...core.settings import excluded_folders, pictures_folder, set_excluded
 from ...core.util import within
 
 EMPTY_WARNING = (
-    "Imported files are moved out of this folder. If your sync app copies deletions back to the phone or to "
-    "iCloud, they'll be deleted there too. With iCloud for Windows or icloudpd, leave this off."
+    "Imported files are moved out of this folder. If the app that fills it copies deletions back to the phone "
+    "or to iCloud, they'll be deleted there too. With iCloud for Windows or icloudpd, leave this off. (The "
+    "HomePix phone app never deletes anything.)"
 )
 KEEP_NOTE = "Imported files are copied, and the originals stay in this folder."
 
@@ -82,7 +83,7 @@ class RuleDialog(QDialog):
         self.tidy.toggled.connect(self._tidy_toggled)
         form.addRow("", self.tidy)
         self.watch = QLineEdit(r.watch)
-        self.watch.setPlaceholderText("The folder your sync app puts new photos in")
+        self.watch.setPlaceholderText("The folder new photos arrive in")
         form.addRow("Import from:", _folder_row(self.watch, self._choose_watch))
 
         # Import to: a folder in the library, or (organizing) which library folder's year folders
@@ -150,12 +151,14 @@ class RuleDialog(QDialog):
         self.empty_note.setText(EMPTY_WARNING if on else KEEP_NOTE)
         self._fit_notes()
 
-    def _fit_notes(self):
-        """Give each wrapped note the height its lines need at its width (layouts don't on their own)."""
+    def _fit_notes(self, grow: bool = True):
+        """Give each wrapped note the height its lines need at its width (layouts don't on their own).
+        grow: then fit the window to them (not while it's being resized by hand)."""
         for label in self.findChildren(QLabel):
             if label.objectName() == "hint" and label.width() > 50:
                 label.setFixedHeight(label.heightForWidth(label.width()))  # (its own guess is too tall)
-        self.adjustSize()
+        if grow:
+            self.adjustSize()
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -164,7 +167,7 @@ class RuleDialog(QDialog):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if e.oldSize().width() != e.size().width():
-            self._fit_notes()
+            self._fit_notes(grow=False)  # (resizing to its own size here fought the hand dragging the edge)
 
     def _choose_watch(self):
         start = self.watch.text() or str(pictures_folder())

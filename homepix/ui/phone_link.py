@@ -8,7 +8,7 @@ from ..core import phones
 
 
 class PhoneLink(QObject):
-    paired = Signal(str)  # a phone's name, when it has paired
+    paired = Signal(object)  # a phone (phones.Phone), when it has paired
     arrived = Signal(str)  # a phone's name, when one of its files is in place
 
     def __init__(self, parent=None):
@@ -22,7 +22,7 @@ class PhoneLink(QObject):
 
     def _event(self, kind: str, phone):  # (from the server's thread: the signals carry it over)
         if kind == "paired":
-            self.paired.emit(phone.name)
+            self.paired.emit(phone)
         elif kind == "arrived":
             self.arrived.emit(phone.name)
 
