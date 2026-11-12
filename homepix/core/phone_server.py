@@ -281,6 +281,12 @@ def _answers_at(ip: str) -> bool:
     return ip in _here[1]
 
 
+def _label(text: str) -> str:
+    """text cut to fit one DNS name part (63 bytes, whole characters). A longer computer name made
+    announcing fail, so phones never found the computer."""
+    return text.encode()[:63].decode(errors="ignore").strip()
+
+
 def _context() -> ssl.SSLContext:
     me = phones.identity()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -357,14 +363,14 @@ class Server:
         try:
             from zeroconf import ServiceInfo, Zeroconf
 
-            name = f"HomePix on {phones.computer_name()}"
+            name = _label(f"HomePix on {phones.computer_name()}")
             self._info = ServiceInfo(
                 phones.SERVICE,
                 f"{name}.{phones.SERVICE}",
                 addresses=[socket.inet_aton(ip) for ip in ips],
                 port=self.port,
                 properties={"f": phones.identity().fingerprint[:16]},
-                server=f"{phones.computer_name()}.local.",
+                server=f"{_label(phones.computer_name())}.local.",
             )
             self._zc = Zeroconf(interfaces=ips)
             self._zc.register_service(self._info, allow_name_change=True)

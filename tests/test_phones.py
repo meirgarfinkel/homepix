@@ -744,5 +744,30 @@ def test_announced_again_when_the_computers_address_changes(monkeypatch):
     s.stop()
 
 
+@pytest.mark.parametrize("name", ["sjc22-bt147-57ea3a23-b86b-4120-bdb0-1e142d38af53-26D9D02BE850", "מחשב" * 20])
+def test_a_long_computer_name_is_still_announced(monkeypatch, name):
+    import zeroconf
+
+    made = []
+
+    class FakeZeroconf:
+        def __init__(self, interfaces):
+            pass
+
+        def register_service(self, info, allow_name_change=False):
+            made.append(info)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(zeroconf, "Zeroconf", FakeZeroconf)
+    monkeypatch.setattr(phones, "computer_name", lambda: name)
+    s = phone_server.Server(port=0, announce=False)
+    s.port = 47820
+    s._announce(["192.168.1.20"])
+    assert len(made) == 1  # (a name over 63 bytes once made it fail)
+    assert len(made[0].name.split("._homepix")[0].encode()) <= 63 and made[0].server.endswith(".local.")
+
+
 def test_the_port_is_never_shared_on_windows():
     assert phone_server._Server.allow_reuse_address == (os.name != "nt")
