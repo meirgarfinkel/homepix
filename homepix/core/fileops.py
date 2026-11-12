@@ -970,10 +970,15 @@ def inverse(db, op_id: int) -> list[dict]:
     return moves + others
 
 
+# (one a crash stopped before it changed anything has nothing to take back)
+_DID_SOMETHING = f"EXISTS (SELECT 1 FROM op_steps s WHERE s.op_id = ops.id AND s.done = {FINISHED})"
+
+
 def can_undo(db):
     """The operation Ctrl+Z would take back, or None."""
     return db.execute(
-        "SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' ORDER BY id DESC LIMIT 1"
+        "SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' "
+        f"AND {_DID_SOMETHING} ORDER BY id DESC LIMIT 1"
     ).fetchone()
 
 
@@ -981,7 +986,8 @@ def can_redo(db):
     """The undo that Ctrl+Shift+Z would take back, or None. Doing anything new clears it."""
     newest = db.execute("SELECT MAX(id) FROM ops WHERE kind NOT IN ('undo', 'redo')").fetchone()[0] or 0
     return db.execute(
-        "SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? ORDER BY id DESC LIMIT 1",
+        "SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? "
+        f"AND {_DID_SOMETHING} ORDER BY id DESC LIMIT 1",
         (newest,),
     ).fetchone()
 

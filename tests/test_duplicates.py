@@ -417,7 +417,7 @@ def test_the_keeper_takes_the_details_only_its_copy_has_and_a_real_time_for_a_mi
     assert d.gps == (31.7767, 35.2345) and d.description == "Grandma's birthday"
     assert d.keywords == ["Mine", "family"]  # its own kept, the copy's added ("mine" is the same word)
     taken = db.execute("SELECT taken FROM photos WHERE path=?", (str(now),)).fetchone()[0]
-    assert taken.startswith("2018-06-10 14:22:05") or taken.startswith("2018-06-10T14:22:05")
+    assert taken == "2018-06-10 14:22:05"
 
     fo.undo(db)  # all of it comes back
     assert keeper.exists() and copy.exists() and not now.exists()

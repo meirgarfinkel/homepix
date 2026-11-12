@@ -5,6 +5,7 @@ import struct
 import tempfile
 import time
 import urllib.parse
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -72,7 +73,15 @@ def lib(tmp_path):
     return root
 
 
-_n = 0
+_n, _seed = 0, 0
+
+
+@pytest.fixture(autouse=True)
+def _photos_of_this_test(request):
+    """photo()'s content depends only on the test and how many it made before, never on which tests ran
+    first (so a test fails or passes the same alone and in the suite)."""
+    global _n, _seed
+    _n, _seed = 0, zlib.crc32(request.node.nodeid.encode())
 
 
 def photo(path, fmt="JPEG"):
@@ -80,7 +89,7 @@ def photo(path, fmt="JPEG"):
     global _n
     _n += 1
     path.parent.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(_n)
+    rng = np.random.default_rng((_seed, _n))
     Image.fromarray(rng.integers(0, 255, (48, 64, 3), dtype=np.uint8)).save(path, fmt)
     return path
 
@@ -172,7 +181,11 @@ def app():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6 import QtWidgets
 
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    from homepix.ui import theme
+
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    theme.apply(app, "dark")  # (the app's own look, whatever order the tests run in)
+    return app
 
 
 def wait_until(app, cond, timeout=20.0):
@@ -235,3 +248,21 @@ def israel(monkeypatch):
     yield
     monkeypatch.undo()
     time.tzset()
+
+
+class statements:
+    """with statements(db) as n: ... then n.count: how many SQL statements ran (a test of how much work
+    something does that doesn't depend on how fast the machine is)."""
+
+    def __init__(self, db):
+        self.db, self.count = db, 0
+
+    def __enter__(self):
+        self.db.set_trace_callback(self._one)
+        return self
+
+    def _one(self, sql):
+        self.count += 1
+
+    def __exit__(self, *exc):
+        self.db.set_trace_callback(None)

@@ -2,10 +2,10 @@
 undoable; the "who is this" groups; and all of it quick at the size of a real library."""
 
 import sqlite3
-import time
 
 import numpy as np
 import pytest
+from conftest import statements
 
 from homepix.core import fileops, people
 from homepix.core.db import to_blob
@@ -383,7 +383,7 @@ def test_a_crash_before_a_change_was_committed_leaves_nothing_half_done(db, pf):
     db.commit()  # planned, and then the power went
     fileops.recover(db)
     assert set(names(db).values()) == {None}
-    assert fileops.can_undo(db) is None or fileops.can_undo(db)["id"] == op  # nothing it could take back
+    assert fileops.can_undo(db) is None  # nothing it could take back
     assert db.execute("SELECT done FROM op_steps WHERE op_id=?", (op,)).fetchone()[0] == fileops.SKIPPED
 
 
@@ -409,18 +409,17 @@ def test_forty_thousand_faces(db):
         db.executemany("UPDATE faces SET person_id=? WHERE id=?", [(n + 1, f) for f in mine])
     db.commit()
 
-    t = time.perf_counter()
-    groups = people.who_groups(db)
-    took = time.perf_counter() - t
-    assert groups and took < 5, took
-    t = time.perf_counter()
-    step = people.plan_name(db, [f["id"] for f in groups[0][:5]], "Someone new")
-    do(db, step)
-    took = time.perf_counter() - t
-    assert took < 3, took
-    t = time.perf_counter()
-    fileops.undo(db)
-    assert time.perf_counter() - t < 3
+    with statements(db) as grouping:
+        groups = people.who_groups(db)
+    with statements(db) as naming:
+        step = people.plan_name(db, [f["id"] for f in groups[0][:5]], "Someone new")
+        do(db, step)
+    with statements(db) as undoing:
+        fileops.undo(db)
+    # (counted, not timed: the same on any machine. Naming and undoing touch the faces named, one row
+    # each, never all 40,000; grouping reads them in one go.)
+    assert groups and grouping.count <= 10
+    assert naming.count < 2000 and undoing.count < 2000
 
 
 def test_recognizing_again_only_when_faces_or_names_changed(db, monkeypatch):
