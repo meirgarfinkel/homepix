@@ -602,7 +602,9 @@ class _Op:
         """The step's file is where it should be: index and journal follow. False (and skipped, with why)
         if that failed (a damaged file the details can't be read from, say)."""
         if not self.db.in_transaction:
-            self.db.execute("BEGIN")  # (so the savepoint nests in it and doesn't commit: commits stay batched)
+            # IMMEDIATE: holding the write lock from the start, a write elsewhere (the indexer) waits instead of
+            # failing this step with "database is locked". The savepoint nests in it, so commits stay batched.
+            self.db.execute("BEGIN IMMEDIATE")
         self.db.execute("SAVEPOINT step")
         try:
             _mark_finished(self.db, step, dst)
@@ -823,7 +825,7 @@ def recover(db) -> list[str]:
             "SELECT * FROM op_steps WHERE op_id=? AND done IN (?, ?) ORDER BY seq", (op["id"], PLANNED, UNDER_WAY)
         ).fetchall():
             if not db.in_transaction:
-                db.execute("BEGIN")
+                db.execute("BEGIN IMMEDIATE")
             db.execute("SAVEPOINT step")
             try:
                 fixed += _recover_step(db, op, r, started)

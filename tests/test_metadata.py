@@ -239,6 +239,39 @@ def red_side(path):
     return [k for k, box in strips.items() if red(box)]
 
 
+def test_a_write_elsewhere_waits_for_the_change(home, lib, monkeypatch):
+    """The indexer writing while a change reads a file's details used to fail that step with
+    "database is locked" (it read first, so SQLite couldn't let it write after)."""
+    import sqlite3
+    import threading
+
+    pf, db = home
+    p = make_photo(lib / "a.jpg")
+    index(pf, lib)
+    real_read, writers = md.read, []
+
+    def read_while_another_writes(paths, *a, **k):
+        def write():
+            other = sqlite3.connect(db.execute("PRAGMA database_list").fetchone()[2], timeout=30)
+            other.execute("CREATE TABLE IF NOT EXISTS elsewhere (x)")
+            other.execute("INSERT INTO elsewhere VALUES (1)")
+            other.commit()
+            other.close()
+
+        t = threading.Thread(target=write)
+        t.start()
+        t.join(0.3)  # (with the lock held up front it waits until the change commits)
+        writers.append(t)
+        return real_read(paths, *a, **k)
+
+    monkeypatch.setattr(md, "read", read_while_another_writes)
+    result, _ = edit_and_run(db, fo, [p], md.Edit(turn="right"))
+    for t in writers:
+        t.join(10)
+    assert result.skipped == []
+    assert result.finished == 1
+
+
 @pytest.mark.parametrize("ext", ["jpg", "heic", "dng"])
 def test_turning_right_and_back(home, lib, ext):
     pf, db = home
