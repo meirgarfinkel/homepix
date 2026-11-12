@@ -20,7 +20,6 @@ FIRST = 30_000  # ms after the window opens (anything interrupted is finished by
 LOOK = 60_000  # a look at what's in the watch folders
 HOURLY = 3_600_000  # a full check, new files or not
 SOON = 10_000  # after a phone's file arrives (the timer restarts with each one)
-RETRY = 120_000  # when something else is changing files: try again in a little while
 
 
 def when(text: str | None) -> str:
@@ -65,7 +64,9 @@ class AutoImporter(QObject):
         self._seen = None  # what the last look found
         self._checked_at = 0.0  # (time.monotonic()) of the last full check started
         self._looking = False
+        self._wanted = None  # a check that found the library busy: None, or whether it was asked for
         self.waiting: dict[str, autoimport.Batch] = {}  # rule id: what it found, for rules that wait for review
+        window.ops.history_changed.connect(self._library_free)
 
     def start(self):
         self._first = QTimer(self)
@@ -76,6 +77,7 @@ class AutoImporter(QObject):
 
     def stop(self):
         """No more checks (the window closed for good)."""
+        self._wanted = None
         for t in (self.timer, getattr(self, "_first", None), getattr(self, "_soon", None)):
             if t is not None:
                 t.stop()
@@ -135,9 +137,15 @@ class AutoImporter(QObject):
             lambda res, err: self._done(res, err, asked),
             rescan=lambda res: bool(res and res.result and res.result.unindexed),
             quiet=not asked,
+            wait=False,
         )
-        if not started:
-            QTimer.singleShot(RETRY, lambda: self.check(asked))
+        if not started:  # another change is under way: check when it's done
+            self._wanted = bool(self._wanted) or asked
+
+    def _library_free(self):
+        if self._wanted is not None and not self.window.ops.busy:
+            asked, self._wanted = self._wanted, None
+            self.check(asked)
 
     def _done(self, res, err, asked: bool):
         self.checked.emit()

@@ -257,6 +257,35 @@ def test_at_startup_a_newer_version_is_downloaded_then_offered(window, app, said
     assert old.read_bytes() == b"new HomePix" and bar.isHidden() and said == []
 
 
+def test_an_update_waits_for_the_change_under_way(window, app, monkeypatch, tmp_path):
+    from homepix.ui import updates as ui_updates
+
+    old = tmp_path / "apps" / "HomePix-x86_64.AppImage"
+    old.parent.mkdir()
+    old.write_bytes(b"old HomePix")
+    monkeypatch.setenv("APPIMAGE", str(old))
+    monkeypatch.setattr(updates, "how_installed", lambda: "appimage")
+    monkeypatch.setattr(updates, "latest_release", lambda *_: release(tmp_path, "v9.0.0", "HomePix-x86_64.AppImage"))
+    restarted = []
+    monkeypatch.setattr(ui_updates, "restart", lambda w: restarted.append(w))
+    w = window
+    try:
+        w.updater.check_quietly()
+        wait_until(app, lambda: not w.update_bar.isHidden())
+        w.ops.busy = True  # (an automatic import bringing photos in, say)
+        w.update_bar.button.click()
+        for _ in range(20):
+            app.processEvents()
+        assert old.read_bytes() == b"old HomePix" and not restarted
+        assert "when the change under way is done" in w.statusBar().currentMessage()
+        w.ops.busy = False
+        w.ops.history_changed.emit()
+        wait_until(app, lambda: restarted)
+        assert old.read_bytes() == b"new HomePix"
+    finally:
+        w.ops.busy = False
+
+
 def test_a_failed_install_from_the_bar_offers_it_again(window, app, said, monkeypatch, tmp_path):
     from homepix.ui import updates as ui_updates
 
