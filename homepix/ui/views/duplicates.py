@@ -154,6 +154,7 @@ class _Row(QStyledItemDelegate):
             img = self.view.loader.get(c.qhash)
             p.save()
             p.setClipPath(clip)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)  # (tiles are decoded a little larger)
             if img is not None:
                 p.drawImage(r, img)
             else:

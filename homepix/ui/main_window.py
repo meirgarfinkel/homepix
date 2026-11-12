@@ -483,6 +483,7 @@ class MainWindow(QMainWindow):
         self.zoom.setFixedWidth(96)
         self.zoom.setAccessibleName("Thumbnail size")
         self.zoom.valueChanged.connect(self.timeline.set_tile_size)
+        self.timeline.tile_changed.connect(self.zoom.setValue)  # (Ctrl+wheel moves the slider too)
         bar.addWidget(self.zoom)
         bar.addWidget(_spacer(8))
         self.faces_action = QAction("Their faces", self)

@@ -62,6 +62,9 @@ class NoThumbs(QObject):
     def failed(self, q):
         return False
 
+    def retry_failed(self):
+        pass
+
     def want(self, items):
         self.wanted = items
 
@@ -127,7 +130,80 @@ def test_ticking_by_dragging_across_photos(view):
     QTest.mousePress(view.viewport(), left, none, at(5))
     move(at(7))
     QTest.mouseRelease(view.viewport(), left, none, at(7))
-    assert view.selected == {5} and not view._band.isVisible()  # not ticking: a drag doesn't tick
+    assert view.selected == {5} and not view._band.isVisible()  # not ticking: a drag from a photo doesn't tick
+
+
+def test_a_drag_from_beside_the_photos_selects_them(view):
+    """Not ticking (All photos, a folder, search): a drag that starts beside the photos sweeps out a
+    rectangle and selects what's in it; with Ctrl it adds to the selection."""
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    left, none, ctrl = Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.ControlModifier
+
+    def at(i):
+        return view.item_rect(i).translated(0, -view.verticalScrollBar().value()).center()
+
+    def drag(start, end, mods=none):
+        QTest.mousePress(view.viewport(), left, mods, start)
+        p = QPointF(end)
+        QApplication.sendEvent(
+            view.viewport(),
+            QMouseEvent(QEvent.Type.MouseMove, p, view.viewport().mapToGlobal(p), Qt.MouseButton.NoButton, left, mods),
+        )
+        shown = view._band.isVisible()
+        QTest.mouseRelease(view.viewport(), left, mods, end)
+        return shown
+
+    view.set_current(9)
+    beside = QPoint(view.viewport().width() - 5, at(0).y())  # right of the last column
+    assert drag(beside, at(4))
+    assert view.selected == {1, 2, 4, 5}  # (from the right edge: the second and third columns)
+    assert drag(QPoint(view.viewport().width() - 5, at(6).y()), at(7), ctrl)
+    assert view.selected == {1, 2, 4, 5, 7, 8}
+
+
+def test_shift_click_after_a_reload_ranges_from_the_same_photo(view):
+    """Indexing adds photos above the one clicked: Shift-click still ranges from that photo, and an
+    anchor past the end of a shorter list can't make the selection point at nothing."""
+    first = view.items[2]
+    view.set_current(2)
+    newer = fake_items([("2024-04", 4)])
+    for k, it in enumerate(newer):
+        newer[k] = Item(100 + k, it.path, it.taken, f"new{k}")
+    view.set_months(group_by_month(newer + view.items))
+    assert view.items[view._anchor] is not None and view.items[view._anchor].id == first.id
+    view.set_current(view._anchor + 3, "range")
+    assert [it.id for it in view.selected_items()][0] == first.id and len(view.selected) == 4
+    view.set_current(15)
+    view.set_months(group_by_month(fake_items([("2024-03", 5)])), fresh=True)
+    view.set_current(3, "range")
+    assert view.selected == {3} and len(view.selected_items()) == 1
+
+
+def test_ctrl_wheel_moves_the_size_slider(app):
+    from conftest import open_window
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QWheelEvent
+
+    w = open_window(app, ready=None)
+    try:
+        before = w.zoom.value()
+        tl = w.timeline
+        e = QWheelEvent(
+            QPointF(50, 50),
+            QPointF(tl.mapToGlobal(QPoint(50, 50))),
+            QPoint(),
+            QPoint(0, 240),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.ControlModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        tl.wheelEvent(e)
+        assert tl.tile > before and w.zoom.value() == tl.tile
+    finally:
+        w.close()
 
 
 def test_click_ctrl_and_shift_select(view):
@@ -217,7 +293,7 @@ def test_thumbnail_loader_decodes_square_tiles(pf, lib, app):
     loader.want([(q, str(p)), ("missing", str(lib / "nope.jpg"))])
     wait_until(app, lambda: len(got) == 2)
     img = loader.get(q)
-    assert img is not None and (img.width(), img.height()) == (50, 50)
+    assert img is not None and (img.width(), img.height()) == (64, 64)  # (the next step up, drawn at 50)
     assert loader.get("missing") is None and loader.failed("missing")
     loader.stop()
 
@@ -315,8 +391,8 @@ def test_exact_copies_share_one_tile_and_the_budget_stays_true(pf, lib, app):
 
     from homepix.ui.thumbs import ThumbLoader
 
-    loader = ThumbLoader(workers=2, budget=10 * 50 * 50 * 4)  # room for 10 tiles
-    loader.set_size(50)
+    loader = ThumbLoader(workers=2, budget=10 * 64 * 64 * 4)  # room for 10 tiles
+    loader.set_size(64)
     got = []
     loader.ready.connect(got.append)
     for n in range(30):
@@ -542,3 +618,71 @@ def test_no_hover_tips_in_the_app():
         if "setToolTip(" in line or "ToolTipRole" in line or "setToolTipsVisible" in line
     ]
     assert found == []
+
+
+@pytest.fixture
+def loader(monkeypatch):
+    """A ThumbLoader whose tiles are made up (no files), counting how many it decodes."""
+    import threading
+
+    from homepix.ui import thumbs
+
+    made, bad = [], set()
+    lock = threading.Lock()
+
+    def decode(qhash, path, size):
+        with lock:
+            made.append(qhash)
+        if qhash in bad:
+            raise OSError("unreadable")
+        img = QImage(size, size, QImage.Format.Format_RGB32)
+        img.fill(0)
+        return img, False
+
+    monkeypatch.setattr(thumbs.ThumbLoader, "_decode", staticmethod(decode))
+    tile = 64 * 64 * 4
+    ld = thumbs.ThumbLoader(workers=2, budget=3 * tile)
+    ld.set_size(64)
+    ld.made, ld.bad = made, bad
+    yield ld
+    ld.stop()
+
+
+def _settle(ld):
+    import time
+
+    end = time.time() + 5
+    while time.time() < end:
+        with ld._lock:
+            if not ld._queue and not ld._busy:
+                return
+        time.sleep(0.01)
+
+
+def test_tiles_that_dont_fit_the_budget_are_not_decoded_round_and_round(loader):
+    wish = [(f"q{i}", f"/nowhere/{i}.jpg") for i in range(9)]  # three times what fits
+    for _ in range(6):  # (each paint asks again)
+        loader.want(wish)
+        _settle(loader)
+    assert sorted(loader.made) == ["q0", "q1", "q2"]  # the first (on screen), once each
+    assert all(loader.get(q) is not None for q, _ in wish[:3])
+
+
+def test_resizing_a_pixel_at_a_time_keeps_the_tiles(loader):
+    loader.want([("q0", "/nowhere/0.jpg")])
+    _settle(loader)
+    for px in range(40, 64):  # (the window dragged narrower)
+        loader.set_size(px)
+    assert loader.get("q0") is not None and loader.made == ["q0"]
+
+
+def test_a_tile_that_failed_is_tried_again_after_a_reload(loader):
+    loader.bad.add("q0")
+    loader.want([("q0", "/nowhere/0.jpg")])
+    _settle(loader)
+    assert loader.failed("q0")
+    loader.bad.clear()  # (its drive is back)
+    loader.retry_failed()
+    loader.want([("q0", "/nowhere/0.jpg")])
+    _settle(loader)
+    assert loader.get("q0") is not None and not loader.failed("q0")

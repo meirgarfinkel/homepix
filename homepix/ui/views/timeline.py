@@ -47,6 +47,7 @@ class TimelineView(QAbstractScrollArea):
     current_changed = Signal(int)  # global item index, or -1
     selection_changed = Signal()
     menu_requested = Signal(QPoint)  # right-click (or the menu key), at this global position
+    tile_changed = Signal(int)  # the tile size (Ctrl+wheel changes it too)
 
     def __init__(self, loader, parent=None):
         super().__init__(parent)
@@ -92,12 +93,15 @@ class TimelineView(QAbstractScrollArea):
         keep = -1 if fresh else self._top_item()
         keep_qhash = self.items[keep].qhash if 0 <= keep < len(self.items) else None
         cur = self.items[self.current].id if 0 <= self.current < len(self.items) and not fresh else None
+        anchor = self.items[self._anchor].id if 0 <= self._anchor < len(self.items) and not fresh else None
         sel = set() if fresh else {self.items[i].id for i in self.selected}
         self.months = months
         self.items = [it for m in months for it in m.items]
         index = {it.id: i for i, it in enumerate(self.items)}
         self.current = index.get(cur, -1)
+        self._anchor = index.get(anchor, -1)  # (Shift-click ranges from the same photo, wherever it is now)
         self.selected = {index[i] for i in sel if i in index}
+        self.loader.retry_failed()
         self._relayout()
         if fresh:
             self.verticalScrollBar().setValue(0)
@@ -125,6 +129,7 @@ class TimelineView(QAbstractScrollArea):
             self.tile = px
             self._relayout()
             self._scroll_to_item_top(keep)
+            self.tile_changed.emit(px)
 
     def _relayout(self):
         width = max(1, self.viewport().width() - 2 * MARGIN)
@@ -234,6 +239,7 @@ class TimelineView(QAbstractScrollArea):
         h = self.viewport().height()
         p.translate(0, -top)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)  # (tiles are decoded a little larger)
         head_font = theme.font(17, QFont.Weight.Bold)
         sub_font = QFont(self.font())
         small_font = theme.font(11, QFont.Weight.Bold)
@@ -376,7 +382,7 @@ class TimelineView(QAbstractScrollArea):
             self.selected ^= {i}
             self._anchor = i
         elif mode == "range":
-            a = self._anchor if self._anchor >= 0 else i
+            a = self._anchor if 0 <= self._anchor < len(self.items) else i
             self.selected = set(range(min(a, i), max(a, i) + 1))
         self.current = i
         self.ensure_visible(i)
@@ -395,9 +401,14 @@ class TimelineView(QAbstractScrollArea):
         if e.button() != Qt.MouseButton.LeftButton:
             return
         mods = e.modifiers()
-        if self.ticking and not mods:  # a drag from here (on a photo or beside them) sweeps out a rectangle
+        # A drag sweeps out a rectangle: ticking, from anywhere, and the photos in it flip; else from beside
+        # the photos, and they're selected (Ctrl: added to what's selected).
+        if (self.ticking and not mods) or (
+            i < 0 and not self.ticking and not mods & ~Qt.KeyboardModifier.ControlModifier
+        ):
             at = self._content_point(e.position().toPoint())
-            self._sweep = {"from": at, "at": at, "base": set(self.selected)}
+            keep = self.ticking or bool(mods & Qt.KeyboardModifier.ControlModifier)
+            self._sweep = {"from": at, "at": at, "base": set(self.selected) if keep else set()}
         if i < 0:
             if not mods and not self.ticking:  # (ticking: a click beside the photos keeps the ticks)
                 self.selected = set()
@@ -458,7 +469,7 @@ class TimelineView(QAbstractScrollArea):
                 r = self.rows[k]
                 if r.start != -1:
                     hit.update(i for i in range(r.start, r.end) if self.item_rect(i).intersects(box))
-        selected = sweep["base"] ^ hit
+        selected = sweep["base"] ^ hit if self.ticking else sweep["base"] | hit
         under = self.item_at(QPoint(to.x(), to.y() - self.verticalScrollBar().value()))
         if under >= 0 and under != self.current:
             self.current = under
