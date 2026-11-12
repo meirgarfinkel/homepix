@@ -1,4 +1,5 @@
-# Builds the HomePix phone app (android/) and runs its unit tests, when something in android/ changes.
+# Builds the HomePix phone app (android/), runs its unit tests and lint, when something in android/ or
+# the desktop code it has to agree with changes.
 # Pushing a tag like android-v0.2 also publishes the APK as a GitHub Release. Phone releases are never
 # marked "latest": the desktop app's update check reads the latest release, which stays the desktop's.
 #
@@ -13,7 +14,16 @@ on:
     tags: ["android-v*"]
   pull_request:
     branches: [main]
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android.yml"
+      # (what the phone has to agree with: the tokenizer, the quick fingerprint, its library file, the server)
+      - "homepix/core/ai/clip_tokens.py"
+      - "homepix/core/util.py"
+      - "homepix/core/portable.py"
+      - "homepix/core/phones.py"
+      - "homepix/core/phone_server.py"
+      - "homepix/core/db.py"
 
 permissions:
   contents: read
@@ -50,7 +60,13 @@ jobs:
           echo "HOMEPIX_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-      - run: ./gradlew assembleRelease testDebugUnitTest
+      - if: startsWith(github.ref, 'refs/tags/android-v')
+        name: The tag is the version the app says it is
+        run: |
+          name=$(sed -n 's/^ *versionName = "\(.*\)"$/\1/p' app/build.gradle.kts)
+          [ "$GITHUB_REF_NAME" = "android-v$name" ] || {
+            echo "::error::Tag $GITHUB_REF_NAME, versionName $name: they must agree"; exit 1; }
+      - run: ./gradlew assembleRelease testDebugUnitTest lintDebug
         env:
           HOMEPIX_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       - if: startsWith(github.ref, 'refs/tags/android-v')

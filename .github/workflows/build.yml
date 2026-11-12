@@ -141,6 +141,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the version the app says it is
+        # (else every installed copy would see a "newer" version at every start, and install it again)
+        run: |
+          app=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' homepix/__init__.py)
+          iss=$(sed -n 's/^#define AppVersion "\(.*\)"$/\1/p' packaging/homepix.iss)
+          [ "$GITHUB_REF_NAME" = "v$app" ] && [ "$app" = "$iss" ] || {
+            echo "::error::Tag $GITHUB_REF_NAME, homepix/__init__.py $app, homepix.iss $iss: they must agree"; exit 1; }
       - uses: actions/download-artifact@v4
         with:
           path: dist
