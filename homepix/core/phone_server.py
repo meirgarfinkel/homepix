@@ -10,8 +10,9 @@ Requests (JSON in and out, but the file itself):
 - POST /v1/hello: check the secret works. Answers {computer, phone, ready}.
 - POST /v1/unpair: the phone was unpaired on the phone: unpair it here too (as Settings does). Answers {}.
 - POST /v1/need {files: [{path, size, sha256, qhash}]}: which to send. Answers {need: [{path, have}],
-  quick: true}. Asked first with {path, size, qhash} alone, it answers {need: [{path}]}: those the
-  library doesn't have by their quick fingerprint (the phone then makes the SHA-256 of only those).
+  refused: [path] (names or kinds of file it doesn't take), quick: true}. Asked first with {path, size,
+  qhash} alone, it answers {need: [{path}]}: those the library doesn't have by their quick fingerprint
+  (the phone then makes the SHA-256 of only those).
 - POST /v1/library {qhashes, sources, version}: what HomePix knows about the photos the phone has (see
   phones.library_for). Answers {same: true} when the phone's version is current, else the file itself
   (a SQLite database like a folder's portable copy), with its version in X-Version.
@@ -182,12 +183,12 @@ class _Handler(BaseHTTPRequestHandler):
         files = body.get("files")
         if not isinstance(files, list):
             raise phones.Refused("That isn't readable.", 400)
-        db = open_db()
+        db, refused = open_db(), []
         try:
-            need = phones.needs(db, watch, [f for f in files if isinstance(f, dict)])
+            need = phones.needs(db, watch, [f for f in files if isinstance(f, dict)], refused)
         finally:
             db.close()
-        self._send(200, {"need": need, "quick": True})
+        self._send(200, {"need": need, "quick": True, "refused": refused})
 
     def _POST_v1_library(self):
         phone = self._phone()

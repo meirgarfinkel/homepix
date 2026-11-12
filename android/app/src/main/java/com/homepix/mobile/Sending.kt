@@ -340,6 +340,16 @@ data class Local(val file: File, val rel: String, val size: Long, val modified: 
     val key get() = "$rel|$size|$modified"
 }
 
+/**
+ * A DCIM file's place for the computer: "Camera/IMG_1.jpg". One on an SD card (or another storage
+ * than the phone's own) gets the card's name in front, "SD 1A2B-3C4D/Camera/IMG_1.jpg", so it never
+ * lands on the phone's own file of the same name.
+ */
+fun placeOf(volume: String?, relativePath: String, name: String): String {
+    val rel = relativePath.removePrefix("DCIM/") + name
+    return if (volume == null || volume == "external_primary" || volume == "external") rel else "SD ${volume.uppercase()}/$rel"
+}
+
 /** Everything in DCIM that the gallery knows of and has finished writing. */
 fun cameraFiles(context: Context): List<Local> {
     val out = ArrayList<Local>()
@@ -347,14 +357,17 @@ fun cameraFiles(context: Context): List<Local> {
     val types = "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE},${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO}"
     context.contentResolver.query(
         uri,
-        arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.DISPLAY_NAME),
+        arrayOf(
+            MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.VOLUME_NAME,
+        ),
         "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN ($types) AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE 'DCIM/%' " +
             "AND ${MediaStore.MediaColumns.IS_PENDING} = 0",
         null, null,
     )?.use { c ->
         while (c.moveToNext()) {
             val file = File(c.getString(0) ?: continue)
-            val rel = (c.getString(1) ?: continue).removePrefix("DCIM/") + (c.getString(2) ?: continue)
+            val rel = placeOf(c.getString(3), c.getString(1) ?: continue, c.getString(2) ?: continue)
             if (rel.split('/').any { it.isEmpty() || it.startsWith(".") }) continue
             val size = file.length()
             if (size <= 0) continue
@@ -389,12 +402,14 @@ internal fun sendBatch(
     quick: (Local) -> String?,
     sha: (Local) -> String = { sha256(it.file) },
     stopped: () -> Boolean = { false },
+    refused: (Local) -> Unit = {},
     done: (Local, Boolean) -> Unit,
 ): Boolean {
     val q = batch.associateWith(quick)
     val first = JSONArray()
     for ((f, h) in q) first.put(JSONObject().put("path", f.rel).put("size", f.size).put("qhash", h ?: JSONObject.NULL))
     val answer = peer.post("/v1/need", JSONObject().put("files", first))
+    val no = answer.optJSONArray("refused")?.let { a -> HashSet<String>().apply { for (i in 0 until a.length()) add(a.getString(i)) } }.orEmpty()
     val wanted = if (answer.optBoolean("quick")) {
         val need = answer.getJSONArray("need")
         val paths = HashSet<String>().apply { for (i in 0 until need.length()) add(need.getJSONObject(i).getString("path")) }
@@ -412,6 +427,7 @@ internal fun sendBatch(
     }
     for (f in batch) {
         if (stopped()) return false
+        if (f.rel in no) { refused(f); continue } // (not marked done: asked about again, so it's still counted)
         val from = have[f.rel]
         val h = hashes[f]
         if (from != null && h != null) {
@@ -498,14 +514,21 @@ object Sending {
         }
         val sentFile = File(context.filesDir, "sent.tsv")
         val sent = HashSet<String>().apply { if (sentFile.isFile) sentFile.forEachLine { add(it) } }
-        val todo = cameraFiles(context).filter { it.key !in sent }.sortedByDescending { it.modified }
+        val files = cameraFiles(context)
+        if (sent.size > files.size + 500) { // (a line per version of every file ever sent: kept to those still here)
+            sent.retainAll(files.mapTo(HashSet()) { it.key })
+            runCatching { writeWhole(sentFile) { tmp -> tmp.writeText(sent.joinToString("") { it + "\n" }) } }
+        }
+        val todo = files.filter { it.key !in sent }.sortedByDescending { it.modified }
         SendState.note(context, "waiting" to todo.size)
         var count = 0
         var left = todo.size
+        var no = 0 // files the computer doesn't take
         try {
             for (batch in todo.chunked(BATCH)) {
                 if (stopped()) return false
-                val whole = sendBatch(batch, link, { Fingerprints.of(context, it.file) }, stopped = stopped) { f, wasSent ->
+                val whole = sendBatch(batch, link, { Fingerprints.of(context, it.file) }, stopped = stopped,
+                    refused = { no++; left-- }) { f, wasSent ->
                     if (wasSent) {
                         count++
                         SendState.note(context, "sent" to System.currentTimeMillis())
@@ -517,7 +540,7 @@ object Sending {
                 if (!whole) return false
                 SendState.note(context, "waiting" to left, "problem" to libraryProblem)
             }
-            SendState.note(context, "problem" to libraryProblem, "waiting" to 0)
+            SendState.note(context, "problem" to libraryProblem, "waiting" to 0, "refused" to no)
             if (count > 0) {
                 fetchLibrary(context, link)
                 // and again once the computer has taken them into the library (a few seconds after they

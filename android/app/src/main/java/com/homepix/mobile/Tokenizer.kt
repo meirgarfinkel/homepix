@@ -9,7 +9,10 @@ class Tokenizer(json: String) {
     private val vocab = HashMap<String, Int>()
     private val ranks = HashMap<String, Int>() // "a b" -> rank
     private val unknown: Int
-    private val cache = HashMap<String, List<String>>()
+    // (searches run on background threads: one at a time here; a few hundred words at most are kept)
+    private val cache = object : LinkedHashMap<String, List<String>>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?) = size > 500
+    }
 
     init {
         val model = JSONObject(json).getJSONObject("model")
@@ -36,7 +39,9 @@ class Tokenizer(json: String) {
         return ids
     }
 
-    private fun bpe(word: String): List<String> = cache.getOrPut(word) {
+    private fun bpe(word: String): List<String> = synchronized(cache) { cache[word] } ?: bpeOf(word).also { synchronized(cache) { cache[word] = it } }
+
+    private fun bpeOf(word: String): List<String> = run {
         var parts = word.dropLast(1).map { it.toString() } + (word.last() + "</w>")
         while (parts.size > 1) {
             var best: Pair<String, String>? = null

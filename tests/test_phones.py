@@ -630,7 +630,7 @@ def test_asked_first_by_fingerprint_only_new_files_are_hashed(setup, lib, tmp_pa
     new = photo(tmp_path / "new.jpg").read_bytes()
     files = [file_info("Camera/a.jpg", have, sha=False), file_info("Camera/new.jpg", new, sha=False)]
     status, body = phone.post("/v1/need", {"files": files})
-    assert status == 200 and body == {"need": [{"path": "Camera/new.jpg"}], "quick": True}
+    assert status == 200 and body == {"need": [{"path": "Camera/new.jpg"}], "quick": True, "refused": []}
     # by content, the library's photo is found by its fingerprint and checked by its SHA-256
     files = [file_info("Camera/a.jpg", have), file_info("Camera/new.jpg", new)]
     assert phone.post("/v1/need", {"files": files})[1]["need"] == [{"path": "Camera/new.jpg", "have": 0}]
@@ -883,3 +883,14 @@ def test_the_window_stops_answering_once_the_last_phone_unpairs_itself(app, setu
     link_phone.token = body["token"]
     assert link_phone.post("/v1/unpair", {})[0] == 200
     wait_until(app, lambda: window.phone_link.server is None)
+
+
+def test_files_the_computer_doesnt_take_are_named_for_the_phone(setup, tmp_path):
+    server, rule, _, _, _ = setup
+    phone = paired(server, rule)
+    data = photo(tmp_path / "src.jpg").read_bytes()
+    files = [file_info(p, data, sha=False) for p in ("Camera/IMG_1.jpg", "Camera/notes.txt", "Camera/CON.jpg")]
+    status, body = phone.post("/v1/need", {"files": files})
+    assert status == 200
+    assert body["need"] == [{"path": "Camera/IMG_1.jpg"}]
+    assert body["refused"] == ["Camera/notes.txt", "Camera/CON.jpg"]

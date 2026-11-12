@@ -49,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import coil.ImageLoader
 import coil.Coil
 import androidx.compose.foundation.clickable
@@ -61,7 +63,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Surface
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import coil.decode.VideoFrameDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -100,7 +101,6 @@ class MainActivity : ComponentActivity() {
             .components {
                 add(ThumbFetcher.Factory()); add(ThumbKeyer())
                 add(FaceFetcher.Factory()); add(FaceKeyer())
-                add(VideoFrameDecoder.Factory())
             }
             .crossfade(false)
             .build()
@@ -149,7 +149,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AskForFiles(ask: () -> Unit) {
     Centered {
-        Text("HomePix shows the library folder you copied to this phone. It needs to read your files to find it.",
+        Text("HomePix shows the photos and videos on this phone, with who's in them from your library, and " +
+            "sends new ones to your computer. It needs access to your files for that.",
             textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))
         Button(onClick = ask) { Text("Allow access to files") }
@@ -183,9 +184,7 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
     var unreadable by remember { mutableStateOf(false) } // (looked at again when asked, and every half minute)
     val unpaired = { what: String -> said = what; pairing = false; lib = null; status = "Looking for your library…"; tries++; Unit }
     LaunchedEffect(tries) {
-        val t0 = System.currentTimeMillis()
         val roots = withContext(Dispatchers.IO) { Library.find(context) }
-        android.util.Log.i("HomePix", "found ${roots.size} libraries in ${System.currentTimeMillis() - t0} ms")
         paired = withContext(Dispatchers.IO) { Computer.load(context) } != null
         unreadable = false
         // (paired with no library file yet, the phone's own new photos still show)
@@ -194,9 +193,7 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                 "and your photos show here."
             null
         } else try {
-            val t1 = System.currentTimeMillis()
             Library.read(context, roots) { status = it }
-                .also { android.util.Log.i("HomePix", "loaded in ${System.currentTimeMillis() - t1} ms") }
         } catch (e: LibraryUnreadable) {
             status = "No library shown. ${e.message}"
             unreadable = true
@@ -282,6 +279,7 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
         if (pages.isNotEmpty()) return@LaunchedEffect
         lib = f
         fresh = null
+        Gone.files.clear() // (the new library has only what's still there: a photo put back from the trash shows again)
         search.redo(f)
     }
 
@@ -297,7 +295,7 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                     0 -> Timeline(l, all, null, open)
                     1 -> PeopleGrid(l) { pages.add(Page.PersonPage(it)) }
                     2 -> SearchScreen(l, search, open) { pages.add(Page.PersonPage(it)) }
-                    else -> ComputerScreen(pairCode, pairTaken, unpaired, said)
+                    else -> ComputerScreen(pairCode, pairTaken, unpaired, said, inTabs = true)
                 }
             }
         }
@@ -343,11 +341,14 @@ private fun SlimBar(tab: Int, select: (Int) -> Unit) {
             )
                 .forEachIndexed { i, (label, icon) ->
                     val color = if (tab == i) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    // (a 48 dp touch target, read as a tab, around a 72 x 38 oval)
                     Box(
-                        Modifier.size(width = 72.dp, height = 38.dp).clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceContainer).clickable { select(i) },
+                        Modifier.size(width = 72.dp, height = 48.dp)
+                            .selectable(selected = tab == i, role = Role.Tab, onClick = { select(i) }),
                         contentAlignment = Alignment.Center,
                     ) {
+                        Box(Modifier.size(width = 72.dp, height = 38.dp).clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainer))
                         Icon(icon, label, Modifier.size(24.dp), tint = color)
                     }
                 }

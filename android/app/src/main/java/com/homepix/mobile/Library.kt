@@ -130,9 +130,7 @@ class Library(
             val matched = HashSet<File>() // the phone's folders holding photos found by fingerprint
             for ((n, root) in roots.withIndex()) {
                 say("Reading ${root.name}…")
-                val t0 = System.currentTimeMillis()
                 val local = localCopy(root, cacheDir, n)
-                android.util.Log.i("HomePix", "copy ${System.currentTimeMillis() - t0} ms")
                 val db = SQLiteDatabase.openDatabase(local.path, null, SQLiteDatabase.OPEN_READONLY)
                 try {
                     check(db)

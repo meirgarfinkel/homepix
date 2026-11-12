@@ -28,6 +28,7 @@ class SendingTest {
         val library: Set<String> = emptySet(),
         val seen: Set<String> = emptySet(),
         val quick: Boolean = true,
+        val takes: (String) -> Boolean = { true }, // (a name or kind of file it takes)
     ) : Peer {
         val parts = HashMap<String, ByteArray>()
         val arrived = HashMap<String, ByteArray>()
@@ -40,10 +41,12 @@ class SendingTest {
             asked += body
             val files = body.getJSONArray("files")
             val need = JSONArray()
+            val no = JSONArray()
             val byQuick = files.length() > 0 && !files.getJSONObject(0).has("sha256")
             if (byQuick && !quick) return JSONObject().put("need", JSONArray()) // (before 1.17: no sha256, left out)
             for (i in 0 until files.length()) {
                 val f = files.getJSONObject(i)
+                if (!takes(f.getString("path"))) { no.put(f.getString("path")); continue }
                 if (byQuick) {
                     if (f.optString("qhash") !in library) need.put(JSONObject().put("path", f.getString("path")))
                 } else if (f.getString("sha256") !in seen) {
@@ -51,7 +54,7 @@ class SendingTest {
                     need.put(JSONObject().put("path", f.getString("path")).put("have", have))
                 }
             }
-            return JSONObject().put("need", need).apply { if (quick) put("quick", true) }
+            return JSONObject().put("need", need).apply { if (quick) put("quick", true).put("refused", no) }
         }
 
         override fun send(f: Local, sha: String, offset: Long): Long {
@@ -149,5 +152,23 @@ class SendingTest {
             assertEquals(status, e.status)
             assertTrue(done.isEmpty())
         }
+    }
+
+    @Test
+    fun aFileTheComputerDoesntTakeIsCountedNotMarkedDone() {
+        val ok = local("a.jpg", bytes(1000, 5))
+        val notes = Local(File.createTempFile("send", ".txt").apply { writeText("x"); deleteOnExit() }, "Camera/notes.txt", 1, 1)
+        val c = Computer(takes = { it.endsWith(".jpg") })
+        val done = LinkedHashMap<String, Boolean>()
+        val no = ArrayList<String>()
+        assertTrue(sendBatch(listOf(ok, notes), c, { quickHash(it.file) }, refused = { no += it.rel }) { f, sent -> done[f.rel] = sent })
+        assertEquals(mapOf("Camera/a.jpg" to true), done) // (the other is asked about again next time)
+        assertEquals(listOf("Camera/notes.txt"), no)
+    }
+
+    @Test
+    fun anSdCardsFilesHaveAPlaceOfTheirOwn() {
+        assertEquals("Camera/IMG_1.jpg", placeOf("external_primary", "DCIM/Camera/", "IMG_1.jpg"))
+        assertEquals("SD 1A2B-3C4D/Camera/IMG_1.jpg", placeOf("1a2b-3c4d", "DCIM/Camera/", "IMG_1.jpg"))
     }
 }
