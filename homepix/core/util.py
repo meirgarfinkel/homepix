@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import shutil
-import sys
 import threading
 import time
 from pathlib import Path
@@ -13,11 +12,8 @@ from pathlib import Path
 import numpy as np
 
 
-def is_tty() -> bool:
-    return sys.stdout is not None and sys.stdout.isatty()
-
-
 def say(msg=""):
+    """A line for the app's log (app.log when started from the menu)."""
     print(msg, flush=True)
 
 

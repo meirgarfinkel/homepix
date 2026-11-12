@@ -1,8 +1,9 @@
-"""Auto import in the app: the rules' watch folders are checked a little after the window opens, when
-something new has finished arriving in them (they're looked at every minute; a look only lists them),
-every hour whatever, or when asked (Check now). New files come in for rules that import by themselves, and a
-line at the bottom of the window says what came in (Edit > Undo takes it back). For the others, a bar
-says new files are waiting, and Review shows them before anything is done."""
+"""Import automations in the app (rules, in the code: see core/autoimport.py): their Import from folders
+are checked a little after the window opens, when something new has finished arriving in them (they're
+looked at every minute; a look only lists them), every hour whatever, or when asked (Check now). New
+files come in for rules that import by themselves, and a line at the bottom of the window says what came
+in (Undo takes it back). For the others, a bar says new files are waiting, and Review shows them before
+anything is done."""
 
 import datetime as dt
 import time
@@ -226,5 +227,5 @@ class AutoImporter(QObject):
             text = "Moved files that were already in your library to the Trash."
         if result.skipped:
             text += f" {plural(len(result.skipped), 'file')} couldn't be brought in and will be tried again."
-        self.window.statusBar().showMessage(text, 12000)  # (Edit > Undo takes it back)
+        self.window.statusBar().showMessage(text, 12000)  # (Undo takes it back)
         self.window._after_change("")

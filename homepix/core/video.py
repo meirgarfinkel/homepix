@@ -107,7 +107,7 @@ def video_meta(path) -> dict:
                 if apple:
                     with contextlib.suppress(ValueError):  # e.g. 2023-05-28T23:07:00+0300: the wall time there
                         out["taken"] = dt.datetime.fromisoformat(apple[:19])
-    except (OSError, struct.error, IndexError):
+    except (OSError, struct.error, IndexError, OverflowError, ValueError):  # (a date beyond any calendar, say)
         pass
     return out
 

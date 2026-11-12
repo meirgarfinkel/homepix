@@ -1,22 +1,24 @@
-"""Auto import: rules that bring new photos and videos in from a watch folder, where some other app
-(the HomePix phone app, iCloud for Windows, icloudpd ...) puts them. HomePix itself never goes on the network.
+"""Import automations: they bring new photos and videos in from an Import from folder, where another app
+puts them (iCloud for Windows, icloudpd ...) or HomePix's phone server leaves what a paired phone sent
+(phone_server.py). This module itself never goes on the network.
 
-A rule (kept in settings.json) names a watch folder and where its files go: into a folder of the
-library as they are, or, with tidy on, named by date into the library's year folders as the
-organizer does it. After importing, a file is moved out of the watch folder (the default) or left
-there. A file whose content is already in the library isn't imported again: with "move" it goes to
-the Trash so the watch folder empties; with "leave" it's left.
+In the code an automation is a "rule" (kept in settings.json), its Import from folder the "watch"
+folder, and "Rename and organize into year folders" is "tidy". A rule says where its files go: into a
+folder of the library as they are, or, with tidy on, named by date into the library's year folders as
+the organizer does it. After importing, a file is moved out of the Import from folder (the default:
+"Empty the Import from folder after importing") or left there. A file whose content is already in the
+library isn't imported again: with "move" it goes to the Trash so the watch folder empties; with "leave"
+it's left.
 
-A file that comes back to the same place in the watch folder with different content (the phone turned
-or edited it) is a new version of the photo it became: it takes that photo's place in the library, and
-the old version goes to the Trash. The photo keeps who is in it when only its orientation changed.
+A file that comes back to the same place in the watch folder with different content (the phone turned or
+edited it) is a new version of the photo it became: it takes that photo's place in the library, and the
+old version goes to the Trash. The photo keeps who is in it when only its orientation changed.
 
-What happens to each file is remembered (import_seen), by where it was and by its content, so
-nothing is dealt with twice: not a file left in the watch folder, not one that comes back because an
-import was undone (an undone import means those files weren't wanted), and not one deleted from the
-library since. A file is only taken once it's been still for SETTLE seconds, so half-copied ones
-wait. Everything is one journaled operation (fileops), undoable like any other.
-"""
+What happens to each file is remembered (import_seen), by where it was and by its content, so nothing is
+dealt with twice: not a file left in the watch folder, not one that comes back because an import was
+undone (an undone import means those files weren't wanted), and not one deleted from the library since.
+A file is only taken once it's been still for SETTLE seconds, so half-copied ones wait. Everything is
+one journaled operation (fileops), undoable like any other."""
 
 import datetime as dt
 import fnmatch

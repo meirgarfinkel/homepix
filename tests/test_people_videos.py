@@ -1,4 +1,4 @@
-"""M3c: videos (dates, lengths, frames, Live Photo motion), the people page, and the app's own startup."""
+"""Videos (dates, lengths, frames, Live Photo motion), the people page, and the app's own startup."""
 
 import datetime as dt
 import os

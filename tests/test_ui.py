@@ -1,4 +1,4 @@
-"""M3a: the Qt timeline, viewer and info panel (run offscreen, no display needed)."""
+"""The Qt timeline, viewer and info panel (run offscreen, no display needed)."""
 
 import os
 import sys

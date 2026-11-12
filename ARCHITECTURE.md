@@ -78,13 +78,14 @@ in front: the timeline (`views/timeline.py`, which draws only the rows on screen
 duplicates review, or the viewer. `ui/thumbs.py` decodes thumbnails on background threads, newest request
 first, into a memory cache.
 
-Slow work never runs on the UI thread: `ui/workers.py` runs it on a thread pool and hands the result back.
+Slow work belongs off the UI thread: `ui/workers.py` runs it on a thread pool and hands the result back.
+(Not all of it is there yet: face crops and the Review thumbnails still load on the UI thread.)
 `workers.Latest` is for requests where only the newest answer matters (the photo just selected, the search
 just typed).
 
 ### Changing files: the journal, undo and crash safety
 
-Every change to the library goes the same way, whatever started it (the Edit menu, organizing,
+Every change to the library goes the same way, whatever started it (the ☰ menu, a right-click menu, organizing,
 duplicates, people, details):
 
 1. **Plan:** a `plan_*` function works out the steps (move this file there, write these details, name these
@@ -123,6 +124,29 @@ that, when the file last changed. Sorting, showing, organizing and duplicates al
 `organize.plan_local_names` is the one-time rename (1.17) of files named by UTC before; `ui/organizer.py` runs it
 once, after a pass with no date left to read again.
 
+### Bringing photos in: import automations
+
+`core/autoimport.py` is the import automations (in the code: *rules*, each with a *watch* folder, the
+app's Import from; *tidy* is "Rename and organize into year folders"). `looks` lists the watch folders
+cheaply, `check` works out what's new for one automation (by content, against the library and `import_seen`, the
+record of every file dealt with), and `run` takes the batches in as one journaled operation through
+`fileops`.
+`ui/autoimport.py` checks the folders on a timer, runs the plans, shows the bar and Review
+(`views/review_dialog.py`) for automations that ask first. `core/background.py` makes and removes the
+login entry for **Keep running in the background**, and `ui/tray.py` is its tray icon.
+
+### Declutter, Trash, export and updates
+
+- `core/junk.py`: Declutter's list, worked out from the search vectors every photo already has (no
+  photo is read again); the page is the timeline with a section per kind of junk.
+- `core/trash.py`: the system's Trash on each platform (freedesktop.org on Linux, the Recycle Bin on
+  Windows, the Finder's on a Mac), so a deleted photo can be restored from the file manager too.
+- `core/export.py`: copies out of the library, originals or smaller JPEGs; not journaled, since the
+  library doesn't change.
+- `core/updates.py`: is there a newer release on GitHub, and the right file for how this copy was
+  installed, checked against the release's SHA-256; `ui/updates.py` downloads it at startup and offers
+  to restart into it.
+
 ### Phones
 
 `core/phones.py` keeps the paired phones (`phones.json` in the data folder, each with only its secret's SHA-256),
@@ -135,7 +159,7 @@ connections), and announces again when they change; `ui/phone_link.py` starts an
 an import check 10 seconds later). Pairing is `ui/views/pair_dialog.py`; Settings > Phones lists them.
 
 The Android app is in `android/` (Kotlin, Jetpack Compose); `android/README.md` says how to build and
-release it. `Sending.kt` runs the background sending (WorkManager, Wi-Fi only) and fetches the library file;
+release it (a tag like `android-v0.8`). `Sending.kt` runs the background sending (WorkManager, Wi-Fi only) and fetches the library file;
 `Library.kt` reads it and matches it to the phone's own files (`PhonePhotos.kt`, by the same quick
 fingerprint as `util.quick_hash`); `Screens.kt` and `MainActivity.kt` are the screens; `Edits.kt` turns
 and trashes; `Search.kt` and `Tokenizer.kt` port the desktop's search.

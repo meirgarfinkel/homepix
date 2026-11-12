@@ -1,4 +1,4 @@
-"""M3b: library folders, background indexing, search and the folder tree, in the core and in the Qt app."""
+"""Library folders, background indexing, search and the folder tree, in the core and in the Qt app."""
 
 import os
 import shutil

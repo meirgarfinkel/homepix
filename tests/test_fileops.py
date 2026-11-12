@@ -757,7 +757,7 @@ def test_delete_on_more_than_20_asks_first(home, lib, app, monkeypatch):
         monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(a[2]) or answer[0])
         w.files.select_all.trigger()
         w.files.trash.trigger()
-        assert asked == ["Move 21 photos to the Trash?\n\nEdit > Undo (Ctrl+Z) brings them back."]
+        assert asked == ["Move 21 photos to the Trash?\n\nUndo in the ☰ menu (Ctrl+Z) brings them back."]
         assert not w.ops.busy and len(list(lib.glob("*.jpg"))) == 21  # Cancel: nothing moved
         answer[0] = QMessageBox.StandardButton.Yes
         w.files.trash.trigger()

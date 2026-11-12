@@ -1,7 +1,7 @@
 # HomePix — requirements
 
 A complete, private photo manager for the desktop, with AI search and face recognition built in.
-Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5). **v1** = in the app now,
+Agreed 2026-10-27, brought up to date 2026-11-12 (HomePix 1.17, phone app 0.8). **v1** = in the app now,
 **v2** = next, **Later** = not designed now but not ruled out.
 
 ## Ground rules (apply to everything)
@@ -37,16 +37,14 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
      `vX.Y.Z`, whatever GitHub marks latest). The file must come from HomePix's own GitHub releases and match
      the release's SHA-256, or it isn't downloaded; one already downloaded that still matches is kept. The
      AI models are pinned to one revision each, every file with its SHA-256.
-7. **Existing data carries over.** The current index, 41,000 faces and 27 named people survive the move to
-   the new app.
 
 ## 1. Library and formats
 
 | Requirement | Priority |
 |---|---|
 | Several library folders, including removable drives; a disconnected drive's photos stay browsable as offline | v1 |
-| Photos: JPEG, PNG, HEIC, WebP, GIF, TIFF, DNG (DNG via its embedded preview) | v1 |
-| Videos (MP4, MOV): shown in the timeline and folders with a plain thumbnail, **played in the viewer** (Qt Multimedia with FFmpeg: H.264, HEVC and more; turned the way the phone held it), included in rename/organize and exact dedupe. **No AI** (no search, no faces) | v1 |
+| Photos: JPEG, PNG, HEIC/HEIF, WebP, GIF, TIFF, BMP, DNG (DNG via its embedded preview) | v1 |
+| Videos (MP4, MOV, M4V): shown in the timeline and folders with a plain thumbnail, **played in the viewer** (Qt Multimedia with FFmpeg: H.264, HEVC and more; turned the way the phone held it), included in rename/organize and exact dedupe. **No AI** (no search, no faces) | v1 |
 | Live Photos (HEIC + MOV) and sidecars (`.aae`, `.xmp`, `.json`) always kept together as one item | v1 |
 | Import from a folder, SD card or phone: preview, copy into year folders, optional rename, skip what's already in the library. Built as import automations (section 9) | v1 |
 | A library folder carries what's known about its photos (faces and names, search, duplicate choices, folders left out) in `.homepix/`, kept up to date by itself: copied to another computer (any path, any system), it's brought back in without indexing again. Photos are matched by content | v1 |
@@ -69,7 +67,7 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 | Requirement | Priority |
 |---|---|
 | Keywords, written into the file | v1 |
-| Organizer: rename to `YYYY_MM_DD_HH_MM_SS.ext` and sort into `<library>/<year>/`; no real date goes to `Unsorted/`. Two modes: *organize a folder* and *tidy the library*. Manual, previewed, undoable. Rules from the Sep 2026 pipeline (`~/Pictures/.claude_pipeline_history/`) | v1 |
+| Organizer: rename to `YYYY_MM_DD_HH_MM_SS.ext` and sort into `<library>/<year>/`; no real date goes to `Unsorted/`. Two modes: *organize a folder* and *tidy the library*. Manual, previewed, undoable | v1 |
 | Every date is the time on the clock where it was taken (local time). A video's clock and a Pixel's `PXL_` name are UTC, so they're turned into local time; a name and the file that say the same moment a time zone apart (a quarter hour to 14 hours, to the quarter hour) are one date, the file's; a name with only a day never beats a time on that day | v1 |
 | One-time rename to local time (1.17): once indexing has read every date again, the files the organizer named by UTC before (videos, Pixel photos), now a time zone away from their date, are renamed to it (into the next year's folder when that changes), as one change Undo takes back. It never runs again, even after Undo | v1 |
 
@@ -77,8 +75,8 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 
 | Requirement | Priority |
 |---|---|
-| Selection: click, Ctrl/Shift-click, Ctrl+A, drag-box, keyboard | v1 |
-| Right-click menu, toolbar, keyboard shortcuts | v1 |
+| Selection: click, Ctrl/Shift-click, Ctrl+A, dragging a box across photos, keyboard | v1 |
+| Right-click menu, the ☰ menu, keyboard shortcuts | v1 |
 | Copy / cut / paste / move into folders; rename (single and batch) | v1 |
 | Ctrl+C / Ctrl+V through the **system clipboard**, so files paste into the file manager and other apps | v1 |
 | Delete to Trash (the Recycle Bin on Windows); undo and redo (Ctrl+Z / Ctrl+Shift+Z) for every operation. Delete on more than 20 photos asks first. Ctrl+A selects only on the photos page | v1 |
@@ -99,7 +97,7 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 
 | Requirement | Priority |
 |---|---|
-| Lossless rotate and flip (orientation tag) | v1 |
+| Lossless rotate and flip (orientation tag), from the right-click menu | v1 |
 | Open in an external editor (no in-app editing beyond rotate) | v1 |
 
 ## 7. AI (photos only)
@@ -107,8 +105,9 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 | Requirement | Priority |
 |---|---|
 | Search by description | v1 |
+| **Declutter** (in the ☰ menu): photos that may be junk (ads and flyers, screenshots, documents and receipts, memes, accidental shots), found with the search model from what every photo already has, listed by kind; picked ones go to the Trash like any delete, with Undo. Nothing goes by itself | v1 |
 | Faces: boxes in the viewer; name, rename, merge, split, fix wrong matches; the "who is this" flow | v1 |
-| Automatic scene labels (screenshots, documents, receipts, food, beach, ...) using the existing search model, and filtering by them | Later |
+| Automatic scene labels for every photo (food, beach, ...) using the existing search model, and filtering by them (Declutter does this for junk only) | Later |
 | Burst grouping with best-shot suggestions | v2 |
 | Search text inside photos (OCR) | Later |
 | Place names from GPS, offline | Later |
@@ -132,16 +131,16 @@ Photos arrive in a folder (the automation's **Import from** folder) by the HomeP
 |---|---|
 | **Import automations** in Settings: new, edit, pause, remove; as many as wanted (one per phone, say) | v1 |
 | Each automation: **Name**; **Import from** (not a whole library folder and not containing one; no two automations on one folder; one inside the library is added to Excluded folders, after a confirmation, and its photos never count as already in the library or as duplicates); **Rename and organize into year folders** (right under Name, above Import from, off by default: rename `YYYY_MM_DD_HH_MM_SS.ext` and sort into `<library>/<year>/`, `Unsorted/` with no date, same rules as the organizer; Import to then becomes a choice of library folder); **Import to** (any folder in the library; files keep their names); **Empty the Import from folder after importing** (on by default; off: files are copied and left there); **Ask me before importing** (off by default); **Pause automation** | v1 |
-| Checked when the app opens; then the watch folders are looked at **every minute** (only listed, no file read) and checked when something new has finished arriving, and fully **every hour** (no live watching); a **Check now** button in Settings | v1 |
-| A file is only taken once it's been unchanged for 2 minutes (a file time in the future doesn't hold it back). A paired phone's file arrives whole (section 10), so it's taken at once: a check runs 10 seconds after the last one arrives. Hidden files and sync apps' part-files (`*.tmp`, `*.part`, `.~*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
+| Checked when the app opens; then the Import from folders are looked at **every minute** (only listed, no file read) and checked when something new has finished arriving, and fully **every hour** (no live watching); a **Check now** button in Settings | v1 |
+| A file is only taken once it's been unchanged for 2 minutes (a file time in the future doesn't hold it back). A paired phone's file arrives whole (section 10), so it's taken at once: a check runs 10 seconds after the last one arrives. Hidden files and sync apps' part-files (`*.part`, `*.partial`, `*.tmp`, `*.crdownload`, `~$*`) are ignored; Windows cloud-only placeholders are skipped, never downloaded | v1 |
 | Already in the library (same content) → not imported again. When emptying the folder, such a file goes to the Trash; otherwise it's left and remembered | v1 |
 | A file that comes back changed to the same place in Import from (turned or edited on the phone) is a new version of the photo it became, but only when it's the same picture (the same pixels: turned) or has the same date taken (edited). Anything else at that place (a reused name: WhatsApp after a reinstall, a camera after its card was formatted) comes in as a new photo, and nothing is replaced. A new version takes that photo's place, wherever it is now, and the old version goes to the Trash. Who's in it is kept when only its orientation changed (the face boxes turn with it); an edit is indexed again. Undo puts the old version back | v1 |
 | Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
-| After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Edit > Undo names it and takes it back | v1 |
+| After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Undo in the ☰ menu names it and takes it back | v1 |
 | An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; a line under each says where it will go); Import or Cancel | v1 |
 | A missing or unplugged Import from or Import to folder: nothing happens and nothing is treated as deleted; Settings shows why it's waiting | v1 |
 | The automation screen warns that emptying the folder also deletes there when the app that fills it copies deletions back (iCloud for Windows does); with iCloud or icloudpd, leave it off. The HomePix phone app never deletes | v1 |
-| Only while the app is running. **Keep running in the background** (Settings, off by default): HomePix starts hidden at each login (an autostart entry on Linux, the Startup folder on Windows, a LaunchAgent on macOS), and closing the window hides it instead of quitting; opening HomePix shows it again; File > Quit stops it until the next login. While it runs this way, an icon in the system tray (where the desktop has one) opens the window, and its menu has Open HomePix and Quit | v1 |
+| Only while the app is running. **Keep running in the background** (Settings, off by default): HomePix starts hidden at each login (an autostart entry on Linux, the Startup folder on Windows, a LaunchAgent on macOS), and closing the window hides it instead of quitting; opening HomePix shows it again; Quit in the ☰ menu stops it until the next login. While it runs this way, an icon in the system tray (where the desktop has one) opens the window, and its menu has Open HomePix and Quit | v1 |
 | Settings shows, per automation, when it last checked and last imported | v1 |
 
 ## 10. Phones with the HomePix app (agreed 2026-11-11, built in 1.16)
@@ -165,7 +164,7 @@ and HomePix sends back what it knows about the photos on that phone.
 | **The library's details, back to the phone:** the phone tells the quick fingerprints of its photos and videos and the places of those in DCIM; HomePix answers with a small file in the same form as a folder's portable copy, holding only the photos the phone has (same fingerprint, or imported from that place in this phone's own Import from folder), their faces, the people in them and their search data, without excluded folders or the undo history. Made again only when the library, its folders or the phone's files changed; otherwise "the same" (no file). Deleted with the phone when it's unpaired | v1 |
 | Answers only while HomePix runs (Keep running in the background covers a closed window) and a phone is paired or being paired; a paused or removed automation takes nothing (the phone is told why) | v1 |
 
-## 11. The HomePix Android app (built 2026-11, phone app 0.5)
+## 11. The HomePix Android app (built 2026-11, phone app 0.8)
 
 A viewer for the photos on the phone, with what the computer knows about them, and the sender for section 10.
 Android 11 or newer (minSdk 30, target 35). Kotlin and Jetpack Compose, in `android/`.
@@ -178,7 +177,7 @@ Android 11 or newer (minSdk 30, target 35). Kotlin and Jetpack Compose, in `andr
 | **Unpair on the phone** tells the computer when it can be reached, and the computer unpairs it as its own Unpair does (its own automation goes too, unless photos it sent are still waiting to be imported). Away from home the phone unpairs by itself and says the computer still lists it. Updating the app, uninstalling it or clearing its storage sends nothing | v1 |
 | **Every state says what it is:** no library yet; a library this app can't read (and which side to update); none of the phone's photos in the library yet; the computer has unpaired this phone (nothing more is tried until it's paired again); the computer away ("Photos are sent when it is", not an error); "Sending now…"; Send now off Wi-Fi ("Sends once this phone is on Wi-Fi"); a library file that couldn't be fetched. After Unpair the app goes back to "No library" at once. "Look again" shows only when not paired (paired, it looks by itself) | v1 |
 | Viewer: swipe between photos, pinch to zoom, videos and motion photos play, swipe up for the details (date, camera, settings, size, people, where it was taken as coordinates with **Open in Maps**, path). No place names: the phone's lookup would send where each photo was taken to Google. Offline place names are Later (section 7) | v1 |
-| **Turn:** a quarter turn written into the photo's own orientation (only the tag changes, never the picture), on a hidden copy that then takes the photo's place in one step, so a phone switched off part way still has the original. The file keeps its time (a second on, so it's seen as changed). The changed file goes to the computer, which updates its copy and keeps who's in it (section 9). Only a JPEG is turned in its file; anything else (HEIC, PNG, WebP) or a mirrored photo is turned in the app only | v1 |
+| **Turn:** a quarter turn written into the photo's own orientation (only the tag changes, never the picture), on a hidden copy that then takes the photo's place in one step, so a phone switched off part way still has the original. The file keeps its time (a second on, so it's seen as changed). A changed file in the camera folder (DCIM) goes to the computer, which updates its copy and keeps who's in it (section 9). Only a JPEG is turned in its file; anything else (HEIC, PNG, WebP) or a mirrored photo is turned in the app only | v1 |
 | **Share** through Android's share sheet; **Trash** sends the file to the phone's own trash (or, for a file that can't go there, deletes it after asking). Neither ever touches the computer's copy | v1 |
 | **Sending** (section 10): on Wi-Fi only (an unmetered network); soon after a photo or video is taken, every 15 minutes, when the app opens, and once more 2 minutes after a batch is sent; in small batches at background priority, so the app and the phone never stall. Away from the home network nothing is tried for long, and photos wait for the next time | v1 |
 | **What's sent, and what isn't:** a photo on an SD card goes to its own place on the computer ("SD 1A2B-3C4D/Camera/..."), so it never lands on the phone's own file of the same name. A file the computer doesn't take (its name or kind) is counted on the Computer tab, not quietly marked sent | v1 |

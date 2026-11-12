@@ -1,5 +1,5 @@
 """File operations in the app: each runs on a worker thread with the library to itself (indexing
-waits), shows a progress window if it takes more than a moment, and can be undone from the Edit menu."""
+waits), shows a progress window if it takes more than a moment, and can be undone from the ☰ menu."""
 
 import os
 
@@ -76,8 +76,8 @@ class FileOps(QObject):
         """work(progress, should_stop) on a worker thread, then finished(result, error) here.
         exclusive: no indexing meanwhile (anything that changes the library); rescan(result): whether it
         left something for indexing to find, so look through the folders again afterwards. quiet: no
-        progress window (a quick one, or work nobody asked for just now, like auto import). wait: if
-        another is under way, start this one when it ends (False: don't; auto import tries again itself).
+        progress window (a quick one, or work nobody asked for just now, like an import automation). wait: if
+        another is under way, start this one when it ends (False: don't; an automation tries again itself).
         False if it won't run: another is under way and it doesn't wait, or one is waiting already."""
         if self.busy:
             if wait and self._next is None:
@@ -255,7 +255,7 @@ class FileOps(QObject):
 
     @staticmethod
     def history() -> tuple[str | None, str | None]:
-        """What Undo and Redo would take back, for the Edit menu."""
+        """What Undo and Redo would take back, for the ☰ menu."""
         db = open_db()
         try:
             u, r = fileops.can_undo(db), fileops.can_redo(db)

@@ -2,7 +2,7 @@
 
 This turns HomePix into something you can hand to anyone:
 
-- **Linux:** `HomePix-x86_64.AppImage`, a single file of about 235 MB. Make it executable once, then double-click.
+- **Linux:** `HomePix-x86_64.AppImage`, a single file of about 170 MB. Make it executable once, then double-click.
 - **Ubuntu, Debian, Mint, Pop!_OS:** `HomePix.deb`, the same app as a package. Double-click it, and the software installer installs it.
 - **Windows:** `HomePixSetup.exe`, a normal installer with Start menu and desktop shortcuts.
 - **Mac:** `HomePix.dmg`, a disk image holding `HomePix.app` to drag into Applications.
@@ -114,7 +114,7 @@ Change the code, build again, and share the new file. Each person's index, folde
 
 Raise the version in `homepix/__init__.py` and `AppVersion` in `packaging/homepix.iss` together, so the Windows installer replaces the old version cleanly. Then push a tag for it (`git tag v1.0.0 && git push origin v1.0.0`): GitHub builds and checks every download and publishes them as a Release.
 
-## Why it's about 140 MB
+## Why it's about 170 MB
 
 Unpacked it's about 400 MB, and the AppImage compresses that. The biggest parts are OpenCV (about 150 MB unpacked), used for face detection and video frames; Qt (about 95 MB), which draws the window; and onnxruntime (30 MB), which runs the search model. The AI models aren't included: they download on first use. A later trim could run the two face models through onnxruntime and read video frames another way, dropping OpenCV.
 

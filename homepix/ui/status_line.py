@@ -1,4 +1,4 @@
-"""The status line at the bottom of the sidebar (as in HomeDocs): what indexing is doing or a message like
+"""The status line at the bottom of the sidebar: what indexing is doing or a message like
 "Moved 3 photos to Trash", a thin progress bar under it, and an x to stop indexing. It's never over the
 page. Messages still go through the window's QStatusBar (which stays hidden): this shows them."""
 
