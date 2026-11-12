@@ -144,7 +144,13 @@ fun Timeline(lib: Library, all: List<Int>, title: String?, open: (List<Int>, Int
             Text(title, Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        PhotoGrid(lib, cells, items, open)
+        if (items.isEmpty() && title == null) Centered {
+            Text(
+                "None of the photos on this phone are in your library yet. They show here once HomePix on " +
+                    "your computer has them.",
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        } else PhotoGrid(lib, cells, items, open)
     }
 }
 

@@ -66,6 +66,7 @@ data class Computer(
             .putString("name", name).putString("addresses", addresses.joinToString(","))
             .putInt("port", port).putString("fingerprint", fingerprint.hex())
             .putString("token", token).putString("last", last)
+            .remove("unpaired") // (paired again: known again)
             .apply()
     }
 
@@ -314,6 +315,26 @@ fun pair(context: Context, code: PairCode): String {
     return computer
 }
 
+/**
+ * Unpair: the computer is told when it can be reached (it unpairs this phone as its own Unpair does),
+ * and the phone forgets it either way. True if the computer was told (or already didn't know it).
+ */
+fun unpair(context: Context): Boolean {
+    val c = Computer.load(context) ?: return true
+    Sending.stop(context)
+    val told = !Sending.metered(context) && runCatching {
+        val (host, port) = reach(context, c.addresses, c.last, c.port, c.fingerprint) ?: return@runCatching false
+        try {
+            Link(host, port, c.fingerprint, c.token).post("/v1/unpair", JSONObject())
+        } catch (e: Refused) {
+            if (e.status != 401) throw e // (401: it had unpaired this phone already)
+        }
+        true
+    }.getOrDefault(false)
+    Computer.forget(context)
+    return told
+}
+
 /** A photo or video on the phone, and its place for the computer (Camera/IMG_1.jpg). */
 data class Local(val file: File, val rel: String, val size: Long, val modified: Long) {
     val key get() = "$rel|$size|$modified"
@@ -447,22 +468,33 @@ object Sending {
     }
 
     private fun sendNew(context: Context, stopped: () -> Boolean): Boolean {
-        val computer = Computer.load(context) ?: return true
+        Computer.load(context) ?: return true
         if (metered(context)) return true // (Wi-Fi only, whatever a job was saved with)
-        val now = System.currentTimeMillis()
-        SendState.note(context, "tried" to now)
+        SendState.note(context, "running" to System.currentTimeMillis()) // (a time: a run cut off by the system is not "running" for ever)
+        try {
+            return sendNewNow(context, stopped)
+        } finally {
+            SendState.note(context, "running" to 0L)
+        }
+    }
+
+    private fun sendNewNow(context: Context, stopped: () -> Boolean): Boolean {
+        val computer = Computer.load(context) ?: return true
         val (host, port) = reach(context, computer.addresses, computer.last, computer.port, computer.fingerprint) ?: run {
-            SendState.note(context, "problem" to "Couldn't reach ${computer.name}. Sending when it's on the same network.")
+            SendState.note(context, "away" to "${computer.name} isn't on this network. Photos are sent when it is.", "problem" to "")
             return true // (not "try again soon": the next photo, or the 15-minute check, tries again)
         }
+        SendState.note(context, "away" to "")
         if (host != computer.last || port != computer.port) computer.copy(last = host, port = port).save(context)
         val link = Link(host, port, computer.fingerprint, computer.token)
         // The library's details first: the computer has most of the phone's photos already (the first time,
         // checking every photo here takes a while), so they show at once.
-        try {
+        val libraryProblem = try {
             fetchLibrary(context, link)
+            ""
         } catch (e: IOException) {
-            android.util.Log.w("HomePix", "library: ${e.message}")
+            if (e is Refused && e.status == 401) return unpairedThere(context)
+            "Couldn't get the library's details from ${computer.name}: ${e.message ?: "no answer"}"
         }
         val sentFile = File(context.filesDir, "sent.tsv")
         val sent = HashSet<String>().apply { if (sentFile.isFile) sentFile.forEachLine { add(it) } }
@@ -483,9 +515,9 @@ object Sending {
                     left--
                 }
                 if (!whole) return false
-                SendState.note(context, "waiting" to left, "problem" to "")
+                SendState.note(context, "waiting" to left, "problem" to libraryProblem)
             }
-            SendState.note(context, "problem" to "", "waiting" to 0, "count" to count)
+            SendState.note(context, "problem" to libraryProblem, "waiting" to 0)
             if (count > 0) {
                 fetchLibrary(context, link)
                 // and again once the computer has taken them into the library (a few seconds after they
@@ -494,12 +526,20 @@ object Sending {
             }
             return true
         } catch (e: IOException) {
+            if (e is Refused && e.status == 401) return unpairedThere(context)
             SendState.note(context, "problem" to (e.message ?: "Sending stopped."))
-            if (e is Refused && e.status == 401) Computer.prefs(context).edit().putBoolean("unpaired", true).apply()
             return false
         } finally {
             Fingerprints.save(context)
         }
+    }
+
+    /** The computer doesn't know this phone any more: nothing more is tried until it's paired again. */
+    private fun unpairedThere(context: Context): Boolean {
+        Computer.prefs(context).edit().putBoolean("unpaired", true).apply()
+        SendState.note(context, "problem" to "")
+        stop(context)
+        return true
     }
 
     /**
@@ -533,18 +573,22 @@ object Sending {
         val version = link.library(
             JSONObject().put("qhashes", qhashes).put("sources", sources).put("version", known ?: JSONObject.NULL), dst,
         ) ?: return
-        prefs.edit().putString("library", version).putLong("library_at", System.currentTimeMillis()).apply()
+        prefs.edit().putString("library", version).apply()
     }
 
-    /** On mobile data, or another network that's paid for by the amount used? */
-    private fun metered(context: Context): Boolean =
+    /** On mobile data, or another network that's paid for by the amount used (or none)? */
+    fun metered(context: Context): Boolean =
         (context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).isActiveNetworkMetered
+
+    /** Paired, and the computer still knows this phone (else nothing is tried until it's paired again). */
+    private fun paired(context: Context) =
+        Computer.load(context) != null && !Computer.prefs(context).getBoolean("unpaired", false)
 
     private val wifi get() = Constraints.Builder().setRequiredNetworkType(NetworkType.UNMETERED)
 
     /** Every 15 minutes, and soon after a photo or video is taken, on Wi-Fi. */
     fun schedule(context: Context) {
-        if (Computer.load(context) == null) return
+        if (!paired(context)) return
         val wm = WorkManager.getInstance(context)
         wm.enqueueUniquePeriodicWork(
             // UPDATE, not KEEP: a job saved by an older version gets today's Wi-Fi rule
@@ -571,7 +615,7 @@ object Sending {
     /** Send now (when the app opens, say), on Wi-Fi. asked: Send now was pressed (so a try already
      * waiting for its turn is replaced, not waited for). */
     fun now(context: Context, asked: Boolean = false) {
-        if (Computer.load(context) == null) return
+        if (!paired(context)) return
         WorkManager.getInstance(context).enqueueUniqueWork(
             "send-now", if (asked) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<SendWorker>().setConstraints(wifi.build()).build(),

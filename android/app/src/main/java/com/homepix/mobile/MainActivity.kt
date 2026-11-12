@@ -178,11 +178,17 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
     var lib by remember { mutableStateOf<Library?>(null) }
     var status by remember { mutableStateOf("Looking for your library…") }
     var tries by remember { mutableStateOf(0) }
+    var paired by remember { mutableStateOf(false) }
+    var said by remember { mutableStateOf("") } // what just happened (unpairing), shown with "No library"
+    var unreadable by remember { mutableStateOf(false) } // (looked at again when asked, and every half minute)
+    val unpaired = { what: String -> said = what; pairing = false; lib = null; status = "Looking for your library…"; tries++; Unit }
     LaunchedEffect(tries) {
         val t0 = System.currentTimeMillis()
         val roots = withContext(Dispatchers.IO) { Library.find(context) }
         android.util.Log.i("HomePix", "found ${roots.size} libraries in ${System.currentTimeMillis() - t0} ms")
-        lib = if (roots.isEmpty() && withContext(Dispatchers.IO) { Computer.load(context) } != null) {
+        paired = withContext(Dispatchers.IO) { Computer.load(context) } != null
+        unreadable = false
+        lib = if (roots.isEmpty() && paired) {
             status = "No library yet. It comes from your computer the next time this phone reaches it on Wi-Fi."
             null
         } else if (roots.isEmpty()) {
@@ -195,6 +201,7 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                 .also { android.util.Log.i("HomePix", "loaded in ${System.currentTimeMillis() - t1} ms") }
         } catch (e: LibraryUnreadable) {
             status = "No library shown. ${e.message}"
+            unreadable = true
             null
         } catch (e: Exception) {
             // (a copy caught while it was being replaced, say: looked at again in a few seconds)
@@ -209,29 +216,38 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
         // open): look again every few seconds, so the photos show as soon as it comes. A light look: only
         // whether that one file is there.
         LaunchedEffect(Unit) {
+            var n = 0
             while (true) {
                 delay(3000)
+                n++
                 if (status.startsWith("No library") &&
-                    (status.endsWith("Looking again…") || withContext(Dispatchers.IO) { Computer.load(context) } != null)) tries++
+                    (status.endsWith("Looking again…") || (paired && (!unreadable || n % 10 == 0)))) tries++
             }
         }
     }
     if (l == null && (pairing || pairCode != null)) {
         BackHandler { pairing = false }
-        ComputerScreen(pairCode, pairTaken)
+        ComputerScreen(pairCode, pairTaken, unpaired, said)
         return
     }
     if (l == null) {
         Centered {
             if (!status.startsWith("No library")) CircularProgressIndicator()
             Spacer(Modifier.height(16.dp))
+            if (said.isNotEmpty()) {
+                Text(said, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+            }
             Text(status, textAlign = TextAlign.Center)
             if (status.startsWith("No library")) {
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { status = "Looking for your library…"; tries++; Sending.now(context, asked = true) }) { Text("Look again") }
-                Spacer(Modifier.height(8.dp))
+                // (paired, the library is looked for by itself every few seconds)
+                if (!paired || unreadable) {
+                    Button(onClick = { status = "Looking for your library…"; tries++ }) { Text("Look again") }
+                    Spacer(Modifier.height(8.dp))
+                }
                 androidx.compose.material3.OutlinedButton(onClick = { pairing = true }) {
-                    Text(if (Computer.load(context) != null) "Computer" else "Pair with a computer")
+                    Text(if (paired) "Computer" else "Pair with a computer")
                 }
             }
         }
@@ -250,8 +266,11 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
     LaunchedEffect(l, resumes) {
         while (fresh == null) {
             if (withContext(Dispatchers.IO) { l.changed() }) {
+                // (no library any more: unpaired, or the copied folder was deleted)
+                val roots = withContext(Dispatchers.IO) { Library.find(context) }
+                if (roots.isEmpty()) { unpaired(""); return@LaunchedEffect }
                 // a copy caught half written can't be read: try again next time
-                fresh = runCatching { Library.read(context, withContext(Dispatchers.IO) { Library.find(context) }) }.getOrNull()
+                fresh = runCatching { Library.read(context, roots) }.getOrNull()
             }
             if (fresh == null) delay(30_000)
         }
@@ -276,7 +295,7 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                     0 -> Timeline(l, all, null, open)
                     1 -> PeopleGrid(l) { pages.add(Page.PersonPage(it)) }
                     2 -> SearchScreen(l, search, open) { pages.add(Page.PersonPage(it)) }
-                    else -> ComputerScreen(pairCode, pairTaken)
+                    else -> ComputerScreen(pairCode, pairTaken, unpaired, said)
                 }
             }
         }

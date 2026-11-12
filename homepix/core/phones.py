@@ -169,6 +169,19 @@ def forget(phone_id: str):
         f.unlink(missing_ok=True)
 
 
+def unpair(phone_id: str):
+    """Unpair a phone as Settings > Phones > Unpair does: it's forgotten, and so is its own automation,
+    unless photos it sent are still waiting in that automation's folder (then it stays, to be removed
+    once they're in)."""
+    phone = next((p for p in load_phones() if p.id == phone_id), None)
+    if phone is None:
+        return
+    rule = next((r for r in autoimport.load_rules() if r.id == phone.rule_id), None) if phone.own_rule else None
+    forget(phone_id)
+    if rule is not None and not autoimport.has_waiting(rule.watch):
+        autoimport.save_rules([r for r in autoimport.load_rules() if r.id != rule.id])
+
+
 def _sha(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
