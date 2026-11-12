@@ -28,11 +28,11 @@ from PySide6.QtWidgets import (
 
 from ...core import autoimport, background, phones
 from ...core.settings import (
+    changing_settings,
     excluded_folders,
     library_folders,
     load_settings,
     pictures_folder,
-    save_settings,
     set_excluded,
 )
 from ...core.util import within
@@ -261,9 +261,8 @@ class SettingsDialog(QDialog):
             )
 
     def _save_editor(self):
-        s = load_settings()
-        s["editor"] = self.editor.text().strip()
-        save_settings(s)
+        with changing_settings() as s:
+            s["editor"] = self.editor.text().strip()
 
     def done(self, r):
         self._save_editor()

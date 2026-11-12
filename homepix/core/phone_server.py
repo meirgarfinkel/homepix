@@ -248,7 +248,7 @@ class Server:
         self._info = None
 
     def start(self):
-        from .settings import load_settings, save_settings
+        from .settings import changing_settings, load_settings
 
         port = self.want_port if self.want_port is not None else load_settings().get("phone_port", phones.PORT)
         ctx = _context()
@@ -258,9 +258,8 @@ class Server:
             self._http = _Server(("0.0.0.0", 0), ctx, self.events)
         self.port = self._http.server_address[1]
         if self.want_port is None and self.port != port:
-            s = load_settings()
-            s["phone_port"] = self.port
-            save_settings(s)
+            with changing_settings() as s:
+                s["phone_port"] = self.port
         threading.Thread(target=self._http.serve_forever, name="phones", daemon=True).start()
         if self.announce:
             self._announcing = threading.Thread(target=self._announce, name="phones-announce", daemon=True)

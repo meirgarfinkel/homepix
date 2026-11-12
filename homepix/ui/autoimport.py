@@ -68,8 +68,17 @@ class AutoImporter(QObject):
         self.waiting: dict[str, autoimport.Batch] = {}  # rule id: what it found, for rules that wait for review
 
     def start(self):
-        QTimer.singleShot(FIRST, self.check)
+        self._first = QTimer(self)
+        self._first.setSingleShot(True)
+        self._first.timeout.connect(self.check)
+        self._first.start(FIRST)
         self.timer.start()
+
+    def stop(self):
+        """No more checks (the window closed for good)."""
+        for t in (self.timer, getattr(self, "_first", None), getattr(self, "_soon", None)):
+            if t is not None:
+                t.stop()
 
     def soon(self):
         """A phone's file has arrived: check in a few seconds (once the rest of what it's sending is in),

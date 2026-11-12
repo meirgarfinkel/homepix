@@ -30,7 +30,7 @@ from pathlib import Path
 from .. import __version__
 from .config import data_dir, db_file
 from .db import VERSION, DatabaseVersionError, columns, open_db, upgrade
-from .settings import load_settings, save_settings, set_excluded
+from .settings import changing_settings, load_settings, set_excluded
 from .util import folder_prefix, quick_hash
 
 FOLDER = ".homepix"
@@ -72,9 +72,8 @@ def _copy_owner(root) -> str | None:
 
 
 def _set_copy_owner(root, library: str):
-    s = load_settings()
-    s.setdefault("copies", {})[str(root)] = library
-    save_settings(s)
+    with changing_settings() as s:
+        s.setdefault("copies", {})[str(root)] = library
 
 
 def copy_details(root) -> dict | None:
