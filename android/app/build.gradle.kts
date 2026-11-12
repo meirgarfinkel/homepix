@@ -34,7 +34,6 @@ android {
         targetSdk = 35
         versionCode = 8
         versionName = "0.8"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // the phone, and the emulator
     }
 
     signingConfigs {
@@ -49,7 +48,11 @@ android {
     }
 
     buildTypes {
+        // Phones are arm64; the x86_64 libraries are only for the emulator, which runs debug builds.
+        // (Left out of a release, they'd add about 40 MB to every download.)
+        debug { ndk { abiFilters += listOf("arm64-v8a", "x86_64") } }
         release {
+            ndk { abiFilters += listOf("arm64-v8a") }
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
