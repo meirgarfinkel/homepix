@@ -56,8 +56,8 @@ class PeopleActions:
 
     def hide(self, face_ids):
         self._run_change(
-            f"Ignore {plural(len(face_ids), 'face')}",
-            f"Won't ask about {plural(len(face_ids), 'face')} again",
+            f"Mark {plural(len(face_ids), 'face')} as no one I know",
+            f"Marked {plural(len(face_ids), 'face')} as no one I know (not asked about again)",
             lambda db: people.plan_hide(db, face_ids),
         )
 

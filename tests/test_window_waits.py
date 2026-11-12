@@ -85,3 +85,45 @@ def test_quitting_waits_for_changes_before_closing_exiftool(monkeypatch):
     monkeypatch.setattr(os, "_exit", lambda code: order.append(code))
     app_mod._exit(0)
     assert order == ["waited", "closed ExifTool", 0]
+
+
+def test_the_indexer_is_only_watched_while_it_runs(app, pf, lib, monkeypatch):
+    from conftest import photo
+
+    photo(lib / "a.jpg")
+    pf.add_folder(lib)
+    w = open_window(app, ready=None)
+    try:
+        timer, indexer = w.watcher._timer, w.watcher.indexer
+        wait_until(app, lambda: not indexer.snapshot()["running"] and not timer.isActive())
+        gate, real = threading.Event(), indexer._run
+        monkeypatch.setattr(indexer, "_run", lambda: (gate.wait(10), real()))  # (a pass that takes a while)
+        w.watcher.start()
+        for _ in range(5):
+            app.processEvents()
+        assert timer.isActive()  # (a pass: its progress is shown)
+        gate.set()
+        wait_until(app, lambda: not timer.isActive())  # (done: nothing polls it until the next)
+    finally:
+        w.close()
+
+
+def test_removing_a_library_folder_waits_for_the_change_under_way(app, pf, lib, tmp_path):
+    from homepix.core.settings import library_folders
+
+    other = tmp_path / "Other"
+    other.mkdir()
+    pf.add_folder(lib)
+    pf.add_folder(other)
+    w = open_window(app, ready=None)
+    try:
+        gate = threading.Event()
+        w.ops._in_background("a change", lambda p, s: gate.wait(10), lambda r, e: None, exclusive=False)
+        w.remove_library_folder(str(other))
+        for _ in range(20):
+            app.processEvents()
+        assert str(other) in library_folders()  # (not while the change runs)
+        gate.set()
+        wait_until(app, lambda: str(other) not in library_folders() and not w.ops.busy)
+    finally:
+        w.close()

@@ -5,7 +5,6 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QSize, Qt, 
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QCompleter,
     QDialog,
     QDialogButtonBox,
     QLabel,
@@ -187,23 +186,8 @@ class FaceGrid(QListWidget):
             p.end()
 
 
-class NameBox(QLineEdit):
-    """A name to type, with the names already given offered as you type."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setPlaceholderText("Their name")
-        self.completer_ = QCompleter([], self)
-        self.completer_.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.completer_.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.completer_.popup().setObjectName("popup")  # (styled like the other dropdowns)
-        self.setCompleter(self.completer_)
-
-    def set_names(self, names):
-        self.completer_.model().setStringList(sorted(names, key=str.casefold))
-
-
 MATCHES = 5  # names shown under the box at most
+NO_ONE = "No one I know"  # (strangers, or not faces at all: they aren't asked about again)
 
 
 class _DownToList(QObject):
@@ -221,10 +205,72 @@ class _DownToList(QObject):
         return False
 
 
+class NamePicker(QWidget):
+    """The one way to give a name, wherever faces are named: a box to type it in, and the names already
+    given that match what's typed listed under it, in the window (a click on one picks it)."""
+
+    picked = Signal(str)  # a name clicked (or Enter on it) in the list
+    returnPressed = Signal()
+    textChanged = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        self.box = QLineEdit()
+        self.box.setPlaceholderText("Their name")
+        self.matches = QListWidget()
+        self.matches.setObjectName("nameMatches")
+        self.matches.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.matches.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.matches.hide()
+        self.box.installEventFilter(_DownToList(self.matches))
+        self.setFocusProxy(self.box)
+        self.names = []
+        self.box.textEdited.connect(self._show_matches)
+        self.box.returnPressed.connect(self.returnPressed)
+        self.box.textChanged.connect(self.textChanged)
+        self.matches.itemClicked.connect(self._pick)
+        self.matches.itemActivated.connect(self._pick)  # (Enter on one)
+        lay.addWidget(self.box)
+        lay.addWidget(self.matches)
+
+    def set_names(self, names):
+        self.names = sorted(names, key=str.casefold)
+
+    def text(self) -> str:
+        return self.box.text()
+
+    def setText(self, text: str):
+        self.box.setText(text)
+        self._show_matches("")
+
+    def clear(self):
+        self.setText("")
+
+    def _pick(self, item):
+        name = item.text()  # (before the list is cleared, and the item with it)
+        self.box.setText(name)
+        self._show_matches("")
+        self.picked.emit(name)
+
+    def _show_matches(self, typed: str):
+        typed = typed.strip().casefold()
+        hits = [n for n in self.names if typed and typed in n.casefold() and n.casefold() != typed][:MATCHES]
+        self.matches.clear()
+        self.matches.addItems(hits)
+        if hits:
+            self.matches.setFixedHeight(self.matches.sizeHintForRow(0) * len(hits) + self.matches.frameWidth() * 2)
+        self.matches.setVisible(bool(hits))
+        self.updateGeometry()
+        if self.window() is not None and isinstance(self.window(), QDialog):
+            self.window().adjustSize()
+
+
 def ask_name(parent, title: str, text: str, names, name: str = ""):
     """A name typed, or picked from the names given that match what's typed (shown under the box, inside
     the window: a click on one is the answer), or None."""
-    names = sorted(names, key=str.casefold)
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
     lay = QVBoxLayout(dlg)
@@ -234,47 +280,22 @@ def ask_name(parent, title: str, text: str, names, name: str = ""):
         label = QLabel(text)
         label.setWordWrap(True)
         lay.addWidget(label)
-    box = QLineEdit(dlg)
-    box.setPlaceholderText("Their name")
-    box.setText(name)
-    box.selectAll()
-    matches = QListWidget(dlg)
-    matches.setObjectName("nameMatches")
-    matches.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    matches.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    box.installEventFilter(_DownToList(matches))
-
-    def pick(item):
-        box.setText(item.text())
-        dlg.accept()
-
-    def show_matches(typed: str):
-        typed = typed.strip().casefold()
-        hits = [n for n in names if typed and typed in n.casefold() and n.casefold() != typed][:MATCHES]
-        matches.clear()
-        matches.addItems(hits)
-        if hits:
-            matches.setFixedHeight(matches.sizeHintForRow(0) * len(hits) + matches.frameWidth() * 2)
-        matches.setVisible(bool(hits))
-        dlg.adjustSize()
-
-    matches.itemClicked.connect(pick)
-    matches.itemActivated.connect(pick)  # (Enter on one)
-    box.textEdited.connect(show_matches)
+    picker = NamePicker(dlg)
+    picker.set_names(names)
+    picker.setText(name)
+    picker.box.selectAll()
+    picker.picked.connect(lambda _: dlg.accept())
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Name" if not name else "OK")
     buttons.accepted.connect(dlg.accept)
     buttons.rejected.connect(dlg.reject)
-    lay.addWidget(box)
-    lay.addWidget(matches)
+    lay.addWidget(picker)
     lay.addSpacing(4)
     lay.addWidget(buttons)
     dlg.setFixedWidth(420)
-    show_matches("")
-    dlg.ask = (box, matches)  # (for the tests)
     if not dlg.exec():
         return None
-    return box.text().strip() or None
+    return picker.text().strip() or None
 
 
 class PersonFaces(QWidget):
@@ -305,7 +326,7 @@ class PersonFaces(QWidget):
         self.not_button.clicked.connect(lambda: self.not_them.emit(self._ids()))
         self.else_button = QPushButton("Someone else...")
         self.else_button.clicked.connect(lambda: self.someone_else.emit(self._ids()))
-        self.hide_button = QPushButton("Not a face")
+        self.hide_button = QPushButton(NO_ONE)
         self.hide_button.clicked.connect(lambda: self.hidden.emit(self._ids()))
         self.sort_button = QPushButton("Most like ticked")
         self.sort_button.clicked.connect(
@@ -384,15 +405,17 @@ class WhoView(QWidget):
         self.grid = FaceGrid()
         self.grid.opened.connect(self.opened)
         self.grid.itemSelectionChanged.connect(self._selection_changed)
-        self.name = NameBox()
+        self.grid.menu_requested.connect(lambda pos: self.menu().exec(pos))
+        self.name = NamePicker()
         self.name.returnPressed.connect(self._name_selected)
+        self.name.picked.connect(lambda _: self._name_selected())  # (a click on a name names the ticked faces)
         self.name.textChanged.connect(self._selection_changed)
         self.name_button = QPushButton("Name them")
         self.name_button.setDefault(True)
         self.name_button.clicked.connect(self._name_selected)
         self.skip_button = QPushButton("Skip")
         self.skip_button.clicked.connect(self.skip)
-        self.hide_button = QPushButton("No one I know")
+        self.hide_button = QPushButton(NO_ONE)
         self.hide_button.clicked.connect(
             lambda: self.hidden.emit([f["id"] for f in self._selected() or self.grid.faces])
         )
@@ -412,6 +435,25 @@ class WhoView(QWidget):
         lay.addLayout(row)
         lay.addWidget(self.grid, 1)
         self._show_group()
+
+    def menu(self) -> QMenu:
+        """Right-click on the faces ticked: what the buttons do with them."""
+        m = QMenu(self)
+        faces = self._selected()
+        if len(faces) == 1:
+            m.addAction("Open its photo", lambda: self.opened.emit(faces[0]))
+        if faces and not self.name.text().strip():
+            m.addAction("Name them...", self._ask_and_name)
+        for b in (self.name_button, self.sort_button, self.hide_button):
+            if b.isEnabled():
+                m.addAction(b.text(), b.click)
+        return m
+
+    def _ask_and_name(self):
+        name = ask_name(self, "Who is this?", "", self.name.names)
+        if name:
+            self.name.setText(name)
+            self._name_selected()
 
     def set_groups(self, groups, names, follow=None):
         """groups: as from core.people.who_groups; names: everyone named (to offer); follow: the

@@ -102,8 +102,8 @@ class FileActions:
         self.paste.setEnabled(bool(self.w.open_folder()) and mime is not None and mime.hasUrls())
 
     def editor_changed(self):
-        editor = (load_settings().get("editor") or "").strip()
-        self.open_app.setText(f"Open in {os.path.basename(editor.split()[0])}" if editor else "Open in another app")
+        args = desktop.split_command((load_settings().get("editor") or "").strip())
+        self.open_app.setText(f"Open in {os.path.basename(args[0])}" if args else "Open in another app")
 
     def history_changed(self):
         try:

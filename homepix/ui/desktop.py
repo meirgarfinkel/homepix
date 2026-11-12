@@ -84,17 +84,23 @@ def open_file(path: str) -> bool:
     return QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
 
-def split_command(command: str) -> list[str]:
-    """A command line as its words (on Windows its own way: backslashes are part of paths there)."""
-    if sys.platform != "win32":
-        return shlex.split(command)
-    return [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a for a in shlex.split(command, posix=False)]
+def split_command(command: str) -> list[str] | None:
+    """A command line as its words (on Windows its own way: backslashes are part of paths there). None
+    if it can't be read (a quote left open)."""
+    try:
+        if sys.platform != "win32":
+            return shlex.split(command)
+        return [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a for a in shlex.split(command, posix=False)]
+    except ValueError:
+        return None
 
 
 def open_with(command: str, path: str) -> bool:
     """Open in a chosen app, e.g. "gimp" or "darktable --some-option" (the file goes at the end, or
     where %f is)."""
     args = split_command(command)
+    if args is None:
+        return False  # (the caller says to check the editor in Settings)
     if not args:
         return open_file(path)
     args = [path if a == "%f" else a for a in args] if "%f" in args else args + [path]

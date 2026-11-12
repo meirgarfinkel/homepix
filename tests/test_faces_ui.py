@@ -287,7 +287,8 @@ def test_the_name_window_offers_the_names_that_match(app, monkeypatch):
 
     def answer():
         dlg = app.activeModalWidget()
-        box, matches = dlg.ask
+        picker = dlg.findChild(faces.NamePicker)
+        box, matches = picker.box, picker.matches
         seen["at_first"] = matches.isVisible()
         for typed in ("ann", "Annie Sample", "zz"):
             box.setText(typed)
@@ -375,3 +376,30 @@ def test_start_faces_over_asks_first_and_says_what_goes(window, pf, app, monkeyp
         db.close()
     assert "Ann" not in names(pf)
     assert any("before-faces-reset" in p.name for p in (data_dir() / "backups").iterdir())
+
+
+def test_the_who_page_names_the_same_way_as_the_name_window(app, monkeypatch):
+    """One picker everywhere: the names that match what's typed are listed under the box, and a click
+    on one names the faces ticked. A right-click on the faces offers what the buttons do."""
+    from homepix.core.people import NEW
+    from homepix.ui import workers
+    from homepix.ui.views.faces import NO_ONE, NamePicker, WhoView
+
+    rng = np.random.default_rng(4)
+    group = [{"id": i, "path": f"/x/{i}.jpg", "emb": look(1, rng), "tier": NEW, "like": None} for i in range(3)]
+    monkeypatch.setattr(workers, "run", lambda *a, **k: None)  # (no pictures to make)
+    v = WhoView()
+    named = []
+    v.named.connect(lambda ids, name: named.append((ids, name)))
+    v.set_groups([group], ["Hannah Demo", "Bob"])
+    assert isinstance(v.name, NamePicker)
+    v.grid.item(0).setSelected(True)
+    v.grid.item(2).setSelected(True)
+    texts = [a.text() for a in v.menu().actions()]
+    assert "Name them..." in texts and NO_ONE in texts
+    v.name.box.setText("hann")
+    v.name.box.textEdited.emit("hann")
+    assert [v.name.matches.item(i).text() for i in range(v.name.matches.count())] == ["Hannah Demo"]
+    v.name.matches.itemClicked.emit(v.name.matches.item(0))
+    assert named == [([0, 2], "Hannah Demo")]
+    v.close()
