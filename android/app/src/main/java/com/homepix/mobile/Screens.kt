@@ -146,8 +146,8 @@ fun Timeline(lib: Library, all: List<Int>, title: String?, open: (List<Int>, Int
         }
         if (items.isEmpty() && title == null) Centered {
             Text(
-                "None of the photos on this phone are in your library yet. They show here once HomePix on " +
-                    "your computer has them.",
+                "No photos yet. Photos taken with this phone show here at once, and the library's details " +
+                    "(who's in them, search) once HomePix on your computer has them.",
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         } else PhotoGrid(lib, cells, items, open)

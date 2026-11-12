@@ -188,10 +188,8 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
         android.util.Log.i("HomePix", "found ${roots.size} libraries in ${System.currentTimeMillis() - t0} ms")
         paired = withContext(Dispatchers.IO) { Computer.load(context) } != null
         unreadable = false
-        lib = if (roots.isEmpty() && paired) {
-            status = "No library yet. It comes from your computer the next time this phone reaches it on Wi-Fi."
-            null
-        } else if (roots.isEmpty()) {
+        // (paired with no library file yet, the phone's own new photos still show)
+        lib = if (roots.isEmpty() && !paired) {
             status = "No library yet. Pair this phone with HomePix on your computer (Settings, then Phones) " +
                 "and your photos show here."
             null
@@ -268,11 +266,15 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
             if (withContext(Dispatchers.IO) { l.changed() }) {
                 // (no library any more: unpaired, or the copied folder was deleted)
                 val roots = withContext(Dispatchers.IO) { Library.find(context) }
-                if (roots.isEmpty()) { unpaired(""); return@LaunchedEffect }
+                if (roots.isEmpty() && withContext(Dispatchers.IO) { Computer.load(context) } == null) {
+                    unpaired("")
+                    return@LaunchedEffect
+                }
                 // a copy caught half written can't be read: try again next time
                 fresh = runCatching { Library.read(context, roots) }.getOrNull()
             }
-            if (fresh == null) delay(30_000)
+            // (just paired, the computer's file not here yet: looked for every few seconds)
+            if (fresh == null) delay(if (l.roots.isEmpty()) 3000 else 30_000)
         }
     }
     LaunchedEffect(fresh, pages.size) {
