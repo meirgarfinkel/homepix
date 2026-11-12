@@ -33,7 +33,10 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
    - Linux packaging: a .deb (the download the README offers) and an AppImage, x86_64 only (no Flatpak, RPM or
      ARM for now). Everything it needs is bundled (Qt's X11 and Wayland plugins, libxcb-cursor, exiftool with
      its own Perl, HEIC support).
-   - Each kind of install updates itself from the matching file of the newest GitHub release.
+   - Each kind of install updates itself from the matching file of the newest desktop release (the highest
+     `vX.Y.Z`, whatever GitHub marks latest). The file must come from HomePix's own GitHub releases and match
+     the release's SHA-256, or it isn't downloaded; one already downloaded that still matches is kept. The
+     AI models are pinned to one revision each, every file with its SHA-256.
 7. **Existing data carries over.** The current index, 41,000 faces and 27 named people survive the move to
    the new app.
 

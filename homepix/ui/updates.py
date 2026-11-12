@@ -34,7 +34,7 @@ class Updater:
         if kind is None or self.busy:
             return
         self.busy = True
-        workers.run(updates.latest_release, lambda rel, err: self._checked_quietly(kind, rel, err))
+        workers.run(updates.latest_release, lambda rel, err: self._checked_quietly(kind, rel, err), kind)
 
     def _checked_quietly(self, kind, release, err):
         asset = None if err is not None else updates.file_for(release, kind)
@@ -42,7 +42,7 @@ class Updater:
             self.busy = False
             return
         version = release["tag_name"].lstrip("vV")
-        dest = _fresh_folder() / asset["name"]
+        dest = _folder_for(asset["name"])
 
         def done(finished, err):
             self.busy = False
@@ -71,7 +71,7 @@ class Updater:
             return
         self.busy = True
         self.w.statusBar().showMessage("Checking for updates...")
-        workers.run(updates.latest_release, lambda rel, err: self._checked(kind, rel, err))
+        workers.run(updates.latest_release, lambda rel, err: self._checked(kind, rel, err), kind)
 
     def _checked(self, kind, release, err):
         self.w.statusBar().clearMessage()
@@ -87,7 +87,7 @@ class Updater:
         self._download(kind, release["tag_name"].lstrip("vV"), asset)
 
     def _download(self, kind, version, asset):
-        dest = _fresh_folder() / asset["name"]
+        dest = _folder_for(asset["name"])
         dlg = QProgressDialog(f"Downloading HomePix {version}...", "Cancel", 0, 100, self.w)
         dlg.setWindowTitle("Updates")
         dlg.setWindowModality(Qt.WindowModality.WindowModal)
@@ -116,7 +116,11 @@ class Updater:
 
     def _install(self, kind, version, path, ask=True):
         if kind == "windows":  # the installer closes this copy, updates quietly and opens the new one
-            os.startfile(str(path), arguments=WINDOWS_QUIET)  # noqa: S606 (our own downloaded, checked installer)
+            try:
+                os.startfile(str(path), arguments=WINDOWS_QUIET)  # noqa: S606 (our own downloaded, checked installer)
+            except OSError as e:
+                self._installed(version, e, ask=ask)
+                return
             self.w.quit_app()
             return
         if kind == "appimage":
@@ -133,6 +137,8 @@ class Updater:
             return
         if err is not None:
             QMessageBox.warning(self.w, "Updates", f"Couldn't install the update:\n{err}")
+            if self.ready:
+                self.w.update_bar.offer(version)  # (still there to try again)
             return
         if not ask:  # they pressed Restart to update
             restart(self.w)
@@ -152,11 +158,15 @@ class Updater:
 WINDOWS_QUIET = "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /relaunch=1"
 
 
-def _fresh_folder():
+def _folder_for(name: str) -> Path:
+    """Where the update file name is downloaded to. Anything else there (an older download, a broken
+    one) is cleared; the same file, downloaded before and still to be installed, is kept."""
     folder = data_dir() / "updates"
-    shutil.rmtree(folder, ignore_errors=True)  # an older download (or a broken one)
     folder.mkdir(exist_ok=True)
-    return folder
+    for old in folder.iterdir():
+        if old.name != name:
+            shutil.rmtree(old, ignore_errors=True) if old.is_dir() else old.unlink(missing_ok=True)
+    return folder / name
 
 
 def _replace_appimage(new):
@@ -226,11 +236,16 @@ def _install_deb(path):
     return "installed"
 
 
+# waits (up to a minute) for this copy to have gone, then starts the new one: $0 is it, $1 this copy
+_WHEN_GONE = 'i=0; while kill -0 "$1" 2>/dev/null && [ $i -lt 300 ]; do sleep 0.2; i=$((i+1)); done; '
+
+
 def restart(window):
     """Start the new copy once this one has gone (one HomePix runs at a time), then close."""
+    me = str(os.getpid())
     if sys.platform == "darwin":  # opened the Mac way, as the app (with its Dock icon)
-        QProcess.startDetached("sh", ["-c", 'sleep 1; exec open -n "$0"', str(mac_bundle())])
+        QProcess.startDetached("sh", ["-c", _WHEN_GONE + 'exec open -n "$0"', str(mac_bundle()), me])
     else:
         app = os.environ.get("APPIMAGE") or sys.executable
-        QProcess.startDetached("sh", ["-c", 'sleep 1; exec "$0"', app])
+        QProcess.startDetached("sh", ["-c", _WHEN_GONE + 'exec "$0"', app, me])
     window.quit_app()  # (really quit, even when set to keep running in the background)
