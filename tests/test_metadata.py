@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 from conftest import et_command, open_window, wait_until
@@ -273,7 +274,7 @@ def test_a_format_exiftool_cant_write_is_reported(home, lib):
     index(pf, lib)
     steps, cant = fo.plan_details(db, [str(p)], md.Edit(description="x"))
     result = fo.run(db, "details", "t", steps)
-    assert result.finished == 1 or result.skipped  # either it can, or it says why
+    assert result.finished == 1 and not result.skipped
 
 
 # --- reading what other apps wrote ------------------------------------------------------------------
@@ -334,7 +335,8 @@ def test_killed_while_writing_details(home, lib, tmp_path, after):
     script = tmp_path / "killer.py"
     script.write_text(KILLER)
     r = subprocess.run(
-        [sys.executable, str(script), str(lib), str(after)], env=dict(os.environ, PYTHONPATH=os.getcwd())
+        [sys.executable, str(script), str(lib), str(after)],
+        env=dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parent.parent)),
     )
     assert r.returncode == 9
     fo.recover(db)

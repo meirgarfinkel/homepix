@@ -3,11 +3,10 @@ same rules the library was organized by (the Sep 2026 pipeline), previewed, and 
 
 import datetime as dt
 import os
-import time
 
 import numpy as np
 import pytest
-from conftest import open_window, wait_until
+from conftest import open_window, statements, wait_until
 from PIL import Image
 from test_fileops import contents, index_matches_disk, no_leftovers
 
@@ -239,11 +238,10 @@ def test_thirty_thousand_files(home, lib):
         rows.append((str(lib / str(when.year) / f"{name}.jpg"), f"q{i}", str(when), "exif"))
     db.executemany("INSERT INTO photos (path, qhash, taken, taken_source) VALUES (?, ?, ?, ?)", rows)
     db.commit()
-    t = time.perf_counter()
-    p = organize.plan(db, [lib])
-    took = time.perf_counter() - t
+    with statements(db) as planning:
+        p = organize.plan(db, [lib])
     assert len(p.changes) == 600 and p.looked_at == 30_000
-    assert took < 5, took
+    assert planning.count <= 10  # (one read for all of them, never one per file; counted, not timed)
 
 
 def test_only_a_folder_in_the_library(home, lib, tmp_path):

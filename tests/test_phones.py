@@ -82,6 +82,15 @@ def fingerprint(qr) -> str:
     return base64.urlsafe_b64decode(qr["f"][0] + "=").hex()
 
 
+def linked(window, PhoneLink, monkeypatch, request):
+    """window with a phone link, not announced on the real network, stopped after the test whatever
+    happens (a server left running once broke the next test)."""
+    monkeypatch.setattr(phone_server.Server, "_announce", lambda self, ips: None)
+    window.phone_link = PhoneLink(window)
+    request.addfinalizer(window.phone_link.stop)
+    return window
+
+
 def paired(server, rule):
     p = phones.open_pairing(rule.id)
     qr = parse_qs(urlparse(phones.qr_text(p, server.port)).query)
@@ -151,7 +160,7 @@ def test_only_paired_phones_are_answered(setup):
     assert phone.post("/v1/hello", {})[0] == 401  # (unpaired: its secret stops working)
 
 
-def test_the_computer_keeps_its_key():
+def test_the_computer_keeps_its_key(pf):
     a = phones.identity()
     assert phones.identity().fingerprint == a.fingerprint
     if os.name != "nt":
@@ -279,7 +288,7 @@ def own_home(tmp_path, monkeypatch):
     return h
 
 
-def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path, own_home, monkeypatch):
+def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path, own_home, monkeypatch, request):
     from PySide6.QtWidgets import QMessageBox, QWidget
 
     from homepix.ui.phone_link import PhoneLink
@@ -289,9 +298,7 @@ def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path
     (tmp_path / "Inbox").mkdir()
     old = ai.Rule(name="Meirs phone", watch=str(tmp_path / "Inbox"), dest=str(lib), tidy=True)
     ai.save_rules([old])
-    window = QWidget()
-    window.phone_link = PhoneLink(window)
-    monkeypatch.setattr(phone_server.Server, "_announce", lambda self, ips: None)  # (not on the real network)
+    window = linked(QWidget(), PhoneLink, monkeypatch, request)
     seen = {}
 
     def pair_and_look(dlg):
@@ -340,7 +347,7 @@ def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path
     assert window.phone_link.server is None  # (no phone left: not listening)
 
 
-def test_removing_a_phones_automation_unpairs_it(app, home, lib, tmp_path, monkeypatch):
+def test_removing_a_phones_automation_unpairs_it(app, home, lib, tmp_path, monkeypatch, request):
     from PySide6.QtWidgets import QMessageBox, QWidget
 
     from homepix.ui.phone_link import PhoneLink
@@ -352,9 +359,7 @@ def test_removing_a_phones_automation_unpairs_it(app, home, lib, tmp_path, monke
     phones.open_pairing(rule.id)
     phones.pair(phones.pairing().code, "Pixel 7")
     phones.close_pairing()
-    window = QWidget()
-    window.phone_link = PhoneLink(window)
-    monkeypatch.setattr(phone_server.Server, "_announce", lambda self, ips: None)
+    window = linked(QWidget(), PhoneLink, monkeypatch, request)
     window.phone_link.refresh()
     dlg = SettingsDialog(window)
     dlg.rule_list.item(0).setSelected(True)
