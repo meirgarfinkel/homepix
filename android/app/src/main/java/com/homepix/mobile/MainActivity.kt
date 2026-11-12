@@ -105,7 +105,10 @@ class MainActivity : ComponentActivity() {
             .crossfade(false)
             .build()
         Coil.setImageLoader(loader)
-        Thread { dropOldThumbs(this) }.start() // (a folder to delete: never on the screen's thread)
+        Thread {
+            dropOldThumbs(this) // (a folder to delete: never on the screen's thread)
+            deleteSharedPreferences("places") // (town names up to 0.5 kept where photos were taken)
+        }.start()
         Turns.load(this)
         pairCode = intent?.dataString?.let(PairCode::parse)
         Sending.schedule(this)

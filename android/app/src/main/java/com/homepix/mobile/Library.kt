@@ -1,5 +1,6 @@
 package com.homepix.mobile
 
+import android.annotation.SuppressLint
 import android.database.sqlite.SQLiteDatabase
 import android.os.Environment
 import android.util.Half
@@ -293,6 +294,7 @@ class Library(
             emptyList()
         }
 
+        @SuppressLint("HalfFloat") // (widened on purpose: search works in floats)
         private fun halfs(b: ByteArray): FloatArray {
             val out = FloatArray(max(DIM, b.size / 2))
             for (i in 0 until b.size / 2) {

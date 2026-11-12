@@ -19,9 +19,13 @@ Each release build is also copied to `dist/HomePix-dev.apk`, or to the folder na
 
 ## Put it on a phone
 
+Android 11 or newer.
+
 1. Install `HomePix-dev.apk` (`adb install`, or open the file on the phone), open it and allow "All files access".
 2. On the computer: HomePix > Settings > Phones > Pair a phone..., and pick the import automation.
 3. In the app: the ⚙ tab (or "Pair with a computer") > scan the code.
+
+Opening the code with the phone's camera app works too: HomePix asks before pairing.
 
 Then, whenever the phone is on the same home network as the computer (Wi-Fi only):
 
@@ -32,7 +36,8 @@ Then, whenever the phone is on the same home network as the computer (Wi-Fi only
   when something changed. Photos not on the phone never show.
 
 Deleting never travels either way. Everything is encrypted, and the app trusts only the computer
-whose key was in the QR code.
+whose key was in the QR code. It only connects to private addresses (home, office or hotel Wi-Fi), never
+the internet, and none of its data goes into Android's backup.
 
 Not paired: the app falls back to a library folder copied to the phone with its hidden `.homepix`
 folder (it looks up to 3 folders deep), as before.

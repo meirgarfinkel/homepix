@@ -9,6 +9,7 @@ import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.media.ExifInterface
 import android.media.ThumbnailUtils
+import android.os.Build
 import android.util.Size
 import coil.ImageLoader
 import coil.decode.DataSource
@@ -157,7 +158,11 @@ private fun faceCrop(f: Face): Bitmap {
     }
     raw.intersect(0, 0, rawW, rawH)
     val opts = BitmapFactory.Options().apply { inSampleSize = sampleFor(min(raw.width(), raw.height()), FACE_SIZE) }
-    val part = f.file.inputStream().use { BitmapRegionDecoder.newInstance(it)!!.decodeRegion(raw, opts) }
+    val part = f.file.inputStream().use { s ->
+        @Suppress("DEPRECATION") // (the one-argument form needs Android 12)
+        val d = (if (Build.VERSION.SDK_INT >= 31) BitmapRegionDecoder.newInstance(s) else BitmapRegionDecoder.newInstance(s, false))!!
+        try { d.decodeRegion(raw, opts) } finally { d.recycle() }
+    }
     return turned(shortSide(part, FACE_SIZE), deg)
 }
 
