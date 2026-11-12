@@ -90,6 +90,18 @@ def set_skipped_duplicates(groups):
         s["skipped_duplicates"] = sorted(sorted(g) for g in groups)
 
 
+def kept_duplicates() -> dict[frozenset, int]:
+    """The copy chosen by hand to keep in a group of duplicates (by its photos' ids)."""
+    return {frozenset(k["ids"]): k["keep"] for k in load_settings().get("kept_duplicates", [])}
+
+
+def set_kept_duplicates(kept: dict):
+    with changing_settings() as s:
+        s["kept_duplicates"] = [
+            {"ids": sorted(ids), "keep": keep} for ids, keep in sorted(kept.items(), key=lambda kv: sorted(kv[0]))
+        ]
+
+
 def add_folder(path) -> Path:
     """Add a folder to the library. Adding a folder that holds library folders replaces them.
     Raises ValueError, with a message to show, if it can't be added."""

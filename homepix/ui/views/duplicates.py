@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...core.info import human_size
-from ...core.settings import set_skipped_duplicates, skipped_duplicates
+from ...core.settings import kept_duplicates, set_kept_duplicates, set_skipped_duplicates, skipped_duplicates
 from .. import theme
 from ..thumbs import ThumbLoader
 from .changes_dialog import relative
@@ -73,14 +73,23 @@ class _Row(QStyledItemDelegate):
     def line_height(self) -> int:
         return self.view.fontMetrics().height()
 
+    def cols(self, width: int) -> int:
+        """How many copies fit side by side (the rest wrap onto the next lines)."""
+        return max(1, (width - SKIP_W - 2 * PAD - RING - TILE) // (TILE + GAP) + 1)
+
+    def copy_height(self) -> int:
+        """A copy: its picture and the three lines under it."""
+        return TILE + 10 + self.line_height() * 3
+
     def sizeHint(self, option, index):
+        n = len(self.view.model().groups[index.row()].copies)
+        lines = -(-n // self.cols(self.view.viewport().width()))
         return QSize(
             0,
             PAD * 2
             + RING
-            + TILE
-            + 10
-            + self.line_height() * 3
+            + lines * self.copy_height()
+            + (lines - 1) * GAP
             + (HEADER if index.row() == self.view.first_skipped else 0),
         )
 
@@ -89,20 +98,20 @@ class _Row(QStyledItemDelegate):
         return rect.adjusted(0, HEADER, 0, 0) if row == self.view.first_skipped else rect
 
     def tile_rect(self, rect: QRect, i: int) -> QRect:
-        return QRect(rect.left() + PAD + RING + i * (TILE + GAP), rect.top() + PAD + RING, TILE, TILE)
+        line, col = divmod(i, self.cols(rect.width()))
+        return QRect(
+            rect.left() + PAD + RING + col * (TILE + GAP),
+            rect.top() + PAD + RING + line * (self.copy_height() + GAP),
+            TILE,
+            TILE,
+        )
 
     def tile_at(self, rect: QRect, pos, n: int) -> int | None:
         for i in range(n):
             r = self.tile_rect(rect, i)
-            if r.right() > self.tiles_end(rect):
-                break
             if r.left() <= pos.x() <= r.right() and r.top() <= pos.y() <= r.bottom() + self.line_height() * 3:
                 return i
         return None
-
-    def tiles_end(self, rect: QRect) -> int:
-        """Where the copies stop: room is left for the Skip button on the right."""
-        return rect.right() - SKIP_W - PAD
 
     def skip_rect(self, rect: QRect) -> QRect:
         h = self.view.fontMetrics().height() + 14
@@ -143,10 +152,8 @@ class _Row(QStyledItemDelegate):
         fm, lh = self.view.fontMetrics(), self.line_height()
         bold = theme.font(12, QFont.Weight.Bold)
         hover = self.view.hover
-        for i, c in enumerate(self.view.shown(g)):
+        for i, c in enumerate(self.view.shown(g)):  # (every copy is drawn: those that don't fit wrap)
             r = self.tile_rect(rect, i)
-            if r.right() > self.tiles_end(rect):
-                break
             keep = c.id == g.keeper.id
             over = hover == (row, i)
             clip = QPainterPath()
@@ -221,6 +228,14 @@ class _List(QListView):
         self.setMouseTracking(True)
         self.setFrameShape(QListView.Shape.NoFrame)
         loader.ready.connect(lambda _q: self.viewport().update())
+        self._cols = None
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        cols = self.itemDelegate().cols(self.viewport().width())
+        if cols != self._cols:  # the copies wrap differently: rows change height
+            self._cols = cols
+            self.scheduleDelayedItemsLayout()
 
     def shown(self, g) -> list:
         """Its copies in the order first shown (the keeper first, then), whichever is kept now."""
@@ -304,7 +319,7 @@ class DuplicatesView(QWidget):
         self.loader = ThumbLoader(workers=2, budget=48 * 1024 * 1024)
         self.groups = []
         self.pending = 0  # photos not looked at yet
-        self._kept = {}  # {its copies' ids: the one chosen to keep}
+        self._kept = kept_duplicates()  # {its copies' ids: the one chosen to keep} (kept for next time too)
         self._skipped = skipped_duplicates()  # {its copies' ids} of the groups skipped for now
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 18, 24, 8)
@@ -327,7 +342,7 @@ class DuplicatesView(QWidget):
         self.list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.loader.set_size(round(TILE * self.devicePixelRatioF()))
         self.trash_button.clicked.connect(self._trash)
-        self.apart_button.clicked.connect(lambda: self._on_groups(self.apart.emit, selected_only=True))
+        self.apart_button.clicked.connect(lambda: self.selected() and self.apart.emit(self.selected()))
         self.list.keep.connect(self._keep)
         self.list.skip.connect(self.skip)
         self.list.open_copy.connect(lambda r, i: self.compared.emit([c.id for c in self.list.shown(self.groups[r])], i))
@@ -385,11 +400,6 @@ class DuplicatesView(QWidget):
         rows = sorted({i.row() for i in self.list.selectionModel().selectedRows()})
         return [self.groups[r] for r in rows]
 
-    def _on_groups(self, do, selected_only=False):
-        groups = self.selected() or ([] if selected_only else list(self.groups))
-        if groups:
-            do(groups)
-
     def _trash(self):
         groups = self.selected() or [g for g in self.groups if not self.is_skipped(g)]
         if groups:
@@ -399,6 +409,8 @@ class DuplicatesView(QWidget):
         g = self.groups[row]
         g.keep(self.list.shown(g)[i].id)
         self._kept[self._group_key(g)] = g.keeper.id
+        self._kept = {k: v for k, v in self._kept.items() if k in {self._group_key(g) for g in self.groups}}
+        set_kept_duplicates(self._kept)  # (a group skipped for now keeps the choice already made)
         self.list.viewport().update()
 
     def _group_of(self, photo_id):

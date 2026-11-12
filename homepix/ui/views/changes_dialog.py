@@ -32,9 +32,10 @@ class _Changes(QAbstractTableModel):
 
 
 class ChangesDialog(QDialog):
-    """head: what will happen (rich text); note: more about it, in grey; go: the button that does it."""
+    """head: what will happen (rich text); note: more about it, in grey; go: the button that does it.
+    trash: it sends files to the Trash, so Enter is Cancel (as in every other question that does)."""
 
-    def __init__(self, title: str, head: str, note: str, rows, go: str, parent=None):
+    def __init__(self, title: str, head: str, note: str, rows, go: str, parent=None, trash: bool = False):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(900, 560)
@@ -60,7 +61,8 @@ class ChangesDialog(QDialog):
         h.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         lay.addWidget(self.table, 1)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
-        self.buttons.addButton(go, QDialogButtonBox.ButtonRole.AcceptRole).setDefault(True)
+        self.go = self.buttons.addButton(go, QDialogButtonBox.ButtonRole.AcceptRole)
+        (self.buttons.button(QDialogButtonBox.StandardButton.Cancel) if trash else self.go).setDefault(True)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         lay.addWidget(self.buttons)
