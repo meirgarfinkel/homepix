@@ -461,14 +461,16 @@ def test_a_photo_turned_on_the_phone_replaces_its_old_version_and_keeps_who_is_i
 def test_an_edited_version_takes_the_place_and_is_indexed_again(home, lib, tmp_path):
     pf, db = home
     r = rule(tmp_path, lib)
-    photo(tmp_path / "Phone" / "IMG_1.jpg")
+    shot(tmp_path / "Phone" / "IMG_1.jpg", taken="2026:11:01 10:00:00")
     go(db, r, lib)
     filed = lib / "From phone" / "IMG_1.jpg"
     pf.index_folder(lib, want_faces=False)
     pid = named_face(db, filed)
     old_qhash = db.execute("SELECT qhash FROM photos WHERE id=?", (pid,)).fetchone()[0]
 
-    came_back(tmp_path, "IMG_1.jpg", photo)  # other pixels: an edit
+    came_back(
+        tmp_path, "IMG_1.jpg", lambda dst: shot(dst, taken="2026:11:01 10:00:00")
+    )  # other pixels, same moment: an edit
     batch, _ = go(db, r, lib)
     assert len(batch.updates) == 1
     assert names(lib / "From phone") == ["IMG_1.jpg"]
@@ -582,3 +584,58 @@ def test_the_window_checks_only_when_a_look_finds_something_new(app, pf, lib, tm
         assert checks == [False, False, False]
     finally:
         w.close()
+
+
+def test_another_photo_under_a_reused_name_comes_in_beside_it(home, lib, tmp_path):
+    """WhatsApp's counter starts again after a reinstall: a different photo arrives as IMG-WA0001.jpg. It
+    isn't a new version of the old one (other pixels, another date taken), so nothing is replaced."""
+    pf, db = home
+    r = rule(tmp_path, lib, tidy=True, dest="")
+    shot(tmp_path / "Phone" / "WhatsApp" / "IMG-WA0001.jpg", taken="2021:08:01 19:09:04")
+    go(db, r, lib)
+    old = lib / "2021" / "2021_08_01_19_09_04.jpg"
+    first = old.read_bytes()
+    pf.index_folder(lib, want_faces=False)
+    came_back(tmp_path, "WhatsApp/IMG-WA0001.jpg", lambda dst: shot(dst, taken="2026:11:11 10:00:00"))
+    batch, _ = go(db, r, lib)
+    assert not batch.updates and len(batch.imports) == 1
+    assert old.read_bytes() == first
+    assert names(lib / "2026") == ["2026_11_11_10_00_00.jpg"]
+    assert trashed_files(tmp_path) == []
+
+
+def test_names_that_differ_only_in_case_both_come_in(home, lib, tmp_path):
+    """IMG_1.jpg beside img_1.jpg used to make the check look for a free name for ever."""
+    import threading
+
+    pf, db = home
+    r = rule(tmp_path, lib)
+    photo(tmp_path / "Phone" / "IMG_1.jpg")
+    photo(tmp_path / "Phone" / "img_1.jpg")
+    if len(os.listdir(tmp_path / "Phone")) < 2:
+        pytest.skip("this file system ignores case")
+    out = []
+    t = threading.Thread(target=lambda: out.append(go(pf.open_db(), r, lib)), daemon=True)
+    t.start()
+    t.join(10)
+    assert not t.is_alive() and len(out[0][0].imports) == 2
+    assert len(names(lib / "From phone")) == 2
+
+
+def test_came_from_lists_every_automations_photos(home, lib, tmp_path):
+    """A folder's copy says where each imported photo came from, for every automation (it used to keep
+    only the first one's)."""
+    pf, db = home
+    rules = []
+    for name in ("A", "B"):
+        (tmp_path / name).mkdir()
+        os.makedirs(lib / name, exist_ok=True)
+        rules.append(ai.Rule(name=name, watch=str(tmp_path / name), dest=str(lib / name)))
+        for i in (1, 2):
+            photo(tmp_path / name / "Camera" / f"{name.lower()}{i}.jpg")
+    ai.save_rules(rules)
+    for r in rules:
+        go(db, r, lib)
+    pf.index_folder(lib, want_faces=False)
+    got = sorted(s for _, s in ai.came_from(db, str(lib) + os.sep))
+    assert got == ["Camera/a1.jpg", "Camera/a2.jpg", "Camera/b1.jpg", "Camera/b2.jpg"]

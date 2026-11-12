@@ -35,7 +35,7 @@ from .organize import _destination, _numbered_base
 from .safefs import path_key
 from .settings import load_settings, save_settings
 from .util import quick_hash, within
-from .video import VIDEO_EXTS
+from .video import VIDEO_EXTS, video_meta
 
 MEDIA_EXTS = IMAGE_EXTS | VIDEO_EXTS
 SETTLE = 120  # seconds a file must have been still before it's taken
@@ -347,8 +347,8 @@ def came_from(db, prefix: str, watch: str | None = None) -> list[tuple[str, str]
         now = trail.follow(r["dst"], r["id"])
         if now not in here:
             continue
-        watch = next((w for w in watches if within(r["path"], [w])), None)
-        src = os.path.relpath(r["path"], watch) if watch else os.path.basename(r["path"])
+        its = next((w for w in watches if within(r["path"], [w])), None)  # (its own automation's folder)
+        src = os.path.relpath(r["path"], its) if its else os.path.basename(r["path"])
         out.append((now, src.replace(os.sep, "/")))
     return out
 
@@ -374,8 +374,10 @@ def check(db, rule: Rule, folders: list[str], now=None, should_stop=lambda: Fals
             batch.unwanted.append(f)
         elif history == "imported" or sha in shas or _in_library(db, path, st.st_size, sha, rule.watch):
             batch.already.append(f)
-        elif db.execute("SELECT 1 FROM import_seen WHERE path=?", (path,)).fetchone() and (
-            prev := where_now(db, path, trail := trail or _Trail(db))
+        elif (
+            db.execute("SELECT 1 FROM import_seen WHERE path=?", (path,)).fetchone()
+            and (prev := where_now(db, path, trail := trail or _Trail(db)))
+            and _same_photo(path, prev)
         ):
             shas.add(sha)
             batch.updates.append((f, prev))  # it came in before, and has changed since
@@ -405,7 +407,14 @@ def _destinations(rule: Rule, folders: list[str], files: list[Incoming]) -> list
     groups: dict[tuple, list[Incoming]] = {}
     for f in files:
         folder, name = os.path.split(f.path)
-        groups.setdefault((path_key(folder), os.path.splitext(name)[0].lower()), []).append(f)
+        stem, ext = os.path.splitext(name)
+        n = 0  # IMG_1.jpg beside img_1.jpg (or .JPG): each its own group, or no names for them would ever do
+        while any(
+            os.path.splitext(m.path)[1].lower() == ext.lower()
+            for m in groups.get((path_key(folder), stem.lower(), n), [])
+        ):
+            n += 1
+        groups.setdefault((path_key(folder), stem.lower(), n), []).append(f)
     root = destination_root(rule, folders)
     planned, out = set(), []
     for members in groups.values():
@@ -514,6 +523,29 @@ def _picture(path: str):
             return im.getexif().get(0x0112, 1), hashlib.sha256(im.tobytes()).hexdigest()
     except Exception:
         return None
+
+
+def _shot_at(path: str):
+    """When a photo or video says it was taken (EXIF, or a video's own clock), or None."""
+    if os.path.splitext(path)[1].lower() in VIDEO_EXTS:
+        try:
+            return video_meta(path)["clock"]
+        except Exception:
+            return None
+    real = [d for d, _ in dates._photo_found(path) if d is not None and not dates.is_placeholder(d)]
+    return real[0] if real else None
+
+
+def _same_photo(new: str, old: str) -> bool:
+    """Is new, at a place in Import from that a library photo came from, a changed version of that photo
+    (turned: the same pixels; edited: the same date taken)? Otherwise it's another photo that came to a
+    reused name (WhatsApp's counter after a reinstall, a camera's after its card was formatted), and it
+    comes in as a new photo: nothing is replaced."""
+    a, b = _picture(new), _picture(old)
+    if a is not None and b is not None and a[1] == b[1]:
+        return True
+    when = _shot_at(new)
+    return when is not None and when == _shot_at(old)
 
 
 def _carried_over(db, op_id: int, src: str, prev: str):
