@@ -7,7 +7,7 @@ import android.util.Half
 import org.json.JSONArray
 import java.io.File
 import kotlinx.coroutines.sync.withLock
-import kotlin.math.max
+import kotlin.math.min
 
 /**
  * One photo or video in the timeline, with what HomePix knows about it: its size in pixels, the
@@ -24,6 +24,7 @@ class Item(
     val keywords: List<String> = emptyList(),
     private val moment: String? = null,
     val inLibrary: Boolean = true, // false: only on this phone so far (no faces or search until the computer has it)
+    val size: Long? = null, // bytes, as last read (shown in the details without asking the storage)
 ) {
     /**
      * When its file last changed, read with the library (not while it's shown: asking the phone's storage
@@ -170,6 +171,7 @@ class Library(
                                     c.getString(10)?.takeIf { it.isNotBlank() },
                                     keywordList(c.getString(11)),
                                     c.getString(12),
+                                    size = if (c.isNull(6)) null else c.getLong(6),
                                 )
                                 item.stamp = file.lastModified()
                                 byId[c.getLong(0)] = item
@@ -208,7 +210,7 @@ class Library(
             val waiting = HashSet<File>()
             val paired = Computer.load(context) != null
             if (paired) for (p in phone.notInLibrary()) {
-                all += Item(p.file, p.taken, if (p.video) "video" else "photo", p.duration, p.width, p.height, inLibrary = false)
+                all += Item(p.file, p.taken, if (p.video) "video" else "photo", p.duration, p.width, p.height, inLibrary = false, size = p.size)
                     .also { it.stamp = p.file.lastModified() }
                 waiting += p.file.parentFile!!
             }
@@ -236,10 +238,16 @@ class Library(
         /** Each item's search vector, from the copies the items were read from. */
         private fun readVectors(ids: List<Pair<File, Map<Long, Item>>>, index: Map<Item, Int>): Vectors {
             val t0 = System.currentTimeMillis()
-            val data = ArrayList<FloatArray>()
-            val item = ArrayList<Int>()
+            // one array, filled in place: a list of arrays copied into one at the end needed twice the memory
+            var vectors = FloatArray(0)
+            var item = IntArray(0)
+            var n = 0
             for ((local, byId) in ids) try {
                 SQLiteDatabase.openDatabase(local.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                    val more = db.rawQuery("SELECT COUNT(*) FROM photos WHERE clip IS NOT NULL", null)
+                        .use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+                    vectors = vectors.copyOf((n + more) * DIM)
+                    item = item.copyOf(n + more)
                     // In batches by id: Android re-runs a query for each 2 MB of results, so one big
                     // query (about 1 KB of search vector per photo) would be read over and over.
                     var after = -1L
@@ -253,8 +261,9 @@ class Library(
                                 rows++
                                 after = c.getLong(0)
                                 val it = byId[after] ?: continue
-                                data += halfs(c.getBlob(1))
-                                item += index.getValue(it)
+                                if (n == item.size) continue // (more than counted: the copy changed meanwhile)
+                                halfs(c.getBlob(1), vectors, n * DIM)
+                                item[n++] = index.getValue(it)
                             }
                             rows
                         }
@@ -265,10 +274,9 @@ class Library(
                 // a copy replaced by a newer one while this was read: that library is read again anyway
                 android.util.Log.w("HomePix", "search vectors: $e")
             }
-            val vectors = FloatArray(data.size * DIM)
-            data.forEachIndexed { i, v -> System.arraycopy(v, 0, vectors, i * DIM, DIM) }
-            android.util.Log.i("HomePix", "search vectors for ${data.size} photos in ${System.currentTimeMillis() - t0} ms")
-            return Vectors(vectors, item.toIntArray())
+            android.util.Log.i("HomePix", "search vectors for $n photos in ${System.currentTimeMillis() - t0} ms")
+            // (any room left over at the end of vectors is never looked at: search goes by item)
+            return Vectors(vectors, if (n == item.size) item else item.copyOf(n))
         }
 
         /** The copy is read from the app's own storage, so the one in the library is never changed or locked. */
@@ -326,14 +334,13 @@ class Library(
             emptyList()
         }
 
+        /** A search vector of half floats, widened into to[at ..< at + DIM] (zeros past its end). */
         @SuppressLint("HalfFloat") // (widened on purpose: search works in floats)
-        private fun halfs(b: ByteArray): FloatArray {
-            val out = FloatArray(max(DIM, b.size / 2))
-            for (i in 0 until b.size / 2) {
+        private fun halfs(b: ByteArray, to: FloatArray, at: Int) {
+            for (i in 0 until min(DIM, b.size / 2)) {
                 val bits = ((b[2 * i + 1].toInt() and 0xff) shl 8) or (b[2 * i].toInt() and 0xff)
-                out[i] = Half.toFloat(bits.toShort())
+                to[at + i] = Half.toFloat(bits.toShort())
             }
-            return out
         }
     }
 }

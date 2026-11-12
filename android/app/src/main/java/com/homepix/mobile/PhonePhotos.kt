@@ -83,7 +83,9 @@ object Fingerprints {
  * A photo or video in the phone's DCIM folder, as the gallery lists it. taken: when, on the phone's
  * clock (see [phoneTime]).
  */
-class PhoneFile(val file: File, val taken: String, val video: Boolean, val duration: Double?, val width: Int?, val height: Int?)
+class PhoneFile(
+    val file: File, val taken: String, val video: Boolean, val duration: Double?, val width: Int?, val height: Int?, val size: Long,
+)
 
 /**
  * The time to show for a phone file, on the phone's clock: "2026-11-12 14:23:46". dateTaken: ms, or
@@ -138,6 +140,7 @@ class PhonePhotos(private val context: Context) {
                     if (video && !c.isNull(6)) c.getLong(6) / 1000.0 else null,
                     if (c.isNull(7)) null else c.getInt(7).takeIf { it > 0 },
                     if (c.isNull(8)) null else c.getInt(8).takeIf { it > 0 },
+                    c.getLong(1),
                 )
             }
         }

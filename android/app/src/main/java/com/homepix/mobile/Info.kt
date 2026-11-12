@@ -137,7 +137,7 @@ fun InfoSheet(lib: Library, item: Item, close: () -> Unit, openPerson: (Person) 
                     "${item.width} × ${item.height}" + if (!video && mp >= 1) " · %.0f MP".format(mp) else ""
                 } else null
                 val length = item.duration?.toInt()?.let { "%d:%02d".format(it / 60, it % 60) }
-                Small(listOfNotNull(sizeText(item.file.length()), dims, length).joinToString(" · "))
+                Small(listOfNotNull(item.size?.let(::sizeText), dims, length).joinToString(" · "))
                 file?.camera?.let { Small(it) }
                 file?.settings?.let { Small(it) }
                 if (item.keywords.isNotEmpty()) Small(item.keywords.joinToString(", "))

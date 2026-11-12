@@ -32,8 +32,8 @@ android {
         applicationId = "com.homepix.mobile"
         minSdk = 30 // (Android 11: all-files access and the phone's trash)
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.7"
+        versionCode = 8
+        versionName = "0.8"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") } // the phone, and the emulator
     }
 
