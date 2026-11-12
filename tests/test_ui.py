@@ -524,7 +524,21 @@ def test_settings_shows_folders_in_the_home_folder_the_short_way(app, pf, tmp_pa
     try:
         item = dlg.list.item(0)
         assert item.text() == os.path.join("~", "Pictures")
-        assert item.toolTip() == str(tmp_path / "Pictures")  # (the whole path)
+        assert item.data(Qt.ItemDataRole.UserRole) == str(tmp_path / "Pictures") and item.toolTip() == ""
         assert dlg.list.height() == 3 * SettingsDialog.ROW + 10  # (room for a few, not stretched)
     finally:
         dlg.close()
+
+
+def test_no_hover_tips_in_the_app():
+    """The owner turned hover tips off (they got in the way): what's needed is visible text."""
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent / "homepix"
+    found = [
+        f"{p.relative_to(root)}:{n}"
+        for p in root.rglob("*.py")
+        for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if "setToolTip(" in line or "ToolTipRole" in line or "setToolTipsVisible" in line
+    ]
+    assert found == []

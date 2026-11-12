@@ -28,7 +28,6 @@ class StatusLine(QWidget):
         self.label.setWordWrap(True)  # the sidebar is narrow: all of it, on two lines if need be
         self.stop = QToolButton()
         self.stop.setObjectName("statusStop")
-        self.stop.setToolTip("Stop for now; it carries on where it left off next time")
         self.stop.setAccessibleName("Stop")
         self.stop.clicked.connect(watcher.stop)
         row.addWidget(self.label, 1)

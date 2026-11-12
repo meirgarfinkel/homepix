@@ -129,10 +129,6 @@ class SettingsDialog(QDialog):
         card.addSpacing(4)
         self.keep_running = QCheckBox("Keep running in the background")
         self.keep_running.setChecked(background.on())
-        self.keep_running.setToolTip(
-            "HomePix starts hidden when you log in, and closing the window leaves it running, so new photos "
-            "come in with the window closed. File > Quit stops it until you next log in or open it."
-        )
         self.keep_running.toggled.connect(self._keep_running)
         card.addWidget(self.keep_running)
         card.addWidget(self._hint("Starts hidden when you log in, so new photos come in with the window closed."))
@@ -154,13 +150,13 @@ class SettingsDialog(QDialog):
         card.addLayout(self._buttons([self.pair_button, self.unpair_button]))
 
         # --- the rest ---
-        card = self._card(lay, "Editing photos", "The app that Open in... uses.")
+        card = self._card(
+            lay,
+            "Editing photos",
+            "The app that Open in... uses, e.g. gimp or darktable. The photo goes at the end, or where %f is.",
+        )
         self.editor = QLineEdit(load_settings().get("editor", ""))
         self.editor.setPlaceholderText("The usual app for each kind of file")
-        self.editor.setToolTip(
-            "The app that Open in... uses, e.g. gimp or darktable (the photo is added at "
-            "the end, or where %f is). Leave it empty for the usual app."
-        )
         self.editor.editingFinished.connect(self._save_editor)
         form = QHBoxLayout()
         form.setSpacing(12)
@@ -289,10 +285,6 @@ class SettingsDialog(QDialog):
             text = f"{r.name}  ·  {describe(r)}" + (f"  ·  from {names}" if names else "")
             item = QListWidgetItem(theme.icon("phone" if names else "folder", "muted"), text)
             item.setData(Qt.ItemDataRole.UserRole, r.id)
-            tip = f"Import from {r.watch}\nImport to {'the year folders in ' if r.tidy else ''}{r.dest}"
-            if names:
-                tip += f"\nPhotos from {names} (paired) arrive here"
-            item.setToolTip(tip)
             self.rule_list.addItem(item)
             if r.id == keep:
                 item.setSelected(True)
@@ -309,7 +301,6 @@ class SettingsDialog(QDialog):
             sent = f"last sent {when(p.sent)}" if p.sent else "nothing sent yet"
             item = QListWidgetItem(theme.icon("phone", "muted"), f"{p.name}  ·  {where}  ·  {sent}")
             item.setData(Qt.ItemDataRole.UserRole, p.id)
-            item.setToolTip(f"Paired {p.paired}" + (f"\nLast in touch {p.seen}" if p.seen else ""))
             self.phone_list.addItem(item)
             if p.id == keep:
                 item.setSelected(True)
@@ -431,7 +422,6 @@ class SettingsDialog(QDialog):
             text = "~" + text[len(home) :]  # (the home folder, the short way)
         item = QListWidgetItem(theme.icon("folder", "muted"), text)
         item.setData(Qt.ItemDataRole.UserRole, path)
-        item.setToolTip(path)
         lst.addItem(item)
         if path == keep:
             item.setSelected(True)

@@ -73,7 +73,6 @@ class PeopleView(QListWidget):
             item.setData(Qt.ItemDataRole.UserRole, WHO_TILE)
             item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
             item.setForeground(theme.color("accentText"))
-            item.setToolTip("Name the people in your photos")
             bold = QFont(self.font())
             bold.setWeight(QFont.Weight.Bold)
             item.setFont(bold)

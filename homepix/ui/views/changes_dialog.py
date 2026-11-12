@@ -12,7 +12,7 @@ class _Changes(QAbstractTableModel):
 
     def __init__(self, rows, parent=None):
         super().__init__(parent)
-        self.rows = rows  # [(now, will be, why, tooltip)]
+        self.rows = rows  # [(now, will be, why, ...)]
 
     def rowCount(self, parent=_ROOT):
         return 0 if parent.isValid() else len(self.rows)
@@ -23,8 +23,6 @@ class _Changes(QAbstractTableModel):
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if role == Qt.ItemDataRole.DisplayRole:
             return self.rows[index.row()][index.column()]
-        if role == Qt.ItemDataRole.ToolTipRole:
-            return self.rows[index.row()][3]
         return None
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):

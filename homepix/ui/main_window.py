@@ -308,7 +308,6 @@ class MainWindow(QMainWindow):
         self.page_back = QToolButton()
         self.page_back.setObjectName("pageBack")
         self.page_back.setText("People")
-        self.page_back.setToolTip("Back to everyone")
         self.page_back.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.page_back.clicked.connect(lambda: self.show_place(PEOPLE))
         self.page_back.hide()
@@ -467,7 +466,6 @@ class MainWindow(QMainWindow):
         self.addToolBar(bar)
         folders = self.library_action = self.sidebar_dock.toggleViewAction()  # at the far left, always
         folders.setText("Library")
-        folders.setToolTip("Show or hide the library")
         bar.addAction(folders)
         bar.widgetForAction(folders).setObjectName("sidebarToggle")  # (no fill when open)
         bar.addWidget(_spacer(6))
@@ -478,7 +476,6 @@ class MainWindow(QMainWindow):
         bar.addWidget(name)
         bar.addWidget(_spacer(14))
         self.back_action = QAction("Back", self)
-        self.back_action.setToolTip("Back to the photos (Esc)")
         self.back_action.triggered.connect(self.close_viewer)
         self.back_action.setVisible(False)
         bar.addAction(self.back_action)
@@ -487,7 +484,6 @@ class MainWindow(QMainWindow):
         self.search_box = SearchBox()
         self.search_box.setObjectName("search")
         self.search_box.setPlaceholderText("Search photos")
-        self.search_box.setToolTip("Ctrl+F")
         self.search_box.setMinimumWidth(380)
         self.search_box.setMaximumWidth(560)
         self.search_box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -504,13 +500,12 @@ class MainWindow(QMainWindow):
         self.zoom = JumpSlider(Qt.Orientation.Horizontal)
         self.zoom.setRange(MIN_TILE, MAX_TILE)
         self.zoom.setFixedWidth(96)
-        self.zoom.setToolTip("Thumbnail size (Ctrl + mouse wheel, Ctrl + / Ctrl -)")
+        self.zoom.setAccessibleName("Thumbnail size")
         self.zoom.valueChanged.connect(self.timeline.set_tile_size)
         bar.addWidget(self.zoom)
         bar.addWidget(_spacer(8))
         self.faces_action = QAction("Their faces", self)
         self.faces_action.setCheckable(True)
-        self.faces_action.setToolTip("See the faces taken to be them, to take out any that aren't")
         self.faces_action.triggered.connect(self._toggle_person_faces)
         self.faces_action.setVisible(False)
         bar.addAction(self.faces_action)
@@ -518,14 +513,12 @@ class MainWindow(QMainWindow):
         info = self.info_action = self.info_dock.toggleViewAction()
         info.setText("Info")
         info.setShortcut(QKeySequence("I"))
-        info.setToolTip("Show or hide details about the photo (I)")
         bar.addAction(info)
         settings = self.settings_action = QAction("Settings...", self)
         settings.setShortcut(QKeySequence("Ctrl+,"))
         settings.triggered.connect(self.open_settings)
         self.addAction(settings)  # (in the menu)
         self.more_button = MenuButton()
-        self.more_button.setToolTip("Menu")
         self.more_button.setAccessibleName("Menu")
         self.more_menu = QMenu(self.more_button)
         self.more_menu.setObjectName("mainMenu")
@@ -548,12 +541,10 @@ class MainWindow(QMainWindow):
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         button.setProperty("label", True)
 
-    def add_action(self, text, slot, keys=(), tip=None) -> QAction:
+    def add_action(self, text, slot, keys=()) -> QAction:
         a = QAction(text, self)
         a.setShortcuts([QKeySequence(k) for k in keys])
         a.triggered.connect(slot)
-        if tip:
-            a.setToolTip(tip)
         self.addAction(a)  # the shortcut works wherever the focus is in the window
         return a
 
@@ -688,7 +679,6 @@ class MainWindow(QMainWindow):
             menu.addAction("Organize this folder by date...", lambda: self.organizer.preview(path))
         menu.addAction("Show in file manager", lambda: desktop.open_file(path))
         menu.addSeparator()
-        menu.setToolTipsVisible(True)
         excluded = excluded_folders()
         if path in excluded:
             menu.addAction("Include in library again", lambda: self._exclude(path, False))

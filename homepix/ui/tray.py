@@ -17,7 +17,6 @@ class Tray:
         want = background.on() and QSystemTrayIcon.isSystemTrayAvailable()
         if want and self.icon is None:
             icon = QSystemTrayIcon(QApplication.windowIcon(), self.w)
-            icon.setToolTip("HomePix: running in the background")
             menu = QMenu(self.w)
             menu.addAction("Open HomePix", self.w.bring_forward)
             menu.addSeparator()

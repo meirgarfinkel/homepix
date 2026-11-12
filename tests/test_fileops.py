@@ -740,3 +740,42 @@ def test_a_file_left_in_the_trash_doesnt_block_trashing_one_of_its_name(home, li
     (folder / "files" / "a.jpg").write_bytes(b"left by another program, with no info file")
     res = fo.run(db, "trash", "test", fo.plan_trash([str(lib / "a.jpg")]))
     assert res.finished == 1 and not (lib / "a.jpg").exists()
+
+
+def test_delete_on_more_than_20_asks_first(home, lib, app, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    pf, db = home
+    for i in range(21):
+        photo(lib / f"IMG_{i}.jpg")
+    pf.index_folder(lib, want_faces=False)
+    w = open_window(app, lambda w: len(w.timeline.items) == 21, size=(900, 600))
+    try:
+        asked, answer = [], [QMessageBox.StandardButton.Cancel]
+        monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(a[2]) or answer[0])
+        w.files.select_all.trigger()
+        w.files.trash.trigger()
+        assert asked == ["Move 21 photos to the Trash?\n\nEdit > Undo (Ctrl+Z) brings them back."]
+        assert not w.ops.busy and len(list(lib.glob("*.jpg"))) == 21  # Cancel: nothing moved
+        answer[0] = QMessageBox.StandardButton.Yes
+        w.files.trash.trigger()
+        wait_until(app, lambda: not w.timeline.items and not w.ops.busy)
+        assert list(lib.glob("*.jpg")) == []
+    finally:
+        w.close()
+
+
+def test_twenty_go_without_a_question(window, lib, app, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: pytest.fail("asked"))
+    window.files.select_all.trigger()
+    window.files.trash.trigger()
+    wait_until(app, lambda: not window.timeline.items and not window.ops.busy)
+
+
+def test_select_all_on_another_page_leaves_the_photos_alone(window, app):
+    window.stack.setCurrentWidget(window.people)
+    assert window.stack.currentWidget() is not window.timeline
+    window.files.select_all.trigger()  # (Ctrl+A here once selected every photo, out of sight)
+    assert len(window.timeline.selected_items()) < len(window.timeline.items) == 4

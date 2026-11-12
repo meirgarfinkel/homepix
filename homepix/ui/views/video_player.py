@@ -105,10 +105,10 @@ class Playback(QObject):
 class _Button(QAbstractButton):
     """A round button with a drawn symbol: play, pause, sound, muted or open."""
 
-    def __init__(self, kind: str, tip: str, parent=None):
+    def __init__(self, kind: str, name: str, parent=None):
         super().__init__(parent)
         self.kind = kind
-        self.setToolTip(tip)
+        self.setAccessibleName(name)  # (it has no words of its own: for screen readers)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(36, 36)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # (keys stay with the viewer)
@@ -211,7 +211,7 @@ class Controls(QWidget):
     def refresh(self):
         pb = self.playback.player
         self.play_button.kind = "pause" if self.playback.playing else "play"
-        self.play_button.setToolTip("Pause (K)" if self.playback.playing else "Play (K)")
+        self.play_button.setAccessibleName("Pause" if self.playback.playing else "Play")
         self.sound.kind = "muted" if self.playback.audio.isMuted() else "sound"
         if not self.bar.isSliderDown():
             self.bar.setRange(0, max(0, pb.duration()))

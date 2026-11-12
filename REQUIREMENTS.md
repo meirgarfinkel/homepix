@@ -62,6 +62,7 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 | Search results | v1 |
 | Viewer: full screen, zoom, previous/next. A video plays as soon as it's shown, with controls over its bottom that fade while it plays: play/pause, time, a bar to jump with, sound on/off (kept while the app runs), open in another app. Click or Space/K/Enter plays or pauses, J and L jump 10 s, M mutes, double-click is full screen; it stops on leaving it | v1 |
 | Info panel: date **and where it came from**, camera, size, dimensions, GPS, people, path | v1 |
+| No hover tips (they got in the way). Whatever the user needs to know is visible text; an icon-only control keeps a tip only with the owner's approval | v1 |
 
 ## 3. Organizing (real folders only; no virtual albums)
 
@@ -80,7 +81,7 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 | Right-click menu, toolbar, keyboard shortcuts | v1 |
 | Copy / cut / paste / move into folders; rename (single and batch) | v1 |
 | Ctrl+C / Ctrl+V through the **system clipboard**, so files paste into the file manager and other apps | v1 |
-| Delete to Trash (the Recycle Bin on Windows); undo and redo (Ctrl+Z / Ctrl+Shift+Z) for every operation | v1 |
+| Delete to Trash (the Recycle Bin on Windows); undo and redo (Ctrl+Z / Ctrl+Shift+Z) for every operation. Delete on more than 20 photos asks first. Ctrl+A selects only on the photos page | v1 |
 | Export (copy out, optionally resized or converted to JPEG); open in an external editor; show in folder | v1 |
 
 ## 5. Metadata (written into the files)
@@ -136,7 +137,7 @@ Photos arrive in a folder (the automation's **Import from** folder) by the HomeP
 | A file that comes back changed to the same place in Import from (turned or edited on the phone) is a new version of the photo it became, but only when it's the same picture (the same pixels: turned) or has the same date taken (edited). Anything else at that place (a reused name: WhatsApp after a reinstall, a camera after its card was formatted) comes in as a new photo, and nothing is replaced. A new version takes that photo's place, wherever it is now, and the old version goes to the Trash. Who's in it is kept when only its orientation changed (the face boxes turn with it); an edit is indexed again. Undo puts the old version back | v1 |
 | Live Photo pairs and sidecars travel with their photo. Names never overwrite (`_1`, `_2` ...). Every batch is one journaled operation: Undo puts it back as it was | v1 |
 | After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Edit > Undo names it and takes it back | v1 |
-| An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; hover to see where it will go); Import or Cancel | v1 |
+| An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; a line under each says where it will go); Import or Cancel | v1 |
 | A missing or unplugged Import from or Import to folder: nothing happens and nothing is treated as deleted; Settings shows why it's waiting | v1 |
 | The automation screen warns that emptying the folder deletes from the phone with two-way sync and from iCloud with iCloud for Windows; with iCloud or icloudpd, leave it off | v1 |
 | Only while the app is running. **Keep running in the background** (Settings, off by default): HomePix starts hidden at each login (an autostart entry on Linux, the Startup folder on Windows, a LaunchAgent on macOS), and closing the window hides it instead of quitting; opening HomePix shows it again; File > Quit stops it until the next login. While it runs this way, an icon in the system tray (where the desktop has one) opens the window, and its menu has Open HomePix and Quit | v1 |
