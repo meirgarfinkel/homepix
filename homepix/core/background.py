@@ -7,7 +7,7 @@ import plistlib
 import sys
 from pathlib import Path
 
-from .settings import load_settings, save_settings
+from .settings import changing_settings, load_settings
 
 FLAG = "--background"  # started at login: no window until HomePix is opened from the menu
 MAC_LABEL = "io.github.meirgarfinkel.homepix"
@@ -72,9 +72,8 @@ def _entry_text(args: list[str]) -> bytes:
 def set_on(want: bool) -> str:
     """Turn running in the background on or off: the setting, and the login entry. "" when it worked,
     or why the login entry couldn't be made (the setting is kept either way)."""
-    s = load_settings()
-    s["background"] = want
-    save_settings(s)
+    with changing_settings() as s:
+        s["background"] = want
     return refresh()
 
 

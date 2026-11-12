@@ -1202,6 +1202,7 @@ class MainWindow(QMainWindow):
         if self.tray.icon is not None:
             self.tray.icon.hide()  # (gone at once, not when the app has quit)
         self.phone_link.stop()
+        self.importer.stop()
         self.watcher.shutdown()
         self.loader.stop()
         self.dupes.stop()

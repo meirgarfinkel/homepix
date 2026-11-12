@@ -1,30 +1,43 @@
 """The user's settings (which folders make up the library), kept in settings.json in the data folder."""
 
-import json
 import os
 import shutil
 import subprocess
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 from .config import data_dir
 from .db import open_db
-from .util import folder_prefix, write_atomic
+from .util import folder_prefix, load_json, save_json
 
 
 def settings_path() -> Path:
     return data_dir() / "settings.json"
 
 
+_lock = threading.RLock()  # one change at a time: read, change and save (see changing_settings)
+
+
 def load_settings() -> dict:
-    try:
-        s = json.loads(settings_path().read_text(encoding="utf-8"))
-        return s if isinstance(s, dict) else {"folders": []}
-    except Exception:
-        return {"folders": []}
+    """The settings. A damaged file is never read as empty settings (load_json): the last good ones are."""
+    s = load_json(settings_path(), None)
+    return s if isinstance(s, dict) else {"folders": []}
 
 
 def save_settings(s: dict):
-    write_atomic(settings_path(), json.dumps(s, indent=2))
+    with _lock:
+        save_json(settings_path(), s)
+
+
+@contextmanager
+def changing_settings():
+    """with changing_settings() as s: change s, and it's saved, with no other change in between (two
+    threads reading, changing and saving at once used to lose one of the changes)."""
+    with _lock:
+        s = load_settings()
+        yield s
+        save_settings(s)
 
 
 def library_folders() -> list[str]:
@@ -50,16 +63,15 @@ def set_excluded(path: str, excluded: bool):
     """Leave a folder out (or take it back in). A folder inside one already left out needs nothing
     more; leaving out a folder that holds some already left out replaces them."""
     path = os.path.abspath(path)
-    s = load_settings()
-    current = [os.path.abspath(f) for f in s.get("excluded", [])]
-    inside = os.path.join(path, "")
-    if excluded:
-        if not any(path == f or path.startswith(os.path.join(f, "")) for f in current):
-            current = [f for f in current if not f.startswith(inside)] + [path]
-    else:
-        current = [f for f in current if f != path]
-    s["excluded"] = current
-    save_settings(s)
+    with changing_settings() as s:
+        current = [os.path.abspath(f) for f in s.get("excluded", [])]
+        inside = os.path.join(path, "")
+        if excluded:
+            if not any(path == f or path.startswith(os.path.join(f, "")) for f in current):
+                current = [f for f in current if not f.startswith(inside)] + [path]
+        else:
+            current = [f for f in current if f != path]
+        s["excluded"] = current
 
 
 def import_from_folders() -> list[str]:
@@ -74,9 +86,8 @@ def skipped_duplicates() -> set[frozenset]:
 
 
 def set_skipped_duplicates(groups):
-    s = load_settings()
-    s["skipped_duplicates"] = sorted(sorted(g) for g in groups)
-    save_settings(s)
+    with changing_settings() as s:
+        s["skipped_duplicates"] = sorted(sorted(g) for g in groups)
 
 
 def add_folder(path) -> Path:
@@ -87,21 +98,21 @@ def add_folder(path) -> Path:
         raise ValueError("That folder doesn't exist.")
     if p == data_dir().resolve() or data_dir().resolve() in p.parents:
         raise ValueError("That's where HomePix keeps its own files.")
-    s = load_settings()
-    folders = s.setdefault("folders", [])
-    if any(p == Path(f) or Path(f) in p.parents for f in folders):
-        raise ValueError("That folder is already in your library.")
-    s["folders"] = [f for f in folders if p not in Path(f).parents] + [str(p)]
-    save_settings(s)
+    with _lock:
+        s = load_settings()
+        folders = s.setdefault("folders", [])
+        if any(p == Path(f) or Path(f) in p.parents for f in folders):
+            raise ValueError("That folder is already in your library.")
+        s["folders"] = [f for f in folders if p not in Path(f).parents] + [str(p)]
+        save_settings(s)
     return p
 
 
 def remove_folder(path: str) -> int:
     """Take a folder out of the library and forget its photos (the files themselves aren't touched).
     Returns how many photos were forgotten."""
-    s = load_settings()
-    s["folders"] = [f for f in s.get("folders", []) if f != path]
-    save_settings(s)
+    with changing_settings() as s:
+        s["folders"] = [f for f in s.get("folders", []) if f != path]
     prefix = folder_prefix(path)
     db = open_db()
     try:

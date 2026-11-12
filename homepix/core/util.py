@@ -1,7 +1,10 @@
 """Small helpers shared by the whole app."""
 
+import contextlib
 import hashlib
+import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -61,7 +64,7 @@ def quick_hash(path: Path, size: int) -> str:
     return h.hexdigest()
 
 
-_writing = threading.Lock()
+_writing = threading.RLock()
 
 
 def write_atomic(path: Path, text: str):
@@ -70,7 +73,10 @@ def write_atomic(path: Path, text: str):
     read can't be replaced for that moment, it tries again."""
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with _writing:
-        tmp.write_text(text, encoding="utf-8")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())  # (on disk before it takes the old one's place: a power cut leaves one or the other)
         for attempt in range(20):
             try:
                 os.replace(tmp, path)
@@ -80,3 +86,52 @@ def write_atomic(path: Path, text: str):
                     tmp.unlink(missing_ok=True)
                     raise
                 time.sleep(0.05)
+
+
+_DAMAGED = object()
+
+
+def _json_in(path: Path):
+    """What a JSON file holds; None if there's no file; _DAMAGED if it can't be read (tried a few times:
+    on Windows another program can hold it for a moment)."""
+    for attempt in range(5):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except ValueError:
+            return _DAMAGED
+        except OSError:
+            time.sleep(0.05 * (attempt + 1))
+    return _DAMAGED
+
+
+def load_json(path: Path, default):
+    """The JSON in path, or default when there's none. A damaged file is never taken for "none" (and
+    then saved over, losing what it held): the copy kept by the save before (path.bak) is used instead,
+    and the damaged file is kept aside beside it."""
+    got = _json_in(path)
+    if got is None:
+        return default
+    if got is not _DAMAGED:
+        return got
+    with _writing:
+        got = _json_in(path)  # (another thread may have just saved it)
+        if got is not _DAMAGED:
+            return default if got is None else got
+        kept = _json_in(path.with_name(path.name + ".bak"))
+        with contextlib.suppress(OSError):
+            path.replace(path.with_name(f"{path.stem}-unreadable-{time.strftime('%Y%m%d-%H%M%S')}{path.suffix}"))
+        if kept is None or kept is _DAMAGED:
+            return default
+        write_atomic(path, json.dumps(kept, indent=2))
+        return kept
+
+
+def save_json(path: Path, value):
+    """Write value to path whole, keeping the last good one as path.bak for load_json to fall back on."""
+    with _writing:
+        if _json_in(path) not in (None, _DAMAGED):
+            with contextlib.suppress(OSError):
+                shutil.copyfile(path, path.with_name(path.name + ".bak"))
+        write_atomic(path, json.dumps(value, indent=2))

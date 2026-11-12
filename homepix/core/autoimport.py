@@ -33,7 +33,7 @@ from .config import data_dir
 from .media import IMAGE_EXTS
 from .organize import _destination, _numbered_base
 from .safefs import path_key
-from .settings import load_settings, save_settings
+from .settings import changing_settings, load_settings
 from .util import quick_hash, within
 from .video import VIDEO_EXTS
 
@@ -76,10 +76,9 @@ def load_rules() -> list[Rule]:
 
 
 def save_rules(rules: list[Rule]):
-    s = load_settings()
-    s["import_rules"] = [asdict(r) for r in rules]
-    s["import_status"] = {k: v for k, v in s.get("import_status", {}).items() if k in {r.id for r in rules}}
-    save_settings(s)
+    with changing_settings() as s:
+        s["import_rules"] = [asdict(r) for r in rules]
+        s["import_status"] = {k: v for k, v in s.get("import_status", {}).items() if k in {r.id for r in rules}}
 
 
 def status(rule_id: str) -> dict:
@@ -88,9 +87,8 @@ def status(rule_id: str) -> dict:
 
 
 def set_status(rule_id: str, **changes):
-    s = load_settings()
-    s.setdefault("import_status", {}).setdefault(rule_id, {}).update(changes)
-    save_settings(s)
+    with changing_settings() as s:
+        s.setdefault("import_status", {}).setdefault(rule_id, {}).update(changes)
 
 
 def _now() -> str:

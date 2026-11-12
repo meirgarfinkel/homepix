@@ -17,7 +17,7 @@ from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QComboBox, QMenu, QProxyStyle, QStyle, QStyledItemDelegate
 
-from ..core.settings import load_settings, save_settings
+from ..core.settings import changing_settings, load_settings
 
 FONT_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "homepix" / "ui" / "fonts"
 FAMILY = "Plus Jakarta Sans"
@@ -108,9 +108,8 @@ def mode() -> str:
 
 
 def set_mode(m: str):
-    s = load_settings()
-    s["theme"] = m
-    save_settings(s)
+    with changing_settings() as s:
+        s["theme"] = m
     apply(QApplication.instance())
 
 

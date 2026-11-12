@@ -32,7 +32,7 @@ from pathlib import Path
 from . import autoimport
 from .autoimport import MEDIA_EXTS
 from .config import data_dir
-from .util import write_atomic
+from .util import load_json, save_json
 
 PORT = 47820  # (another is taken when it's in use, and kept)
 SERVICE = "_homepix._tcp.local."
@@ -134,10 +134,7 @@ def _phones_file() -> Path:
 
 def load_phones() -> list[Phone]:
     with _lock:
-        try:
-            rows = json.loads(_phones_file().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
+        rows = load_json(_phones_file(), [])  # (a damaged file is never read as "no phones": load_json)
     out = []
     for d in rows if isinstance(rows, list) else []:
         try:
@@ -149,7 +146,7 @@ def load_phones() -> list[Phone]:
 
 def save_phones(phones: list[Phone]):
     with _lock:
-        write_atomic(_phones_file(), json.dumps([asdict(p) for p in phones], indent=2))
+        save_json(_phones_file(), [asdict(p) for p in phones])
 
 
 def touch(phone_id: str, sent: bool = False):
@@ -166,7 +163,8 @@ def touch(phone_id: str, sent: bool = False):
 
 def forget(phone_id: str):
     """Unpair a phone: its secret stops working at once."""
-    save_phones([p for p in load_phones() if p.id != phone_id])
+    with _lock:
+        save_phones([p for p in load_phones() if p.id != phone_id])
     for f in _library_files(phone_id):
         f.unlink(missing_ok=True)
 

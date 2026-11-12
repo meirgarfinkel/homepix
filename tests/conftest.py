@@ -196,6 +196,26 @@ def open_window(app, ready=lambda w: w.loaded, index=False, size=(1000, 700)):
     return w
 
 
+@pytest.fixture(autouse=True)
+def _close_windows():
+    """Every main window a test left open is closed after it, so its timers can't fire in a later test
+    (an import check from an earlier test's window once wrote over a later test's settings)."""
+    yield
+    from PySide6.QtWidgets import QApplication
+
+    qt = QApplication.instance()
+    if qt is None:
+        return
+    from homepix.ui.main_window import MainWindow
+
+    for w in qt.topLevelWidgets():
+        if isinstance(w, MainWindow):
+            w._quitting = True  # (closed for good even with "Keep running in the background" on)
+            w.close()
+            w.deleteLater()
+    qt.processEvents()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _stop_exiftool():
     """The shared ExifTool, stopped when the tests end (else it outlives them)."""
