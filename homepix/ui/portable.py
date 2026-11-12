@@ -147,6 +147,13 @@ def offer(window, roots, then=None):
             window.library_brought_in()
             finish()
 
-        workers.run(lambda: [(r, portable.read_copy(r)) for r in chosen], done)
+        # (as a change to the library: no file change or indexing runs while the copy comes in)
+        window.ops._in_background(
+            "Bringing in your library...",
+            lambda progress, should_stop: [(r, portable.read_copy(r)) for r in chosen],
+            done,
+            rescan=lambda res: False,
+            quiet=True,
+        )
 
     workers.run(find, found)

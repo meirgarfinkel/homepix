@@ -58,7 +58,7 @@ from .tray import Tray
 from .updates import Updater
 from .views.banner import Banner
 from .views.duplicates import DuplicatesView
-from .views.faces import PersonFaces, WhoView
+from .views.faces import NO_ONE, PersonFaces, WhoView
 from .views.import_bar import ReviewBar
 from .views.info_panel import InfoPanel
 from .views.people import PeopleView
@@ -361,7 +361,7 @@ class MainWindow(QMainWindow):
         self.dupes.apart.connect(self.dedupe.apart)
         self.dupes.compared.connect(self.compare_copies)
         self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
-        self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is it?"))
+        self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is this?"))
         self.person_faces.hidden.connect(self.naming.hide)
         self.person_faces.back.connect(lambda: self.show_place(person_place(self.person_faces.person["id"])))
         self.viewer.current_changed.connect(lambda i: self._load_viewer_faces())
@@ -701,8 +701,8 @@ class MainWindow(QMainWindow):
         menu.addAction(f"{name}'s photos", lambda: self.show_place(person_place(pid)))
         menu.addSeparator()
         menu.addAction(f"Not {name}", lambda: self.naming.not_them(ids, pid))
-        menu.addAction("Someone else...", lambda: self.naming.ask_and_name(ids, "Who is it?", name))
-        menu.addAction("Not a face", lambda: self.naming.hide(ids))
+        menu.addAction("Someone else...", lambda: self.naming.ask_and_name(ids, "Who is this?", name))
+        menu.addAction(NO_ONE, lambda: self.naming.hide(ids))
         menu.exec(pos)
 
     def _answer_who(self, ids, do):
@@ -958,11 +958,7 @@ class MainWindow(QMainWindow):
         self.dedupe.load()
 
     def remove_library_folder(self, path: str):
-        def job():  # wait for indexing to let go first, so it doesn't add the folder's photos back
-            self.watcher.indexer.stop()
-            t = self.watcher.indexer.thread
-            if t is not None:
-                t.join(timeout=60)
+        def work(progress, should_stop):
             return remove_folder(path)
 
         def done(n, err):
@@ -977,7 +973,10 @@ class MainWindow(QMainWindow):
             if self._settings_dialog is not None:
                 self._settings_dialog.refresh()
 
-        workers.run(job, done)
+        # (as a change to the library: indexing and file changes wait, or they'd put its photos back)
+        self.ops._in_background(
+            f"Removing {path} from the library...", work, done, rescan=lambda res: False, quiet=True
+        )
 
     def open_settings(self):
         dlg = SettingsDialog(self)

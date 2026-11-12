@@ -454,6 +454,8 @@ def test_commands_to_open_with_keep_their_paths():
         assert desktop.split_command(r"C:\Tools\edit.exe") == [r"C:\Tools\edit.exe"]
     else:
         assert desktop.split_command("darktable --some-option '%f'") == ["darktable", "--some-option", "%f"]
+    assert desktop.split_command('gimp "unclosed') is None  # (it used to raise)
+    assert desktop.open_with('gimp "unclosed', "/x.jpg") is False  # (and Open in... says to check Settings)
 
 
 @pytest.fixture

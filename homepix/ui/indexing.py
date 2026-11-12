@@ -14,7 +14,8 @@ REFRESH_EVERY = 30  # while photos are being added, show the new ones this often
 class IndexWatcher(QObject):
     """Owns the indexer and tells the window what it's doing.
 
-    state(dict): the indexer's snapshot, twice a second while it runs (and once when it stops).
+    state(dict): the indexer's snapshot, twice a second while it runs (and once when it stops). Nothing
+    is looked at between passes.
     library_changed(): photos were added, moved or removed: time to reload what's shown.
     finished(): a pass ended.
     """
@@ -33,9 +34,8 @@ class IndexWatcher(QObject):
         self._was_running = False
         self._refreshed = time.time()
         self._shown_done = 0
-        self._timer = QTimer(self)
+        self._timer = QTimer(self, interval=500)  # (only while a pass runs)
         self._timer.timeout.connect(self._tick)
-        self._timer.start(500)
         self._rescan = QTimer(self)
         self._rescan.timeout.connect(self.start)
         if rescan:
@@ -47,6 +47,7 @@ class IndexWatcher(QObject):
             return
         if library_folders() and not self._closed:
             self.indexer.start(forget_missing=forget_missing)
+            self._timer.start()
             self._tick()
 
     def stop(self):
@@ -96,6 +97,7 @@ class IndexWatcher(QObject):
             self._refresh()
         if not running:
             self._shown_done = 0
+            self._timer.stop()  # (until the next pass)
             if self._was_running:
                 self.finished.emit()
         self._was_running = running
