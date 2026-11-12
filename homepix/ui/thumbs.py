@@ -17,6 +17,8 @@ from PySide6.QtGui import QImage
 from ..core.thumbs import old_thumb_file, photo_thumb, thumb_file
 
 MEMORY_BUDGET = 160 * 1024 * 1024  # bytes of decoded tiles kept in memory
+STEP = 32  # tiles are decoded at a multiple of this many pixels and drawn scaled, so a window resized a
+# pixel at a time doesn't drop them all
 
 
 def to_qimage(img) -> QImage:
@@ -34,6 +36,7 @@ class ThumbLoader(QObject):
         self._bytes = 0
         self._budget = budget
         self._failed = set()
+        self._wanted = set()  # the last wish list: never evicted for one another (they'd take turns for ever)
         self._soft = set()  # qhashes whose tile came from an old thumbnail, until the sharper one's in
         self._size = 0  # tile edge in device pixels
         self._queue = []  # [(qhash, path)], most wanted first
@@ -48,7 +51,8 @@ class ThumbLoader(QObject):
     # --- UI thread ---------------------------------------------------------------------------------
 
     def set_size(self, px: int):
-        """Tile edge in device pixels. Changing it drops the cache (the tiles are the wrong size)."""
+        """Tile edge in device pixels (decoded at the next step up). Changing the step drops the cache."""
+        px = -(-max(1, px) // STEP) * STEP
         with self._lock:
             if px != self._size:
                 self._size = px
@@ -67,11 +71,23 @@ class ThumbLoader(QObject):
     def failed(self, qhash: str) -> bool:
         return qhash in self._failed
 
+    def retry_failed(self):
+        """Try the tiles that failed again (the library was read again: a drive may be back)."""
+        with self._lock:
+            self._failed.clear()
+
     def want(self, items):
         """items: [(qhash, path)] to load, most wanted first. Replaces any earlier wish list, so
         photos scrolled past are no longer loaded. Copies with the same content (the same qhash) share
-        one tile: it's loaded once."""
+        one tile: it's loaded once. Only as many as fit in the memory budget are wanted (the first: on
+        screen), or the last would push out the first, and those the next, without end."""
         with self._lock:
+            per = 4 * max(1, self._size) ** 2
+            first = {}
+            for q, p in items:
+                first.setdefault(q, p)  # (copies with the same content: one tile)
+            items = list(first.items())[: max(1, self._budget // per)]
+            self._wanted = {q for q, _ in items}
             seen = set()
             sharper = {q for q, _ in items if q in self._soft and thumb_file(q).exists()}  # (kept till then)
             self._queue = [
@@ -123,12 +139,20 @@ class ThumbLoader(QObject):
                         self._bytes -= old.sizeInBytes()
                     self._cache[qhash] = img
                     self._bytes += img.sizeInBytes()
-                    while self._bytes > self._budget and len(self._cache) > 1:
-                        _, old = self._cache.popitem(last=False)
-                        self._bytes -= old.sizeInBytes()
+                    self._evict()
             try:
                 self.ready.emit(qhash)
             except RuntimeError:  # the app quit between the check above and now
+                return
+
+    def _evict(self):
+        """Over the budget: drop the least recently used tiles that aren't wanted now. (Lock held.)"""
+        if self._bytes <= self._budget:
+            return
+        for q in [q for q in self._cache if q not in self._wanted]:
+            self._bytes -= self._cache.pop(q).sizeInBytes()
+            self._soft.discard(q)
+            if self._bytes <= self._budget:
                 return
 
     @staticmethod
