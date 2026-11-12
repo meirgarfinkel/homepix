@@ -65,6 +65,7 @@ def _entry_text(args: list[str]) -> bytes:
         "[Desktop Entry]\nType=Application\nName=HomePix\n"
         "Comment=Imports new photos in the background\n"
         f"Exec={' '.join(_quote(a) for a in args)}\nTerminal=false\nNoDisplay=true\n"
+        f"TryExec={args[0]}\n"  # (HomePix deleted or uninstalled: the desktop skips the entry, no error)
         "X-GNOME-Autostart-enabled=true\n"
     ).encode()
 

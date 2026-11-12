@@ -29,6 +29,19 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q
 `HOMEPIX_HOME=/some/folder` points the app (and the tests) at a separate library, so you can try things
 without touching your own.
 
+### The lock file
+
+`requirements.txt` says what HomePix needs; `requirements.lock` pins every package to one version and its
+hashes, for Windows, Mac and Linux at once, with PyInstaller (from `packaging/build-requirements.txt`).
+CI and every build install from the lock (`pip install --require-hashes -r requirements.lock`), so a
+release bundles what CI tested. After changing either requirements file, or to take newer versions, make
+it again and commit it with the change:
+
+```bash
+uv pip compile requirements.txt packaging/build-requirements.txt --universal --generate-hashes \
+  --python-version 3.11 --no-header -o requirements.lock
+```
+
 ## Tuning
 
 Constants in `homepix/core/config.py`:

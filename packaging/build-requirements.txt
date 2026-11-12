@@ -1,0 +1,2 @@
+# What the installers are built with, besides the app's own requirements.txt
+pyinstaller

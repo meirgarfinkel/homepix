@@ -20,15 +20,15 @@ mkdir -p "$BUILD"
 cd "$BUILD"
 
 echo "1/5  Setting up a clean Python environment for building..."
-STAMP="$(shasum -a 256 "$ROOT/requirements.txt" | cut -c1-16)"
+STAMP="$(shasum -a 256 "$ROOT/requirements.lock" | cut -c1-16)"
 if [ "$(cat "$ENV/.requirements" 2>/dev/null)" != "$STAMP" ]; then
   rm -rf "$ENV"
 fi
 if [ ! -x "$ENV/bin/python" ]; then
   "$PYTHON" -m venv "$ENV"
 fi
-"$ENV/bin/python" -m pip install --quiet --upgrade pip
-"$ENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt" pyinstaller
+# every package at the version and hash in the lock file (PyInstaller too), never whatever PyPI has that day
+"$ENV/bin/python" -m pip install --quiet --require-hashes -r "$ROOT/requirements.lock"
 echo "$STAMP" > "$ENV/.requirements"
 
 echo "2/5  Getting ExifTool (it runs on the Perl every Mac has)..."
