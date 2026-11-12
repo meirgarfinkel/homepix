@@ -21,7 +21,9 @@ import json
 import os
 import shutil
 import sqlite3
+import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -136,6 +138,20 @@ def _set_aside(path: Path, meta: dict | None):
 _lock = threading.RLock()  # one copy written at a time (the app's background one, and on closing)
 
 
+def _scratch(kind: str) -> Path:
+    """A scratch database file of this call's own in the data folder, so two at once (two phones asking
+    for their library together) never share one. Ones left by a crash are cleared after an hour."""
+    for old in data_dir().glob(f"{kind}-*.tmp.db"):
+        try:
+            if time.time() - old.stat().st_mtime > 3600:
+                old.unlink()
+        except OSError:
+            pass
+    fd, name = tempfile.mkstemp(prefix=f"{kind}-", suffix=".tmp.db", dir=data_dir())
+    os.close(fd)
+    return Path(name)
+
+
 def write_copy(root) -> int | None:
     """Write root's copy from the database now. Returns the number of photos in it, or None if it
     wasn't written: the folder isn't there (an unplugged drive), or the database has none of its photos
@@ -149,8 +165,6 @@ def _write_copy(root: Path) -> int | None:
         return None
     prefix = folder_prefix(root)
     source = db_stamp()  # taken first: a change made while copying leaves the copy older than the database
-    work = data_dir() / "portable-out.tmp.db"
-    work.unlink(missing_ok=True)
     db = open_db()
     try:
         if not photos_in(db, root):
@@ -158,6 +172,7 @@ def _write_copy(root: Path) -> int | None:
         from .autoimport import came_from
 
         sources = [(now[len(prefix) :].replace(os.sep, "/"), src) for now, src in came_from(db, prefix)]
+        work = _scratch("portable-out")
         out = sqlite3.connect(work)
         db.backup(out)
     finally:
@@ -253,8 +268,12 @@ def read_copy(root) -> dict:
 
     root = Path(root)
     prefix = folder_prefix(root)
-    work = data_dir() / "portable-in.tmp.db"
-    shutil.copyfile(copy_path(root), work)  # never change the copy itself: it may be on a read-only drive
+    work = _scratch("portable-in")
+    try:
+        shutil.copyfile(copy_path(root), work)  # never change the copy itself: it may be on a read-only drive
+    except BaseException:
+        work.unlink(missing_ok=True)
+        raise
     cp = sqlite3.connect(work)
     cp.row_factory = sqlite3.Row
     try:
@@ -395,11 +414,10 @@ def phone_copy(dst: Path, sizes: set[int], sources: set[str], watch: str | None)
     library folder of its own. Written all at once to dst; returns the number of photos in it."""
     from .autoimport import came_from
 
-    work = data_dir() / "phone-out.tmp.db"
-    work.unlink(missing_ok=True)
     db = open_db()
     try:
         came = [(now, src) for now, src in came_from(db, "", watch) if src in sources] if watch else []
+        work = _scratch("phone-out")
         out = sqlite3.connect(work)
         db.backup(out)
     finally:

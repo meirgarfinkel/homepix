@@ -44,7 +44,7 @@ class PhotoActions:
     def add_to(self, menu: QMenu):
         """The tile menu's part."""
         menu.addActions([self.details, self.date])
-        menu.addActions([self.turns["right"], self.turns["left"]])
+        menu.addActions(list(self.turns.values()))  # rotate right and left, flip both ways
         menu.addAction(self.all_details)
 
     # --- doing ------------------------------------------------------------------------------------------

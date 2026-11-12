@@ -108,11 +108,23 @@ class PeopleActions:
     # --- starting over ------------------------------------------------------------------------------
 
     def start_over(self):
-        """Forget every face and name, and look for the faces again (with what's learned since)."""
+        """Forget every face and name, and look for the faces again (with what's learned since). Asks
+        first, saying how many faces and names go."""
+        db = open_db()
+        try:
+            faces = db.execute("SELECT COUNT(*) FROM faces").fetchone()[0]
+            named = db.execute("SELECT COUNT(*) FROM people").fetchone()[0]
+        finally:
+            db.close()
+        if not faces and not named:
+            self.w.statusBar().showMessage("There are no faces to forget yet.", 4000)
+            return
+        who = f" and the {named:,} {'person' if named == 1 else 'people'} you named" if named else ""
         answer = QMessageBox.warning(
             self.w,
             "Start faces over",
-            "Forget all faces and names, and find faces again?\n\nYour photos aren't touched. This can't be undone.",
+            f"Forget all {plural(faces, 'face')}{who}, and find faces again?\n\n"
+            "Your photos aren't touched, but the names can't be brought back with Undo.",
             QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Reset,
             QMessageBox.StandardButton.Cancel,
         )
@@ -122,7 +134,7 @@ class PeopleActions:
         def work(progress, should_stop):
             db = open_db()
             try:
-                return people.resetplural(db, "face")
+                return people.reset_faces(db)
             finally:
                 db.close()
 
