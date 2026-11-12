@@ -6,4 +6,4 @@ import os
 # before anything loads it; it's read only then.
 os.environ["ORT_DISABLE_TELEMETRY"] = "1"
 
-__version__ = "1.16.5"
+__version__ = "1.17.0"
