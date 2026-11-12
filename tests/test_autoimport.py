@@ -253,7 +253,7 @@ def test_the_window_imports_says_so_and_undo_takes_it_back(app, pf, lib, tmp_pat
         assert names(lib / "From phone") == ["IMG_1.jpg"]
         assert ai.status(r.id)["count"] == 1
         wait_until(app, lambda: not w.ops.busy)
-        w.ops.undo()  # (Edit > Undo)
+        w.ops.undo()  # (Undo in the ☰ menu)
         wait_until(app, lambda: names(tmp_path / "Phone") == ["IMG_1.jpg"])
         assert not hasattr(w, "import_bar")  # no bar across the window, just the line at the bottom
     finally:

@@ -25,7 +25,7 @@ Android 11 or newer.
 
 1. Install `HomePix-dev.apk` (`adb install`, or open the file on the phone), open it and allow "All files access".
 2. On the computer: HomePix > Settings > Phones > Pair a phone... (pairing makes the phone's own import automation).
-3. In the app: the ⚙ tab (or "Pair with a computer") > scan the code.
+3. In the app: the **Computer** tab > scan the code.
 
 Opening the code with the phone's camera app works too: HomePix asks before pairing.
 
@@ -49,6 +49,17 @@ folder (it looks up to 3 folders deep), as before.
 Open the [releases page](https://github.com/meirgarfinkel/homepix/releases) in the phone's browser, tap
 **HomePix.apk** under the newest "Phone app" release, and install it. It installs over the copy you have
 and stays paired. (From version 0.3; a copy older than that has to be uninstalled once first.)
+
+## Releasing
+
+1. Raise `versionCode` by one and set `versionName` in `app/build.gradle.kts`, in the pull request
+   with the changes (the phone only installs a higher `versionCode` over the copy it has).
+2. Once it's merged, tag the merge on `main` and push the tag:
+
+       git tag android-v0.8 && git push origin android-v0.8
+
+3. GitHub builds it, signs it with the release key and publishes "Phone app 0.8" with `HomePix.apk`,
+   never marked latest (the desktop's update check reads the latest release).
 
 Releases are signed with one permanent key, kept as the repo's `ANDROID_KEYSTORE` and
 `ANDROID_KEYSTORE_PASSWORD` secrets. Losing it means everyone uninstalls once to move to a new key, so keep

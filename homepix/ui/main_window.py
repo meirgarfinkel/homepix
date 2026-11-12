@@ -399,7 +399,7 @@ class MainWindow(QMainWindow):
         self.files.editor_changed()
         if index:  # look for new photos once the window is up (bringing in a folder's copy first, if waiting)
             QTimer.singleShot(1500, lambda: portable_ui.offer(self, library_folders(), self.watcher.start))
-            self.importer.start()  # and in the auto import watch folders, a little later
+            self.importer.start()  # and in the import automations' folders, a little later
         QTimer.singleShot(2500, self._load_who)  # how many to ask about, for the sidebar
         QTimer.singleShot(5000, self.dedupe.load)  # and how many duplicates to review
         QTimer.singleShot(3000, lambda: workers.run(junk.warm, lambda res, err: None, self.search_index))  # Declutter
@@ -1149,7 +1149,7 @@ class MainWindow(QMainWindow):
             self.info.show_photo(None)
 
     def quit_app(self):
-        """Quit (File > Quit, or to restart): it stops even when set to keep running in the background."""
+        """Quit (the ☰ menu's Quit, or to restart): it stops even when set to keep running in the background."""
         self._quitting = True
         self.close()
 

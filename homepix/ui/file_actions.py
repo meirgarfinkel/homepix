@@ -1,4 +1,4 @@
-"""The Edit menu and the tile menu: undo and redo, the clipboard, renaming, moving, copying, trashing,
+"""The ☰ menu's file items and the right-click menu: undo and redo, the clipboard, renaming, moving, copying, trashing,
 exporting, and opening photos elsewhere. Each change is an operation (fileops.py), so Undo takes it back."""
 
 import os
@@ -80,7 +80,7 @@ class FileActions:
     # --- keeping the actions up to date -----------------------------------------------------------------
 
     def targets(self) -> list:
-        """The photos the Edit menu works on: the one in the viewer, or those selected in the grid."""
+        """The photos these menus work on: the one in the viewer, or those selected in the grid."""
         w = self.w
         shown = w.stack.currentWidget()
         if shown is w.viewer and 0 <= w.viewer.index < len(w.viewer.items):
@@ -175,7 +175,7 @@ class FileActions:
             answer = QMessageBox.question(
                 w,
                 "Move to Trash",
-                f"Move {count_of(items)} to the Trash?\n\nEdit > Undo (Ctrl+Z) brings them back.",
+                f"Move {count_of(items)} to the Trash?\n\nUndo in the ☰ menu (Ctrl+Z) brings them back.",
                 QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
                 QMessageBox.StandardButton.Cancel,
             )

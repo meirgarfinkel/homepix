@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 
 from ..config import data_dir
-from ..util import is_tty, say
+from ..util import say
 
 # (pinned to one revision each, so the files are always the ones these checksums are of)
 HF = "https://huggingface.co/Xenova/mobileclip_s0/resolve/757d59c9c6870a76a4b0306f05f5061bca15c39f/"
@@ -62,17 +62,11 @@ def ensure_models(names):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "homepix/0.1"})
             with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
-                got = 0
                 while True:
                     chunk = r.read(1 << 20)
                     if not chunk:
                         break
                     out.write(chunk)
-                    got += len(chunk)
-                    if is_tty():
-                        print(f"\r  {got / 1e6:6.1f} / {size / 1e6:.1f} MB", end="", flush=True)
-            if is_tty():
-                print()
         except Exception as e:
             tmp.unlink(missing_ok=True)
             raise ModelDownloadError(
@@ -80,7 +74,7 @@ def ensure_models(names):
             ) from e
         if tmp.stat().st_size != size:
             tmp.unlink(missing_ok=True)
-            raise ModelDownloadError(f"Download of {name} was incomplete. Please run the command again.")
+            raise ModelDownloadError(f"Download of {name} was incomplete. Try again.")
         if sha:
             digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
             if digest != sha:

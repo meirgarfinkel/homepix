@@ -1,6 +1,6 @@
 """The look: colours, the font, the app-wide style sheet, and the toolbar's icons.
 
-HomeDocs's look ("Paper"): cool greys with an apricot accent, in a dark version and a light one, the
+Its palette ("Paper"): cool greys with an apricot accent, in a dark version and a light one, the
 toolbar and sidebar sharing one tint around a plain page, with no lines between them. Dark is the default;
 Settings can pick light, or follow the system. Widgets that paint themselves read the colours from
 here at paint time (`color("accent")`), so they follow a switch on their next repaint.

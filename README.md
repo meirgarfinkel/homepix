@@ -47,6 +47,7 @@ Google Photos and iCloud solve this, but only by uploading your whole life to so
 - 🧹 **Tidies up the mess.** Finds duplicate photos (including resized copies), renames files by the date they were taken, and sorts them into year folders. It always shows you the changes first.
 - ✏️ **Edits the details.** Fix a wrong date, add a description or location, rotate, rename, move. Changes are written the standard way, so other photo apps see them too.
 - ↩️ **Undo for everything.** Every change can be undone, even after closing the app. If the computer crashes in the middle of a change, HomePix finishes the job safely the next time it opens.
+- 📱 **Brings your phone's photos in.** The HomePix Android app sends new photos to your computer over your home Wi-Fi (never the internet), and shows who's in them and finds them by search on the phone.
 - 💼 **Takes your library along.** Copy your photo folder to a new computer and everything HomePix learned (names, faces, choices) comes with it.
 
 See the **[user guide](docs/GUIDE.md)** for every feature and keyboard shortcut.
@@ -91,19 +92,27 @@ You only do steps 3 and 4 once. After that, HomePix opens like any other app, ev
 2. Right-click it, choose **Properties**, and turn on **Allow executing file as program**.
 3. Double-click it. The first time, it adds HomePix to your applications menu. No installing needed, so it also works on computers where you can't install software.
 
+### Android phone
+
+1. On the phone, open the [releases page](https://github.com/meirgarfinkel/homepix/releases), find the newest **Phone app** release and tap `HomePix.apk` (Android 11 or newer).
+2. Let your browser install apps when the phone asks, and install it.
+3. On the computer, open **Settings → Phones → Pair a phone...** and scan the QR code in the app's **Computer** tab.
+
+The app updates over itself from the same page, and stays paired.
+
 ### First time you open it
 
 1. Choose the folder with your photos (or click **Use my Pictures folder**).
 2. HomePix looks through your photos. A large library can take a few hours, so leaving it on overnight is a good idea. You can use the app while it works.
 3. Once it's done, try a search, and open **Who is this?** to start naming people.
 
-The first time, HomePix downloads its AI models (about 130 MB). Apart from that and checking for updates, it never uses the internet.
+The first time, HomePix downloads its AI models (about 130 MB). Apart from that and checking for updates, it never uses the internet (a paired phone talks to it over your home network).
 
 **Updates install themselves:** when a new version is out, HomePix downloads it and offers to restart into it. All versions are on the [Releases page](https://github.com/meirgarfinkel/homepix/releases).
 
 ## How it's built
 
-HomePix is a native desktop app written in Python (about 13,000 lines) with a Qt interface, SQLite for storage and ONNX Runtime for the AI. Here are the main design decisions, what problem each one solved, and what it gained.
+HomePix is a native desktop app written in Python (about 18,000 lines; the phone app adds about 4,000 of Kotlin) with a Qt interface, SQLite for storage and ONNX Runtime for the AI. Here are the main design decisions, what problem each one solved, and what it gained.
 
 ### All the AI runs on your computer, on everyday hardware
 
@@ -150,12 +159,12 @@ HomePix is a native desktop app written in Python (about 13,000 lines) with a Qt
 ### Tested and shipped automatically on three systems
 
 **Problem:** a desktop app has to work on Windows, Mac and many versions of Linux, each with its own quirks.
-**Decision:** 260 automated tests run on Linux, Windows and Mac for every change, and every pull request is built into real installers. Each build runs the app's own `--self-test` (window, thumbnails and AI). The Linux version is built on an older Linux (AlmaLinux 9) so it runs on newer ones, and is tested on six Linux distributions. Pushing a version tag builds and publishes all four downloads, and the app updates itself from there.
+**Decision:** about 400 automated tests run on Linux, Windows and Mac for every change, and every pull request is built into real installers. Each build runs the app's own `--self-test` (window, thumbnails and AI). The Linux version is built on an older Linux (AlmaLinux 9) so it runs on newer ones, and is tested on six Linux distributions. Pushing a version tag builds and publishes all four downloads, and the app updates itself from there.
 **Result:** a release takes one command, and problems are caught before anyone downloads them.
 
 ## For developers
 
-Contributions are welcome. To run HomePix from source (Python 3.10–3.12):
+Contributions are welcome. To run HomePix from source (Python 3.11 or 3.12):
 
 ```bash
 git clone https://github.com/meirgarfinkel/homepix.git
@@ -175,7 +184,7 @@ homepix/
           search, duplicates, organizing, file changes. Fully testable without a window.
     ai/   the search and face models
   ui/     the desktop app (PySide6 / Qt): the window, its pages and menus
-tests/    pytest suite, with fake AI models so it runs in seconds
+tests/    pytest suite, with fake AI models (about two minutes)
 packaging/  build scripts for the Windows installer, Mac disk image, AppImage and .deb
 android/  the phone app (Kotlin, Jetpack Compose): sends new photos to HomePix and shows
           the phone's own photos with their people and search (see android/README.md)

@@ -10,6 +10,9 @@ Everything HomePix can do, page by page. To install it, see the [README](../READ
 - [Dates](#dates)
 - [Changing photos and files](#changing-photos-and-files)
 - [Duplicates](#duplicates)
+- [Declutter](#declutter)
+- [Bringing new photos in: import automations](#bringing-new-photos-in-import-automations)
+- [Your phone](#your-phone)
 - [Undo, and what happens if the computer crashes](#undo-and-what-happens-if-the-computer-crashes)
 - [Taking your library to another computer](#taking-your-library-to-another-computer)
 - [Settings and menus](#settings-and-menus)
@@ -20,7 +23,7 @@ Everything HomePix can do, page by page. To install it, see the [README](../READ
 
 1. Open HomePix and pick the folder that holds your photos (or click **Use my Pictures folder**). You can add more folders later in Settings.
 2. HomePix looks through every photo. A big library can take a few hours, so it's fine to leave it running overnight. You can use the app while it works.
-3. The first time, HomePix downloads its AI models (about 130 MB). After that it never needs the internet, except to check for updates.
+3. The first time, HomePix downloads its AI models (about 130 MB). After that it never needs the internet, except to check for updates. (A paired phone talks to it over your home network, not the internet.)
 
 While it's open, HomePix looks for new photos every 30 minutes. Opening it a second time brings the open window forward.
 
@@ -67,6 +70,34 @@ In the sidebar, or the menu: copies of the same photo or video, side by side, th
 
 Move the extras to the Trash, for the groups you select or all of them, after a preview; say a group isn't duplicates and it's never offered again; or **Skip for now** to leave it for later (skipped groups wait at the end, under *Skipped for now*, even after closing the app).
 
+## Declutter
+
+*Declutter* in the ☰ menu (or the sidebar) lists photos you may not need, in sections by kind: ads and flyers, screenshots, documents and receipts, memes, accidental shots. The search model picks them from what it already knows about every photo, so the list is ready at once and nothing is read again. Nothing goes by itself: select the ones you don't want and press Delete, as anywhere else, and Undo brings them back.
+
+## Bringing new photos in: import automations
+
+An import automation watches a folder where new photos arrive (from your phone, iCloud for Windows, an SD card copied over) and brings them into the library. Make one in **Settings → Import automations → New automation...**:
+
+- **Name**, and **Import from**: the folder new photos arrive in.
+- **Rename and organize into year folders** (off to start with): names each file by its date and files it in its year's folder, as *Organize by date* does. Off, choose **Import to**, a folder in the library, and files keep their names.
+- **Empty the Import from folder after importing** (on to start with): files are moved out; off, they're copied and left there. Leave this off for a folder that an app keeps in step both ways (iCloud for Windows), or deleting there deletes on the phone too.
+- **Ask me before importing**: a bar says new photos are waiting, and **Review** shows them first (untick one to leave it for next time).
+- **Pause automation** stops it for now.
+
+The folders are looked at every minute while HomePix runs, and a file is taken once it has stopped changing for two minutes. A photo already in the library isn't imported again. After a batch, a line at the bottom says what came in ("Imported 37 photos from Dad's phone"), and **Undo** takes the whole batch back. **Check now** in Settings looks at once.
+
+**Keep running in the background** (Settings) keeps importing with the window closed: HomePix starts hidden when you log in, closing the window only hides it, and an icon in the system tray opens it again. **Quit** in the ☰ menu stops it until the next login.
+
+## Your phone
+
+The HomePix Android app sends your phone's new photos and videos to HomePix over your home Wi-Fi, and shows on the phone who's in them and what's in them (search), for the photos that are on the phone. Nothing goes through the internet, and the photos only ever go from the phone to the computer.
+
+1. Install the app from the newest *Phone app* release on the [releases page](https://github.com/meirgarfinkel/homepix/releases) (Android 11 or newer).
+2. On the computer, **Settings → Phones → Pair a phone...** shows a QR code. Scan it in the app's **Computer** tab.
+3. That's it: the phone's photos go to a folder of their own (`Phone photos/<the phone's name>` in your home folder), and an automation made for the phone files them into year folders in your library.
+
+The phone sends on Wi-Fi only, soon after a photo is taken and every 15 minutes. Photos not in the library yet show on the phone too, without faces or search until the computer has them. **Unpair** on either side stops it; photos already sent stay. Deleting on the phone never deletes on the computer, and the other way round.
+
 ## Undo, and what happens if the computer crashes
 
 **Undo** (Ctrl+Z) and **Redo** (Ctrl+Shift+Z) work for every change above, even after closing the app. Nothing is ever overwritten: a name that's taken gets `_1`, `_2`, ... If the computer crashes or loses power partway through a change, HomePix finishes the job next time it opens, with no photo lost or doubled.
@@ -81,7 +112,7 @@ Not carried along: the undo history, and thumbnails (made again as needed). Two 
 
 ## Settings and menus
 
-- **Settings** (Ctrl+,): which folders make up the library, the app to edit photos in, and the look: dark (the default), light, or matching the system.
+- **Settings** (Ctrl+,): which folders make up the library and which are left out, import automations, keeping HomePix running in the background, paired phones, the app to edit photos in, and the look: dark (the default), light, or matching the system.
 - **Menu:** the **☰** button at the top right holds the clean-up tools, people, undo, settings and updates; the main tools have a line saying what they do. Everything you can do to photos is on their right-click menu. Shortcuts work anywhere in the window. On a Mac, shortcuts written here with Ctrl use ⌘ instead.
 - **Updates:** when a new version is out, HomePix downloads it quietly and offers to restart into it. **Check for updates** in the menu checks right away.
 
