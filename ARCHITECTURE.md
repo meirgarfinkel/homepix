@@ -120,6 +120,22 @@ those faces, so look-alikes are told apart. The thresholds are in `core/config.p
 date written in it (EXIF) and a video's own clock; failing those, a stand-in date; failing that, when the file
 last changed. Sorting, showing, organizing and duplicates all use it.
 
+### Phones
+
+`core/phones.py` keeps the paired phones (`phones.json` in the data folder, each with only its secret's SHA-256),
+pairing codes, this computer's TLS key, the checks on paths phones send, and receiving a file
+(`receive`: into `.homepix-incoming`, checked, then put in place and marked whole for `autoimport`). It also
+makes each phone's library file (`library_for`), a portable copy cut down to the photos that could be on
+that phone. `core/phone_server.py` answers phones over HTTPS on the home network only and announces itself
+by mDNS; `ui/phone_link.py` starts and stops it with the window and passes on what arrived (`arrived` starts
+an import check 10 seconds later). Pairing is `ui/views/pair_dialog.py`; Settings > Phones lists them.
+
+The Android app is in `android/` (Kotlin, Jetpack Compose); `android/README.md` says how to build and
+release it. `Sending.kt` runs the background sending (WorkManager, Wi-Fi only) and fetches the library file;
+`Library.kt` reads it and matches it to the phone's own files (`PhonePhotos.kt`, by the same quick
+fingerprint as `util.quick_hash`); `Screens.kt` and `MainActivity.kt` are the screens; `Edits.kt` turns
+and trashes; `Search.kt` and `Tokenizer.kt` port the desktop's search.
+
 ## The tests
 
 `tests/` runs with `pytest` (see CONTRIBUTING.md). `tests/conftest.py` gives every test its own data folder, so
