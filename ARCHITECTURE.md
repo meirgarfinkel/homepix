@@ -128,9 +128,10 @@ once, after a pass with no date left to read again.
 `core/phones.py` keeps the paired phones (`phones.json` in the data folder, each with only its secret's SHA-256),
 pairing codes, this computer's TLS key, the checks on paths phones send, and receiving a file
 (`receive`: into `.homepix-incoming`, checked, then put in place and marked whole for `autoimport`). It also
-makes each phone's library file (`library_for`), a portable copy cut down to the photos that could be on
-that phone. `core/phone_server.py` answers phones over HTTPS on the home network only and announces itself
-by mDNS; `ui/phone_link.py` starts and stops it with the window and passes on what arrived (`arrived` starts
+makes each phone's library file (`library_for`), a portable copy of only the photos that phone has (by
+quick fingerprint). `core/phone_server.py` answers phones over HTTPS on private networks only, at the
+addresses it announces by mDNS (checked in `verify_request`, before the handshake, with a cap on
+connections), and announces again when they change; `ui/phone_link.py` starts and stops it with the window and passes on what arrived (`arrived` starts
 an import check 10 seconds later). Pairing is `ui/views/pair_dialog.py`; Settings > Phones lists them.
 
 The Android app is in `android/` (Kotlin, Jetpack Compose); `android/README.md` says how to build and

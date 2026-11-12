@@ -18,6 +18,7 @@ Requests (JSON in and out, but the file itself):
   X-Sha256: answers {have} (all of it once it's in place), or 409 {have} to go on from there.
 """
 
+import ipaddress
 import json
 import logging
 import os
@@ -25,6 +26,7 @@ import shutil
 import socket
 import ssl
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
@@ -36,6 +38,9 @@ log = logging.getLogger(__name__)
 
 MAX_JSON = 4 << 20
 MAX_DRAIN = 64 << 20  # a refused upload's bytes are read and dropped up to this much (else the connection is cut)
+MAX_DRAIN_UNPAIRED = 256 << 10  # (from a device that isn't paired, only this much)
+MAX_CONNECTIONS = 48  # at once, from everyone
+MAX_PER_ADDRESS = 8  # at once, from any one device
 
 
 def _rule(phone: phones.Phone, paused_too: bool = False):
@@ -89,6 +94,7 @@ class _Handler(BaseHTTPRequestHandler):
         phone = phones.phone_for(auth[7:] if auth.startswith("Bearer ") else "")
         if phone is None:
             raise phones.Refused("This phone isn't paired with this computer. Pair it again.", 401)
+        self._paired = True
         return phone
 
     def _watch(self, phone: phones.Phone) -> str:
@@ -103,9 +109,7 @@ class _Handler(BaseHTTPRequestHandler):
         return data
 
     def _handle(self, method: str):
-        if not phones.private(self.client_address[0]):
-            self.close_connection = True
-            return
+        self._paired = False
         try:
             self._left = max(0, int(self.headers.get("Content-Length", "0")))  # (body bytes not read yet)
         except ValueError:
@@ -131,7 +135,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _drain(self):
         """Read what's left of a refused request's body, so the phone gets the answer (cutting the
         connection with bytes unread makes some systems drop the answer too)."""
-        if self._left > MAX_DRAIN:
+        if self._left > (MAX_DRAIN if self._paired else MAX_DRAIN_UNPAIRED):
             self.close_connection = True
             return
         while self._left > 0:
@@ -152,19 +156,19 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _POST_v1_pair(self):
         body = self._json()
-        phone, token = phones.pair(str(body.get("code", "")), str(body.get("name", "")))
+        phone, token = phones.pair(str(body.get("code", "")), str(body.get("name", "")), self.client_address[0])
         self.server.events("paired", phone)
         self._send(200, {"phone": phone.id, "token": token, "computer": phones.computer_name()})
 
     def _POST_v1_hello(self):
-        self._json()
         phone = self._phone()
+        self._json()
         phones.touch(phone.id)
         self._send(200, {"computer": phones.computer_name(), "phone": phone.name, "ready": _rule(phone) is not None})
 
     def _POST_v1_need(self):
-        body = self._json()
         phone = self._phone()
+        body = self._json()
         phones.touch(phone.id)  # (in touch: Settings shows when)
         watch = self._watch(phone)
         files = body.get("files")
@@ -178,8 +182,8 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(200, {"need": need, "quick": True})
 
     def _POST_v1_library(self):
-        body = self._json()
         phone = self._phone()
+        body = self._json()
         # (a phone before 0.7 tells only its files' sizes: it gets only the photos it sent)
         qhashes, sources = body.get("qhashes", []), body.get("sources", [])
         if not isinstance(qhashes, list) or not isinstance(sources, list):
@@ -217,7 +221,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = os.name != "nt"  # (on Windows it would let another program take the port too)
     request_queue_size = 16
 
     def __init__(self, addr, ctx: ssl.SSLContext, events):
@@ -225,6 +229,56 @@ class _Server(ThreadingHTTPServer):
         # (the handshake happens in each request's own thread, so a slow phone holds up no one)
         self.socket = ctx.wrap_socket(self.socket, server_side=True, do_handshake_on_connect=False)
         self.events = events
+        self._open: dict[str, int] = {}  # connections open, by device
+        self._count_lock = threading.Lock()
+
+    def verify_request(self, request, client_address) -> bool:
+        """Before the handshake: only a device on a private network, reaching this computer at an address
+        it announces (not a VPN's, a container's or a virtual machine's), and not too many at once."""
+        peer = client_address[0]
+        try:
+            here = request.getsockname()[0]
+        except OSError:
+            return False
+        if not phones.private(peer) or not _answers_at(here):
+            return False
+        with self._count_lock:
+            if sum(self._open.values()) >= MAX_CONNECTIONS or self._open.get(peer, 0) >= MAX_PER_ADDRESS:
+                return False
+            self._open[peer] = self._open.get(peer, 0) + 1
+        return True
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            with self._count_lock:
+                left = self._open.get(client_address[0], 1) - 1
+                if left > 0:
+                    self._open[client_address[0]] = left
+                else:
+                    self._open.pop(client_address[0], None)
+
+
+_here: tuple[float, set[str]] = (0.0, set())
+
+
+def _answers_at(ip: str) -> bool:
+    """Is this one of the addresses phones are told about (or this computer's own loopback, which an
+    emulator's connections come in on)? Read again at most every 30 seconds."""
+    global _here
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    if a.is_loopback or (isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped and a.ipv4_mapped.is_loopback):
+        return True
+    if isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped:
+        ip = str(a.ipv4_mapped)
+    when, known = _here
+    if time.time() - when > 30 or ip not in known:
+        _here = (time.time(), set(phones.addresses()))
+    return ip in _here[1]
 
 
 def _context() -> ssl.SSLContext:
@@ -249,6 +303,8 @@ class Server:
         self._http = None
         self._zc = None
         self._info = None
+        self._announced: list[str] = []
+        self._stopping = threading.Event()
 
     def start(self):
         from .settings import changing_settings, load_settings
@@ -265,16 +321,42 @@ class Server:
                 s["phone_port"] = self.port
         threading.Thread(target=self._http.serve_forever, name="phones", daemon=True).start()
         if self.announce:
-            self._announcing = threading.Thread(target=self._announce, name="phones-announce", daemon=True)
+            self._stopping.clear()
+            self._announcing = threading.Thread(target=self._keep_announced, name="phones-announce", daemon=True)
             self._announcing.start()
 
-    def _announce(self):
+    def _keep_announced(self, every: float = 60):
+        """Announce, and again whenever this computer's addresses change (on a network only after
+        login, say, or moved to another one)."""
+        while True:
+            self.announce_if_changed()
+            if self._stopping.wait(every):
+                return
+
+    def announce_if_changed(self):
+        ips = phones.addresses()
+        if ips == self._announced:
+            return
+        self._unannounce()
+        self._announced = ips
+        if ips:
+            self._announce(ips)
+
+    def _unannounce(self):
+        if self._zc is not None:
+            try:
+                if self._info is not None:
+                    self._zc.unregister_service(self._info)
+                self._zc.close()
+            except Exception:
+                pass
+            self._zc = None
+            self._info = None
+
+    def _announce(self, ips):
         try:
             from zeroconf import ServiceInfo, Zeroconf
 
-            ips = phones.addresses()
-            if not ips:
-                return
             name = f"HomePix on {phones.computer_name()}"
             self._info = ServiceInfo(
                 phones.SERVICE,
@@ -290,17 +372,12 @@ class Server:
             log.warning("announcing HomePix on the network didn't work", exc_info=True)
 
     def stop(self):
+        self._stopping.set()
         if self._announcing is not None:
             self._announcing.join(10)
             self._announcing = None
-        if self._zc is not None:
-            try:
-                if self._info is not None:
-                    self._zc.unregister_service(self._info)
-                self._zc.close()
-            except Exception:
-                pass
-            self._zc = None
+        self._unannounce()
+        self._announced = []
         if self._http is not None:
             self._http.shutdown()
             self._http.server_close()
