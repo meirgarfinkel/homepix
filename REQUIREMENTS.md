@@ -14,7 +14,9 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 2. **Never changes files on its own.** Indexing, thumbnails and AI analysis run in the background but only read.
    Renaming, moving, deleting and editing happen only when the user starts them, after a preview. The one
    exception is an import automation the user has set up and not paused (section 9): it brings new files in from
-   its "Import from" folder by itself, and every batch is journaled and undoable like any other change.
+   its "Import from" folder by itself, and every batch is journaled and undoable like any other change. The
+   other is the one-time rename to local time in 1.17 (section 3): the owner chose it, it runs once, and Undo
+   takes it all back.
 3. **A file is never lost.** Delete goes to the Trash; moves never overwrite; every change is journaled,
    undoable, and recoverable after a crash.
 4. **The index never drifts from the disk.** Every change made through the app updates the database in the
@@ -63,6 +65,8 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 |---|---|
 | Keywords, written into the file | v1 |
 | Organizer: rename to `YYYY_MM_DD_HH_MM_SS.ext` and sort into `<library>/<year>/`; no real date goes to `Unsorted/`. Two modes: *organize a folder* and *tidy the library*. Manual, previewed, undoable. Rules from the Sep 2026 pipeline (`~/Pictures/.claude_pipeline_history/`) | v1 |
+| Every date is the time on the clock where it was taken (local time). A video's clock and a Pixel's `PXL_` name are UTC, so they're turned into local time; a name and the file that say the same moment a time zone apart (a quarter hour to 14 hours, to the quarter hour) are one date, the file's; a name with only a day never beats a time on that day | v1 |
+| One-time rename to local time (1.17): once indexing has read every date again, the files the organizer named by UTC before (videos, Pixel photos), now a time zone away from their date, are renamed to it (into the next year's folder when that changes), as one change Undo takes back. It never runs again, even after Undo | v1 |
 
 ## 4. File operations
 

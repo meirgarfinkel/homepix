@@ -1,16 +1,15 @@
-"""When a photo or video was taken: the one date it's sorted, shown and named by.
-
-It's the rule the library's files were renamed by (the Sep 2026 pipeline), so a file named
-2022_04_01_07_32_31.jpg is shown on that day:
+"""When a photo or video was taken: the one date it's sorted, shown and named by. Every date is the
+time on the clock where it was taken (local time):
 1. the earliest real date among the file's name, the photo's own (EXIF DateTimeOriginal and
-   CreateDate) and the video's own clock, as it's stored;
+   CreateDate) and the video's own clock (stored in UTC, so turned into local time). A name and the
+   file that say the same moment in different time zones (hours apart, to the quarter hour: a Pixel's
+   PXL_ name is UTC, and so are names the organizer gave before 1.17) are one date, the file's; a name
+   with only a day never beats a time on that day;
 2. if there's none, the earliest placeholder date: one tools stamp when they don't know (1 January at
    midnight, or the sRGB colour profile's 1998-02-09 06:49), which still tells the year;
 3. if there's none of those either, when the file was last changed.
 
-A video's clock is usually UTC, and that's what its date is (as its name is); some phones put UTC in
-photo names too. Matching a Live Photo's clip with its photo needs the time where it happened instead:
-its "moment" (None when that's its date anyway).
+Matching a Live Photo's clip with its photo uses its "moment" (None when that's its date anyway).
 """
 
 import datetime as dt
@@ -47,8 +46,8 @@ def is_placeholder(d: dt.datetime) -> bool:
     return d == _SRGB or (d.month == 1 and d.day == 1 and d.time() == dt.time())
 
 
-def date_in_name(name: str):
-    """The date (and time, if there is one) in a file's name, placeholders too, or None."""
+def _name_date(name: str) -> tuple[dt.datetime | None, bool]:
+    """(the date in a file's name, placeholders too, or None; whether it has a time)."""
     for pattern, has_time in _NAME_DATES:
         for m in pattern.finditer(name):
             g = [int(x) for x in m.groups()]
@@ -57,8 +56,26 @@ def date_in_name(name: str):
             except ValueError:
                 continue
             if _plausible_date(d):
-                return d
-    return None
+                return d, has_time
+    return None, False
+
+
+def date_in_name(name: str):
+    """The date (and time, if there is one) in a file's name, placeholders too, or None."""
+    return _name_date(name)[0]
+
+
+def to_local(utc: dt.datetime) -> dt.datetime:
+    """A UTC time as this computer's clock showed it then (summer time included)."""
+    return utc.replace(tzinfo=dt.UTC).astimezone().replace(tzinfo=None)
+
+
+def same_moment(a: dt.datetime, b: dt.datetime) -> bool:
+    """Could a and b be one moment, written in two time zones? (A quarter hour to 14 hours apart, to the
+    quarter hour, the seconds within 5. Seconds apart is one clock, not two zones.)"""
+    gap = abs((a - b).total_seconds())
+    off = gap % 900
+    return 895 <= gap <= 14 * 3600 + 5 and (off <= 5 or off >= 895)
 
 
 def parse(text, any_year: bool = False):
@@ -79,9 +96,23 @@ def _iso(d: dt.datetime) -> str:
 
 
 def best_date(path, found, mtime: float) -> tuple[str, str]:
-    """(date, where it came from) by the rule above. found: [(datetime, "exif" or "video")]."""
+    """(date, where it came from) by the rule above. found: [(datetime, "exif" or "video")], local time."""
     candidates = [(d, src) for d, src in found if d is not None]
-    if (named := date_in_name(os.path.basename(path))) is not None:
+    name = os.path.basename(path)
+    named, has_time = _name_date(name)
+    if named is not None and has_time and name.upper().startswith("PXL_"):
+        named = to_local(named)  # (a Pixel names its photos and videos by UTC)
+    in_file = [d for d, _ in candidates if not is_placeholder(d)]
+    if named is not None and in_file and not is_placeholder(named):
+        first = min(in_file)
+        if not has_time and named.date() == first.date():
+            named = None  # a day alone never beats a time on that day
+        elif has_time and named != first and same_moment(named, first):
+            camera = not ORGANIZED.match(os.path.splitext(name)[0]) and not name.upper().startswith("PXL_")
+            if any(src == "video" for _, src in candidates) and camera:
+                return _iso(named), "filename"  # (a camera that wrote local time as if it were UTC)
+            named = None  # one moment in two time zones: the file's own, local, time
+    if named is not None:
         candidates.append((named, "filename"))
     real = [c for c in candidates if not is_placeholder(c[0])]
     if real or candidates:
@@ -109,11 +140,19 @@ def _photo_found(path) -> list:
         return []
 
 
+def _video_local(clock, moment):
+    """A video's date in local time: where it was taken (moment), or its UTC clock turned local. A
+    placeholder clock stays as it is, so it's still known for one."""
+    if clock is not None and is_placeholder(clock):
+        return clock
+    return moment or clock
+
+
 def quick_file_date(path, kind: str, mtime: float) -> tuple[str, str, str | None]:
     """(date, source, moment) of a file, read the quick way (no ExifTool)."""
     if kind in ("video", "motion"):
         meta = video_meta(path)
-        taken, source = best_date(path, [(meta["clock"], "video")], mtime)
+        taken, source = best_date(path, [(_video_local(meta["clock"], meta["taken"]), "video")], mtime)
         return taken, source, _iso(meta["taken"]) if meta["taken"] else None
     found = _photo_found(path)
     taken, source = best_date(path, found, mtime)
@@ -127,7 +166,7 @@ def from_tags(path, tags: dict, mtime: float) -> tuple[str, str, str | None]:
         moment = parse(tags.get("Keys:CreationDate"))  # local, as recorded
         if moment is None and clock is not None:
             moment = clock.replace(tzinfo=dt.UTC).astimezone().replace(tzinfo=None)
-        taken, source = best_date(path, [(clock, "video")], mtime)
+        taken, source = best_date(path, [(_video_local(clock, moment), "video")], mtime)
         return taken, source, _iso(moment) if moment else None
     found = [(parse(tags.get(t)), "exif") for t in ("ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate")]
     taken, source = best_date(path, found, mtime)

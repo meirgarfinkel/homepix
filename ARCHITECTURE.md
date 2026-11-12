@@ -116,9 +116,12 @@ those faces, so look-alikes are told apart. The thresholds are in `core/config.p
 
 ### The date
 
-`core/dates.py` has the one rule for when a photo was taken: the earliest real date among the file's name, the
-date written in it (EXIF) and a video's own clock; failing those, a stand-in date; failing that, when the file
-last changed. Sorting, showing, organizing and duplicates all use it.
+`core/dates.py` has the one rule for when a photo was taken, in local time: the earliest real date among the
+file's name, the date written in it (EXIF) and a video's own clock (UTC, turned local); a name a time zone away
+from the file's own date is the same moment, and the file's date wins. Failing those, a stand-in date; failing
+that, when the file last changed. Sorting, showing, organizing and duplicates all use it.
+`organize.plan_local_names` is the one-time rename (1.17) of files named by UTC before; `ui/organizer.py` runs it
+once, after a pass with no date left to read again.
 
 ### Phones
 

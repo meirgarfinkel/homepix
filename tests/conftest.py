@@ -223,3 +223,15 @@ def _stop_exiftool():
     from homepix.core import exiftool
 
     exiftool.close_shared()
+
+
+@pytest.fixture
+def israel(monkeypatch):
+    """This computer's clock in Israel (UTC+2 in winter, +3 in summer)."""
+    if not hasattr(time, "tzset"):
+        pytest.skip("time zones can't be switched here")
+    monkeypatch.setenv("TZ", "Asia/Jerusalem")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()

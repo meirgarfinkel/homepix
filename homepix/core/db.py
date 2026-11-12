@@ -15,7 +15,7 @@ import numpy as np
 
 from .config import data_dir, db_file
 
-VERSION = 14
+VERSION = 15
 
 TABLES = {
     "photos": """CREATE TABLE photos (
@@ -147,7 +147,13 @@ def _to_14(db):
     db.execute(TABLES["import_seen"])
 
 
-UPGRADES = {11: _to_12, 12: _to_13, 13: _to_14}  # version: the step that brings it up to the next one
+def _to_15(db):
+    """Every date is local time now (1.17): videos' clocks are UTC, and so are Pixel names and names the
+    organizer gave by them. Those dates are read again."""
+    db.execute("UPDATE photos SET details_done=0 WHERE kind != 'photo' OR taken_source='filename'")
+
+
+UPGRADES = {11: _to_12, 12: _to_13, 13: _to_14, 14: _to_15}  # version: the step that brings it up to the next one
 
 
 def migrate(db: sqlite3.Connection, path):

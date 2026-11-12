@@ -90,7 +90,7 @@ def test_both_ways_of_reading_agree(lib, name):
 
 
 @needs_exiftool
-def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(home, lib):
+def test_a_video_goes_by_its_clock_in_local_time_and_a_live_photo_clip_stays_with_its_photo(home, lib):
     cv2 = pytest.importorskip("cv2")
     import numpy as np
 
@@ -109,7 +109,7 @@ def test_a_video_goes_by_its_clock_and_a_live_photo_clip_stays_with_its_photo(ho
     )
     index(pf, lib)
     r = row(db, clip)
-    assert r["taken"] == str(utc) and r["taken_source"] == "video"  # its clock, as its name would be
+    assert r["taken"] == str(local) and r["taken_source"] == "video"  # its clock (UTC), in local time
     assert r["moment"] == str(local) and r["kind"] == "motion"  # still its photo's clip
     assert fo.companions(db, [str(photo)]) == {str(photo): str(clip)}
 
@@ -222,8 +222,8 @@ def test_a_phone_that_names_photos_in_utc_keeps_its_motion_clip(home, lib):
         check=True,
     )
     index(pf, lib)
-    assert row(db, photo)["taken"] == "2023-10-01 06:09:18"  # as its name says
-    assert row(db, photo)["moment"] == "2023-10-01 09:09:18"
+    assert row(db, photo)["taken"] == "2023-10-01 09:09:18"  # its own (local) time, not its name's (UTC)
+    assert row(db, clip)["taken"] == "2023-10-01 09:09:20"
     assert row(db, clip)["kind"] == "motion"
     assert fo.companions(db, [str(photo)]) == {str(photo): str(clip)}
 
@@ -244,3 +244,37 @@ def test_a_short_video_dated_only_by_its_name_isnt_taken_for_a_live_photo(pf, li
     r = db.execute("SELECT kind, taken, taken_source FROM photos WHERE path=?", (str(clip),)).fetchone()
     if r["taken_source"] == "filename":  # (OpenCV leaves the video's clock unset)
         assert r["kind"] == "video"
+
+
+@pytest.mark.parametrize(
+    "name,found,want",
+    [
+        # a Pixel: its name is UTC, the photo's own time is local: the photo's time
+        ("PXL_20261111_122346078.jpg", [("2026-11-11 14:23:46", "exif")], ("2026-11-11 14:23:46", "exif")),
+        ("PXL_20261111_122346078.jpg", [], ("2026-11-11 14:23:46", "filename")),  # its name, turned local
+        ("PXL_20260710_230000000.jpg", [], ("2026-07-11 02:00:00", "filename")),  # (summer; the next day)
+        # named by the organizer before 1.17, by that UTC time: the photo's own time
+        ("2026_11_11_12_23_46.jpg", [("2026-11-11 14:23:46", "exif")], ("2026-11-11 14:23:46", "exif")),
+        # a day alone never beats a time on that day; it does when it's all there is
+        ("2024-07-01 party.jpg", [("2024-07-01 14:30:00", "exif")], ("2024-07-01 14:30:00", "exif")),
+        ("IMG-20240701-WA0007.jpg", [], ("2024-07-01 00:00:00", "filename")),
+        # two dates that aren't one moment: still the earliest
+        ("2020_01_01_10_00_00.jpg", [("2021-05-05 09:00:00", "exif")], ("2020-01-01 10:00:00", "filename")),
+        ("IMG_20240701_093005.jpg", [("2024-07-01 09:30:05", "exif")], ("2024-07-01 09:30:05", "exif")),
+        # videos: their clock, turned local (found holds it local already)
+        ("2024_07_01_06_30_05.mp4", [("2024-07-01 09:30:05", "video")], ("2024-07-01 09:30:05", "video")),
+        ("PXL_20240701_063005123.mp4", [("2024-07-01 09:30:05", "video")], ("2024-07-01 09:30:05", "video")),
+        # a camera that wrote its local time as if it were UTC: the camera's own name has it right
+        ("VID_20240701_093005.mp4", [("2024-07-01 12:30:05", "video")], ("2024-07-01 09:30:05", "filename")),
+        # seconds apart is one clock, not two time zones: the earliest stays, so the name isn't changed
+        ("2022_04_19_14_13_28.jpg", [("2022-04-19 14:13:29", "exif")], ("2022-04-19 14:13:28", "filename")),
+    ],
+)
+def test_every_date_is_local_time(israel, name, found, want):
+    got = dates.best_date(f"/x/{name}", [(dt.datetime.fromisoformat(d), s) for d, s in found], 0)
+    assert got == want
+
+
+def test_a_placeholder_video_clock_stays_a_placeholder(israel):
+    jan1 = dt.datetime(2020, 1, 1)
+    assert dates._video_local(jan1, dates.to_local(jan1)) == jan1

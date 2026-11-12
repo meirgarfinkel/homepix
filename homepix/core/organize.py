@@ -126,6 +126,29 @@ def plan(db, folders, scope=None) -> Plan:
     return Plan(_with_free_names(moving), len(files), not_ready)
 
 
+def plan_local_names(db, folders) -> Plan:
+    """The one-time rename to local time (1.17): files the organizer named by an earlier rule (a video's
+    UTC clock, a Pixel's UTC name), whose name is now a time zone away from their date. Only those
+    are renamed; one that moves to another year goes to that year's folder."""
+    roots = [os.path.abspath(f) for f in folders]
+    files, not_ready = _files(db, roots, None)
+    moving = []
+    for g in _groups(db, files):
+        stem = os.path.splitext(os.path.basename(g.lead))[0]
+        if g.taken is None or not dates.ORGANIZED.match(stem):
+            continue
+        named = dt.datetime.strptime(stem[:19], dates.FORMAT)
+        if named == g.taken or not dates.same_moment(named, g.taken):
+            continue
+        here = os.path.dirname(g.lead)
+        root = root_of(g.lead, roots)
+        if not within(here, [os.path.join(root, str(named.year))]):
+            g.folder = here  # (not in a year folder: renamed where it is)
+        if not g.unchanged():
+            moving.append(g)
+    return Plan(_with_free_names(moving), len(files), not_ready)
+
+
 def _files(db, roots, scope):
     """The files to organize, as (path, kind, root, date taken or None), and how many aren't indexed yet."""
     where, params = "", ()

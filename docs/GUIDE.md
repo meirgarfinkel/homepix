@@ -51,7 +51,9 @@ Press Ctrl+F and describe what's in the photo, in plain words: "dog on the beach
 
 ## Dates
 
-A photo's date is the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the same rule that *Organize by date* names files by, so a photo shows on the day its name says.
+A photo's date is the time on the clock where it was taken: the earliest real one among the file's name, the date written in the photo (EXIF) and the video's own clock; failing those, a stand-in date like 1 January at midnight; failing that, when the file was last changed. It's the same rule that *Organize by date* names files by, so a photo shows on the day its name says.
+
+Before 1.17, videos and Pixel photos were dated and named by UTC, a few hours off. After updating, HomePix reads those dates again, then renames the files it named that way to their local time, once. Undo takes the rename back, and it isn't done again.
 
 ## Changing photos and files
 

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QMessageBox
 
 from ..core import organize
 from ..core.db import open_db
-from ..core.settings import library_folders
+from ..core.settings import changing_settings, library_folders, load_settings
 from . import workers
 from .fileops import plural
 from .views.changes_dialog import ChangesDialog, relative
@@ -60,10 +60,54 @@ def _start_plan(scope):
         db.close()
 
 
+LOCAL_NAMES = "local_names_done"  # (settings) the one-time rename to local time has been made
+
+
+def _local_names_plan():
+    """The one-time rename's plan, or None while some dates are still to be read again."""
+    folders = library_folders()
+    db = open_db()
+    try:
+        for f in folders:
+            prefix = os.path.join(os.path.abspath(f), "")
+            waiting = db.execute(
+                "SELECT 1 FROM photos WHERE details_done=0 AND error IS NULL AND substr(path, 1, ?) = ? LIMIT 1",
+                (len(prefix), prefix),
+            ).fetchone()
+            if waiting:
+                return None
+        return organize.plan_local_names(db, folders)
+    finally:
+        db.close()
+
+
 class Organizer:
     def __init__(self, window):
         self.w = window
         self._looking = False
+        window.watcher.finished.connect(self.local_names)
+
+    def local_names(self):
+        """Once, after indexing has read every date again (1.17): rename the files the organizer named
+        by UTC to their local time, as one operation Undo takes back."""
+        if self._looking or self.w.ops.busy or load_settings().get(LOCAL_NAMES) or not library_folders():
+            return
+        self._looking = True
+        workers.run(_local_names_plan, self._local_names_ready)
+
+    def _local_names_ready(self, plan, err):
+        self._looking = False
+        if err is not None or plan is None or self.w.ops.busy:
+            return  # (tried again after the next pass)
+        steps, n = plan.as_steps(), len(plan.changes)
+        if n:
+            what = plural(n, "file")
+            if not self.w.ops.run(
+                "organize", f"Rename {what} to local time", f"Renamed {what} to local time", lambda db: steps
+            ):
+                return
+        with changing_settings() as s:
+            s[LOCAL_NAMES] = True
 
     def tidy(self):
         self.preview(None)
