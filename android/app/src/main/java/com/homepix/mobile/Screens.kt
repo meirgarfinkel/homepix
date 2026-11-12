@@ -491,7 +491,7 @@ private fun Modifier.swipeUp(key: Any, open: () -> Unit) = pointerInput(key) {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPerson: (Person) -> Unit) {
+fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPerson: (Person) -> Unit, onTop: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val list = remember { items.toMutableStateList() }
@@ -501,6 +501,7 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
     var info by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf<Item?>(null) } // deleting a file Android's trash doesn't know
     val player = rememberPlayer()
+    LaunchedEffect(onTop) { if (!onTop) player.pause() } // (a person's page opened over it: no sound under it)
     var motion by remember { mutableStateOf<java.io.File?>(null) } // the photo on screen's clip, if it has one
     var motionTurn by remember { mutableIntStateOf(0) } // how far its file says the photo is turned (the clip turns with it)
     var holding by remember { mutableStateOf(false) }
@@ -520,9 +521,10 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
         trashing = null
         if (r.resultCode == android.app.Activity.RESULT_OK && item != null) removed(item)
     }
-    fun delete(item: Item) {
-        val uri = mediaUri(context, item.file, item.kind == "video")
-        if (uri == null) { asking = item; return }
+    fun delete(item: Item) = scope.launch {
+        // (the gallery's list is asked off the screen's thread: it can wait while the phone is busy)
+        val uri = withContext(Dispatchers.IO) { mediaUri(context, item.file, item.kind == "video") }
+        if (uri == null) { asking = item; return@launch }
         trashing = item
         val ask = MediaStore.createTrashRequest(context.contentResolver, listOf(uri), true)
         trash.launch(IntentSenderRequest.Builder(ask.intentSender).build())
@@ -636,7 +638,7 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Action(Icons.Outlined.Share, "Share") { share(context, current) }
+                Action(Icons.Outlined.Share, "Share") { scope.launch { share(context, current) } }
                 if (current.kind != "video") Action(RotateIcon, "Rotate") {
                     scope.launch {
                         val inFile = withContext(Dispatchers.IO) {
@@ -655,17 +657,23 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
             onDismissRequest = { asking = null },
             title = { Text("Delete from this phone?") },
             text = { Text("This file can't go to the phone's trash, so it will be deleted for good. It stays in your HomePix library on the computer.") },
-            confirmButton = { TextButton(onClick = { asking = null; if (item.file.delete()) removed(item) }) { Text("Delete") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    asking = null
+                    scope.launch { if (withContext(Dispatchers.IO) { item.file.delete() }) removed(item) }
+                }) { Text("Delete") }
+            },
             dismissButton = { TextButton(onClick = { asking = null }) { Text("Cancel") } },
         )
     }
 }
 
 /** Android's share sheet for one photo or video, the way the gallery shares it. */
-private fun share(context: Context, item: Item) {
+private suspend fun share(context: Context, item: Item) {
     val video = item.kind == "video"
     // the phone's media library entry when it has one (every app can open those), else the file itself
-    val uri = mediaUri(context, item.file, video) ?: FileProvider.getUriForFile(context, "com.homepix.mobile.files", item.file)
+    val uri = withContext(Dispatchers.IO) { mediaUri(context, item.file, video) }
+        ?: FileProvider.getUriForFile(context, "com.homepix.mobile.files", item.file)
     val send = Intent(Intent.ACTION_SEND).setType(if (video) "video/*" else "image/*")
         .putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, null))

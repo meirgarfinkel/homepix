@@ -23,13 +23,17 @@ import java.io.File
  * can't be turned (see turnInFile). Kept in the app.
  */
 object Turns {
-    private var prefs: SharedPreferences? = null
+    @Volatile private var prefs: SharedPreferences? = null
     private val turns = mutableStateMapOf<String, Int>()
 
+    /** Read at start-up, on a background thread (the screen shows them once they're in). */
     fun load(context: Context) {
         val p = context.getSharedPreferences("turns", Context.MODE_PRIVATE)
+        val all = p.all
+        androidx.compose.runtime.snapshots.Snapshot.withMutableSnapshot {
+            for ((k, v) in all) if (v is Int && k !in turns) turns[k] = v
+        }
         prefs = p
-        for ((k, v) in p.all) if (v is Int) turns[k] = v
     }
 
     fun of(file: File): Int = turns[file.path] ?: 0

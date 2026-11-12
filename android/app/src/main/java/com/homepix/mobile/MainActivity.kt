@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import coil.ImageLoader
 import coil.Coil
 import androidx.compose.foundation.clickable
@@ -106,15 +107,15 @@ class MainActivity : ComponentActivity() {
             .build()
         Coil.setImageLoader(loader)
         Thread {
-            // (files to look at and delete: never on the screen's thread)
+            // (files to read, look at and delete: never on the screen's thread)
+            Turns.load(this)
+            Sending.schedule(this)
+            Sending.now(this)
             prune(thumbsDir(this), THUMBS_CAP)
             prune(clipsDir(this), CLIPS_CAP)
             deleteSharedPreferences("places") // (town names up to 0.5 kept where photos were taken)
         }.start()
-        Turns.load(this)
         pairCode = intent?.dataString?.let(PairCode::parse)
-        Sending.schedule(this)
-        Sending.now(this)
         setContent {
             val dark = isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
@@ -286,8 +287,11 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
     BackHandler(enabled = pages.isNotEmpty()) { pages.removeAt(pages.lastIndex) }
     BackHandler(enabled = pages.isEmpty() && tab != 0) { tab = 0 }
 
+    // what's covered by a page is left out of what TalkBack reads (and a covered video is paused)
+    fun covered(yes: Boolean) = if (yes) Modifier.clearAndSetSemantics {} else Modifier
     Box(Modifier.fillMaxSize()) {
         Scaffold(
+            Modifier.then(covered(pages.isNotEmpty())),
             bottomBar = { SlimBar(tab) { tab = it } },
         ) { pad ->
             Box(Modifier.padding(pad)) {
@@ -299,9 +303,10 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                 }
             }
         }
-        for (p in pages) {
+        pages.forEachIndexed { i, p ->
+            val onTop = i == pages.lastIndex
             when (p) {
-                is Page.PersonPage -> Box(Modifier.fillMaxSize()) {
+                is Page.PersonPage -> Box(Modifier.fillMaxSize().then(covered(!onTop))) {
                     Scaffold { pad ->
                         Box(Modifier.padding(pad)) {
                             Timeline(l, p.person.items, p.person.name, open,
@@ -309,8 +314,10 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
                         }
                     }
                 }
-                is Page.Viewer -> Viewer(l, p.items, p.start, close = { pages.removeAt(pages.lastIndex) },
-                    openPerson = { pages.add(Page.PersonPage(it)) })
+                is Page.Viewer -> Box(Modifier.fillMaxSize().then(covered(!onTop))) {
+                    Viewer(l, p.items, p.start, close = { pages.removeAt(pages.lastIndex) },
+                        openPerson = { pages.add(Page.PersonPage(it)) }, onTop = onTop)
+                }
             }
         }
     }
