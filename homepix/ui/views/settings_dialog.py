@@ -102,8 +102,9 @@ class SettingsDialog(QDialog):
         card = self._card(
             lay,
             "Import automations",
-            "Import new photos by themselves from a folder your sync app fills (from a phone, say). "
-            "Checked every minute while HomePix is running.",
+            "Import new photos by themselves from a folder: the one a paired phone sends to, or one another "
+            "app fills (iCloud for Windows, say). Looked at every minute while HomePix runs; new files are "
+            "taken once they've finished arriving.",
         )
         self.rule_list = self._folder_list(rows=2)
         self.rule_list.itemSelectionChanged.connect(self._selected_folder)
@@ -219,12 +220,10 @@ class SettingsDialog(QDialog):
         page.addWidget(frame)
         return lay
 
-    ROW = 38  # a list row's height, in pixels
-
     @staticmethod
     def _folder_list(rows: int) -> QListWidget:
         """A list as tall as what's in it (rows at least, 5 at most, then it scrolls); a long path is
-        shortened in the middle (the whole of it in its tooltip)."""
+        shortened in the middle."""
         lst = QListWidget()
         lst.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -234,8 +233,19 @@ class SettingsDialog(QDialog):
 
     @staticmethod
     def _fit(lst: QListWidget):
+        """Its height from its rows' own height (the style's and the font's: a larger font gets taller
+        rows, and the last isn't cut off)."""
         shown = min(max(lst.count(), lst.property("rows")), 5)
-        lst.setFixedHeight(shown * SettingsDialog.ROW + 10)
+        lst.setFixedHeight(shown * SettingsDialog.row_height(lst) + 2 * lst.frameWidth())
+
+    @staticmethod
+    def row_height(lst: QListWidget) -> int:
+        if lst.count():
+            return lst.sizeHintForRow(0)
+        lst.addItem("Ag")  # (empty: measure a row the same way)
+        h = lst.sizeHintForRow(0)
+        lst.takeItem(0)
+        return h
 
     @staticmethod
     def _buttons(left, right=()) -> QHBoxLayout:
@@ -331,8 +341,13 @@ class SettingsDialog(QDialog):
         if phone is None:
             return
         rule = next((r for r in autoimport.load_rules() if r.id == phone.rule_id), None) if phone.own_rule else None
-        waiting = rule is not None and bool(autoimport.settled_files(rule.watch, now=float("inf")))
+        waiting = rule is not None and autoimport.has_waiting(rule.watch)  # (stops at the first)
         also = f'\n\nIts automation "{rule.name}" is removed too.' if rule is not None and not waiting else ""
+        if waiting:
+            also = (
+                f'\n\nIts automation "{rule.name}" stays for now: photos it sent are still waiting in its '
+                "folder to be imported. Remove it in Import automations once they're in."
+            )
         answer = QMessageBox.question(
             self,
             "Unpair",
@@ -343,7 +358,7 @@ class SettingsDialog(QDialog):
         )
         if answer == QMessageBox.StandardButton.Yes:
             phones.forget(phone.id)
-            if also:
+            if rule is not None and not waiting:
                 autoimport.save_rules([r for r in autoimport.load_rules() if r.id != rule.id])
             link = getattr(self.parent(), "phone_link", None)
             if link is not None:

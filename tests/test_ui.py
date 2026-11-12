@@ -525,9 +525,34 @@ def test_settings_shows_folders_in_the_home_folder_the_short_way(app, pf, tmp_pa
         item = dlg.list.item(0)
         assert item.text() == os.path.join("~", "Pictures")
         assert item.data(Qt.ItemDataRole.UserRole) == str(tmp_path / "Pictures") and item.toolTip() == ""
-        assert dlg.list.height() == 3 * SettingsDialog.ROW + 10  # (room for a few, not stretched)
+        rows = 3 * SettingsDialog.row_height(dlg.list) + 2 * dlg.list.frameWidth()
+        assert dlg.list.height() == rows  # (room for a few, not stretched)
     finally:
         dlg.close()
+
+
+def test_settings_lists_fit_their_rows_in_a_large_font(app, pf, tmp_path):
+    """The list heights were a fixed 38 pixels a row: with a larger font the last row was cut off."""
+    from PySide6.QtGui import QFont
+
+    from homepix.core.settings import load_settings, save_settings
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    s = load_settings()
+    s["folders"] = [str(tmp_path / n) for n in ("a", "b", "c")]
+    save_settings(s)
+    old = app.font()
+    big = QFont(old)
+    big.setPointSize(18)
+    app.setFont(big)
+    try:
+        dlg = SettingsDialog()
+        dlg.show()
+        app.processEvents()
+        assert dlg.list.count() == 3 and dlg.list.verticalScrollBar().maximum() == 0
+        dlg.close()
+    finally:
+        app.setFont(old)
 
 
 def test_no_hover_tips_in_the_app():

@@ -1,6 +1,6 @@
 """Pairing a phone with the HomePix app: its photos go into an import automation of its own, made once it
 has paired (or one no other phone uses), and the phone scans the QR code with the app. The code works
-once, for a few minutes (a new one is shown when it runs out), and only while this window is open."""
+once, for 10 minutes (a new one is shown just before it runs out), and only while this window is open."""
 
 import contextlib
 import html
@@ -42,9 +42,7 @@ class PairDialog(QDialog):
         self.setWindowTitle("Pair a phone")
         self.setMinimumWidth(440)
         self.link = link
-        self.phone_name = ""
         self.rules, self.folders = rules, folders
-        self.made_rule = None  # the automation made for the phone, once it has paired
         self.excluded_now = False  # (its folder was inside the library, so it was excluded)
         self.pending = None  # the pairing open now
         lay = QVBoxLayout(self)
@@ -97,13 +95,16 @@ class PairDialog(QDialog):
         p = phones.pairing()
         if p is not None and p.phone is None and time.time() > p.expires - 5:
             self._new_code()  # (run out: a fresh one)
+        elif self.qr.pixmap().isNull() and self.timer.isActive():
+            self._new_code()  # (no code could be shown: no network, say. Tried again by itself)
 
-    def _paired(self, name: str):
-        self.phone_name = name
-        p = self.pending
-        if p is not None and p.new_rule:
-            self.made_rule, self.excluded_now = phones.make_rule(name, p.rule_id, self.folders, self.rules)
-            autoimport.save_rules([*autoimport.load_rules(), self.made_rule])
+    def _paired(self, phone):
+        """phone: the one that paired, with what it was paired to (not what this window shows now:
+        a new code may have been opened since)."""
+        name = phone.name
+        if phone.own_rule:
+            made, self.excluded_now = phones.make_rule(name, phone.rule_id, self.folders, self.rules)
+            autoimport.save_rules([*autoimport.load_rules(), made])
         self.timer.stop()
         phones.close_pairing()
         self.qr.hide()

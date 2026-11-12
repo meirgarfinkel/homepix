@@ -161,8 +161,16 @@ def arrived_whole(path):
 def settled_files(watch: str, now: float | None = None, should_stop=lambda: False) -> list[tuple[str, os.stat_result]]:
     """The photos and videos in a watch folder (and its folders) ready to be taken: not hidden, not still
     arriving, not cloud-only placeholders, and still for SETTLE seconds."""
-    now = time.time() if now is None else now
-    out = []
+    return list(_settled(watch, time.time() if now is None else now, should_stop))
+
+
+def has_waiting(watch: str) -> bool:
+    """Is any photo or video waiting in the folder? (Stops at the first: a folder of thousands on a
+    slow disk isn't walked to say yes.)"""
+    return next(_settled(watch, float("inf"), lambda: False), None) is not None
+
+
+def _settled(watch: str, now: float, should_stop):
     for dirpath, dirnames, filenames in os.walk(watch):
         if should_stop():
             break
@@ -181,8 +189,7 @@ def settled_files(watch: str, now: float | None = None, should_stop=lambda: Fals
             last = max((t for t in (st.st_mtime, st.st_ctime) if t <= now), default=now)
             if _cloud_only(st) or (now - last < SETTLE and os.path.abspath(p) not in _whole):
                 continue
-            out.append((p, st))
-    return out
+            yield p, st
 
 
 def looks(rules: list[Rule], now: float | None = None) -> tuple:

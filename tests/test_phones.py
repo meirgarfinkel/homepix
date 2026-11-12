@@ -347,6 +347,67 @@ def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path
     assert window.phone_link.server is None  # (no phone left: not listening)
 
 
+def test_a_phone_gets_the_automation_it_paired_for_even_if_the_code_changed_since(
+    app, home, lib, tmp_path, own_home, monkeypatch, request
+):
+    """The window used to make the automation from the pairing it showed when the news arrived; a new
+    code opened in between (it ran out, or the choice changed) left the phone with none."""
+    from PySide6.QtWidgets import QWidget
+
+    from homepix.ui.phone_link import PhoneLink
+    from homepix.ui.views import pair_dialog
+
+    (tmp_path / "Inbox").mkdir()
+    ai.save_rules([ai.Rule(name="Meirs phone", watch=str(tmp_path / "Inbox"), dest=str(lib), tidy=True)])
+    window = linked(QWidget(), PhoneLink, monkeypatch, request)
+    dlg = pair_dialog.PairDialog(window.phone_link, ai.load_rules(), [str(lib)])
+    phone, _ = phones.pair(phones.pairing().code, "Pixel 8")  # paired for its own automation...
+    dlg.rule.setCurrentIndex(1)  # ...and the window opened a code for another one meanwhile
+    window.phone_link._event("paired", phone)
+    app.processEvents()
+    made = [r for r in ai.load_rules() if r.name == "Pixel 8"]
+    assert len(made) == 1 and phones.load_phones()[0].rule_id == made[0].id
+    dlg.done(0)
+
+
+def test_the_pairing_window_tries_again_by_itself_when_there_was_no_network(app, home, lib, monkeypatch, request):
+    from PySide6.QtWidgets import QWidget
+
+    from homepix.ui.phone_link import PhoneLink
+    from homepix.ui.views import pair_dialog
+
+    window = linked(QWidget(), PhoneLink, monkeypatch, request)
+    ips = []
+    monkeypatch.setattr(phones, "addresses", lambda: list(ips))
+    dlg = pair_dialog.PairDialog(window.phone_link, [], [str(lib)])
+    assert dlg.qr.pixmap().isNull() and "isn't on a network" in dlg.status.text()
+    ips.append("192.168.1.20")  # (the Wi-Fi came up)
+    dlg._tick()
+    assert not dlg.qr.pixmap().isNull() and dlg.status.text() == "Waiting for your phone..."
+    dlg.done(0)
+
+
+def test_unpairing_with_photos_waiting_keeps_the_automation_and_says_so(
+    app, home, lib, tmp_path, own_home, monkeypatch
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from homepix.ui.views.settings_dialog import SettingsDialog
+
+    phone, _ = phones.pair(phones.open_pairing().code, "Pixel 7")
+    rule, _ = phones.make_rule("Pixel 7", phone.rule_id, [str(lib)], [])
+    ai.save_rules([rule])
+    photo(Path(rule.watch) / "PXL_1.jpg")  # (sent, not imported yet)
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: asked.append(a[2]) or QMessageBox.StandardButton.Yes)
+    dlg = SettingsDialog()
+    dlg.phone_list.item(0).setSelected(True)
+    dlg._unpair()
+    assert "stays for now" in asked[0] and "waiting" in asked[0]
+    assert phones.load_phones() == [] and [r.name for r in ai.load_rules()] == ["Pixel 7"]
+    dlg.close()
+
+
 def test_removing_a_phones_automation_unpairs_it(app, home, lib, tmp_path, monkeypatch, request):
     from PySide6.QtWidgets import QMessageBox, QWidget
 

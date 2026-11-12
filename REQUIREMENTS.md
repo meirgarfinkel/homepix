@@ -140,7 +140,7 @@ Photos arrive in a folder (the automation's **Import from** folder) by the HomeP
 | After an automatic batch, a line in the status bar at the bottom: "Imported 37 photos from Dad's phone" (no bar across the window); Edit > Undo names it and takes it back | v1 |
 | An automation set to ask first: a bar with the count of new files; **Review** shows them as thumbnails (untick to leave one for next time; a line under each says where it will go); Import or Cancel | v1 |
 | A missing or unplugged Import from or Import to folder: nothing happens and nothing is treated as deleted; Settings shows why it's waiting | v1 |
-| The automation screen warns that emptying the folder deletes from the phone with two-way sync and from iCloud with iCloud for Windows; with iCloud or icloudpd, leave it off | v1 |
+| The automation screen warns that emptying the folder also deletes there when the app that fills it copies deletions back (iCloud for Windows does); with iCloud or icloudpd, leave it off. The HomePix phone app never deletes | v1 |
 | Only while the app is running. **Keep running in the background** (Settings, off by default): HomePix starts hidden at each login (an autostart entry on Linux, the Startup folder on Windows, a LaunchAgent on macOS), and closing the window hides it instead of quitting; opening HomePix shows it again; File > Quit stops it until the next login. While it runs this way, an icon in the system tray (where the desktop has one) opens the window, and its menu has Open HomePix and Quit | v1 |
 | Settings shows, per automation, when it last checked and last imported | v1 |
 
