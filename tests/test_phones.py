@@ -92,8 +92,21 @@ def paired(server, rule):
     return phone
 
 
-def file_info(rel, data):
-    return {"path": rel, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+def qhash(data: bytes) -> str:
+    """util.quick_hash, of bytes (as the phone makes it)."""
+    h = hashlib.sha1(str(len(data)).encode())
+    h.update(data[:65536])
+    if len(data) > 131072:
+        h.update(data[-65536:])
+    return h.hexdigest()
+
+
+def file_info(rel, data, sha=True):
+    """What the phone asks about a file: by its quick fingerprint first (sha=False), then by content."""
+    f = {"path": rel, "size": len(data), "qhash": qhash(data)}
+    if sha:
+        f["sha256"] = hashlib.sha256(data).hexdigest()
+    return f
 
 
 def test_pairing_gives_the_phone_a_secret_once(setup):
@@ -405,7 +418,7 @@ def test_two_phones_with_the_same_names_never_mix(setup, lib, tmp_path, own_home
     assert contents == sorted([mine, theirs])
 
     # Phone B's library file doesn't take phone A's photo for its own by name.
-    data, _ = ask_library(b, [len(theirs) + 1], [rel])
+    data, _ = ask_library(b, [qhash(b"not this one")], [rel])
     out = tmp_path / "b.db"
     out.write_bytes(data)
     photos_b, came_b, _ = library_rows(out)
@@ -424,8 +437,8 @@ def library_rows(path):
     return photos, came, tables
 
 
-def ask_library(phone, sizes, sources=(), version=None):
-    body = json.dumps({"sizes": list(sizes), "sources": list(sources), "version": version}).encode()
+def ask_library(phone, qhashes, sources=(), version=None, body=None):
+    body = json.dumps(body or {"qhashes": list(qhashes), "sources": list(sources), "version": version}).encode()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
     c = http.client.HTTPSConnection("127.0.0.1", phone.port, context=ctx, timeout=30)
@@ -450,7 +463,7 @@ def test_the_phone_gets_only_its_own_photos_details(setup, lib, tmp_path):
     pf_index(lib, want_faces=False)
     assert db.execute("SELECT COUNT(*) FROM photos").fetchone()[0] == 3
 
-    data, version = ask_library(phone, [len(sent)], ["Camera/PXL_1.jpg"])
+    data, version = ask_library(phone, [qhash(sent)], ["Camera/PXL_1.jpg"])
     out = tmp_path / "phone.db"
     out.write_bytes(data)
     photos, came, tables = library_rows(out)
@@ -460,11 +473,11 @@ def test_the_phone_gets_only_its_own_photos_details(setup, lib, tmp_path):
     assert not any("\\" in p for p in came)  # (paths with / between folders, on Windows too)
 
     # Asked again with nothing changed: no file, just "the same".
-    data2, _ = ask_library(phone, [len(sent)], ["Camera/PXL_1.jpg"], version)
+    data2, _ = ask_library(phone, [qhash(sent)], ["Camera/PXL_1.jpg"], version)
     assert json.loads(data2) == {"same": True, "version": version}
 
-    # A photo changed on the phone (another size now): still found by where it came from.
-    data3, version3 = ask_library(phone, [123], ["Camera/PXL_1.jpg"], version)
+    # A photo changed on the phone (another fingerprint now): still found by where it came from.
+    data3, version3 = ask_library(phone, [qhash(b"turned")], ["Camera/PXL_1.jpg"], version)
     assert version3 != version
     out.write_bytes(data3)
     assert len(library_rows(out)[0]) == 1
@@ -478,7 +491,7 @@ def test_the_phone_gets_only_its_own_photos_details(setup, lib, tmp_path):
 def test_unpairing_drops_the_phones_library_file(setup):
     server, rule, _, _, _ = setup
     phone = paired(server, rule)
-    ask_library(phone, [1], [])
+    ask_library(phone, [], [])
     pid = phones.load_phones()[0].id
     assert phones._library_files(pid)[0].is_file()
     phones.forget(pid)
@@ -512,13 +525,14 @@ def test_two_phones_get_their_library_at_the_same_time(home, lib):
     for i in range(60):
         photo(lib / f"p{i}.jpg")
     index_folder(lib, want_faces=False)
-    sizes = [r[0] for r in db.execute("SELECT size FROM photos")]
+    qhashes = [r[0] for r in db.execute("SELECT qhash FROM photos")]
     errors = []
 
     def fetch(phone, extra):
         for i in range(8):
             try:
-                _, f = phones.library_for(phone, [*sizes, extra + i], [], None)  # (a new size: made again each time)
+                # (a fingerprint more: made again each time)
+                _, f = phones.library_for(phone, [*qhashes, qhash(f"{extra} {i}".encode())], [], None)
                 c = sqlite3.connect(f)
                 n = c.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
                 c.close()
@@ -535,3 +549,82 @@ def test_two_phones_get_their_library_at_the_same_time(home, lib):
         t.join()
     assert errors == []
     assert list(data_dir().glob("*.tmp.db")) == []  # (nothing left behind)
+
+
+def test_asked_first_by_fingerprint_only_new_files_are_hashed(setup, lib, tmp_path):
+    from homepix.core.library import index_folder
+
+    server, rule, watch, _, db = setup
+    phone = paired(server, rule)
+    have = photo(lib / "2024" / "a.jpg").read_bytes()  # in the library, with no SHA-256 kept
+    index_folder(lib, want_faces=False)
+    assert db.execute("SELECT sha256 FROM photos").fetchone()[0] is None
+    new = photo(tmp_path / "new.jpg").read_bytes()
+    files = [file_info("Camera/a.jpg", have, sha=False), file_info("Camera/new.jpg", new, sha=False)]
+    status, body = phone.post("/v1/need", {"files": files})
+    assert status == 200 and body == {"need": [{"path": "Camera/new.jpg"}], "quick": True}
+    # by content, the library's photo is found by its fingerprint and checked by its SHA-256
+    files = [file_info("Camera/a.jpg", have), file_info("Camera/new.jpg", new)]
+    assert phone.post("/v1/need", {"files": files})[1]["need"] == [{"path": "Camera/new.jpg", "have": 0}]
+    # a different file with the same fingerprint is still needed
+    fake = file_info("Camera/a.jpg", have) | {"sha256": hashlib.sha256(b"another").hexdigest()}
+    assert phone.post("/v1/need", {"files": [fake]})[1]["need"] == [{"path": "Camera/a.jpg", "have": 0}]
+
+
+def test_a_phone_that_tells_only_sizes_gets_only_what_it_sent(setup, lib, tmp_path):
+    """(Phones before 0.7, or anyone with a phone's secret: sizes no longer bring the library's photos.)"""
+    from homepix.core.library import index_folder
+
+    server, rule, _, _, _ = setup
+    phone = paired(server, rule)
+    other = photo(lib / "Other" / "a.jpg")
+    index_folder(lib, want_faces=False)
+    data, _ = ask_library(phone, (), body={"sizes": [other.stat().st_size], "sources": []})
+    out = tmp_path / "phone.db"
+    out.write_bytes(data)
+    assert library_rows(out)[0] == []
+
+
+def test_the_phones_file_holds_only_its_photos_faces_and_people(setup, lib, tmp_path):
+    import sqlite3
+
+    from homepix.core.library import index_folder
+
+    server, rule, _, _, db = setup
+    phone = paired(server, rule)
+    mine = photo(lib / "a.jpg").read_bytes()
+    photo(lib / "b.jpg")
+    index_folder(lib, want_faces=False)
+    ids = dict(db.execute("SELECT path, id FROM photos").fetchall())
+    for name in ("Dana", "Eli", "Noa"):
+        db.execute("INSERT INTO people (name) VALUES (?)", (name,))
+    pid = dict(db.execute("SELECT name, id FROM people").fetchall())
+    face = "INSERT INTO faces (photo_id, x, y, w, h, emb, person_id, not_person) VALUES (?, 0, 0, 1, 1, x'00', ?, ?)"
+    db.execute(face, (ids[str(lib / "a.jpg")], pid["Dana"], pid["Eli"]))
+    db.execute(face, (ids[str(lib / "b.jpg")], pid["Noa"], None))
+    db.execute("INSERT INTO apart VALUES (?, ?)", sorted(ids.values()))
+    db.commit()
+
+    data, _ = ask_library(phone, [qhash(mine)])
+    out = tmp_path / "phone.db"
+    out.write_bytes(data)
+    with sqlite3.connect(out) as c:
+        assert [os.path.basename(p) for (p,) in c.execute("SELECT path FROM photos")] == ["a.jpg"]
+        assert c.execute("SELECT name FROM people").fetchall() == [("Dana",)]
+        assert c.execute("SELECT not_person FROM faces").fetchall() == [(None,)]  # (Eli isn't in it)
+        assert c.execute("SELECT COUNT(*) FROM apart").fetchone()[0] == 0
+        assert c.execute("PRAGMA user_version").fetchone()[0] == db.execute("PRAGMA user_version").fetchone()[0]
+        assert c.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+
+
+def test_an_upload_cut_off_long_ago_is_dropped(setup):
+    server, rule, watch, _, _ = setup
+    phone = paired(server, rule)
+    data = os.urandom(300_000)
+    assert phone.send("Camera/old.mp4", data, 0, 1000)[0] == 200
+    assert phone.send("Camera/new.mp4", data[::-1], 0, 1000)[0] == 200
+    old = phones._part(str(watch), hashlib.sha256(data).hexdigest())
+    week_ago = time.time() - phones.PART_DAYS * 86400 - 60
+    os.utime(old, (week_ago, week_ago))
+    phone.post("/v1/need", {"files": []})
+    assert [p.name for p in (watch / phones.INCOMING).iterdir()] == [hashlib.sha256(data[::-1]).hexdigest() + ".part"]

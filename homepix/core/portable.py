@@ -403,42 +403,62 @@ def _bring_faces(db, cp, new: dict, people: dict) -> int:
     return len(named)
 
 
-def phone_copy(dst: Path, sizes: set[int], sources: set[str], watch: str | None) -> int:
+def phone_copy(dst: Path, qhashes: set[str], sources: set[str], watch: str | None) -> int:
     """A copy for a phone with the HomePix app: what HomePix knows about the photos that phone has, from
     every library folder, in the same form as a folder's copy (so the app reads it the same way). A photo
-    is kept when a file on the phone has its size (the app then matches each by fingerprint), or when it
-    came from that place on the phone (sources: "Camera/PXL_1.jpg"; for one changed since, on either
-    side; only among those imported from watch, the phone's own Import from folder, since another phone's
-    can have the same names). Excluded folders' photos are left out. Paths stay whole, so no phone looks for them in a
+    is kept when a file on the phone has its quick fingerprint (util.quick_hash), or when it came from
+    that place on the phone (sources: "Camera/PXL_1.jpg"; for one changed since, on either side; only
+    among those imported from watch, the phone's own Import from folder, since another phone's can have
+    the same names). Excluded folders' photos are left out, and so is everything else: the history,
+    what was imported, people no kept face is of. Paths stay whole, so no phone looks for them in a
     library folder of its own. Written all at once to dst; returns the number of photos in it."""
     from .autoimport import came_from
+    from .db import INDEXES, TABLES
 
     db = open_db()
     try:
         came = [(now, src) for now, src in came_from(db, "", watch) if src in sources] if watch else []
-        work = _scratch("phone-out")
-        out = sqlite3.connect(work)
-        db.backup(out)
     finally:
         db.close()
+    work = _scratch("phone-out")
+    out = sqlite3.connect(work)
     tmp = dst.with_name(dst.name + ".tmp")
     try:
-        out.execute("PRAGMA foreign_keys = ON")
         out.execute("PRAGMA journal_mode = OFF")  # a scratch copy: nothing to protect
-        for table in ("op_steps", "ops", "import_seen"):
-            out.execute(f"DELETE FROM {table}")
-        out.execute("CREATE TEMP TABLE want_size (size INTEGER PRIMARY KEY)")
-        out.executemany("INSERT OR IGNORE INTO want_size VALUES (?)", [(int(s),) for s in sizes])
+        for create in TABLES.values():
+            out.execute(create)
+        for index in INDEXES:
+            out.execute(index)
+        out.execute(f"PRAGMA user_version = {VERSION}")
+        out.execute("ATTACH ? AS lib", (str(db_file()),))
+        out.execute("CREATE TEMP TABLE want_qhash (qhash TEXT PRIMARY KEY)")
+        out.executemany("INSERT OR IGNORE INTO want_qhash VALUES (?)", [(q,) for q in qhashes])
         out.execute("CREATE TEMP TABLE want_path (path TEXT PRIMARY KEY)")
         out.executemany("INSERT OR IGNORE INTO want_path VALUES (?)", [(now,) for now, _ in came])
+
+        def shared(table):  # (the columns both have, by name)
+            there = {r[1] for r in out.execute(f"PRAGMA lib.table_info({table})")}
+            return ", ".join(c for c in columns(out, table) if c in there)
+
+        pcols = shared("photos")
         out.execute(
-            "DELETE FROM photos WHERE size NOT IN (SELECT size FROM want_size) "
-            "AND path NOT IN (SELECT path FROM want_path)"
+            f"INSERT INTO photos ({pcols}) SELECT {pcols} FROM lib.photos "
+            "WHERE qhash IN (SELECT qhash FROM want_qhash) OR path IN (SELECT path FROM want_path)"
         )
         for f in load_settings().get("excluded", []):
             p = folder_prefix(f)
             out.execute("DELETE FROM photos WHERE substr(path, 1, ?) = ?", (len(p), p))
-        out.execute("DELETE FROM people WHERE id NOT IN (SELECT person_id FROM faces WHERE person_id IS NOT NULL)")
+        fcols = shared("faces")
+        out.execute(
+            f"INSERT INTO faces ({fcols}) SELECT {fcols} FROM lib.faces WHERE photo_id IN (SELECT id FROM photos)"
+        )
+        out.execute(
+            "INSERT INTO people (id, name) SELECT id, name FROM lib.people "
+            "WHERE id IN (SELECT person_id FROM faces WHERE person_id IS NOT NULL)"
+        )
+        out.execute("UPDATE faces SET not_person = NULL WHERE not_person NOT IN (SELECT id FROM people)")
+        out.commit()
+        out.execute("DETACH lib")
         out.execute("UPDATE photos SET path = replace(path, ?, '/')", (os.sep,))
         out.execute("CREATE TABLE came_from (path TEXT PRIMARY KEY, source TEXT NOT NULL)")
         out.executemany(
@@ -461,10 +481,5 @@ def phone_copy(dst: Path, sizes: set[int], sources: set[str], watch: str | None)
     finally:
         out.close()
         work.unlink(missing_ok=True)
-    done = sqlite3.connect(tmp)
-    try:
-        done.execute("PRAGMA journal_mode = DELETE")
-    finally:
-        done.close()
     os.replace(tmp, dst)
     return n
