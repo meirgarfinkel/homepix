@@ -97,9 +97,17 @@ def _insert_snapshot(db, snap, path: str) -> int:
     return pid
 
 
+def _clear_stale(db, dst: str):
+    """A file has just arrived at dst, where there was none: a row still there is a file deleted outside
+    HomePix that indexing hasn't caught up with. It goes, or it would hold the name (paths are unique)."""
+    db.execute("DELETE FROM photos WHERE path=?", (dst,))
+
+
 def _update_index(db, step) -> dict:
     """Bring the index in line with a finished step. Returns what to remember about it."""
     action, src, dst = step["action"], step["src"], step["dst"]
+    if action in ("move", "copy") and dst != src:
+        _clear_stale(db, dst)
     if action == "move":
         # The row is at the file's hidden name once it's staged (see run); at src only if a crash came
         # first, before any other file could have arrived at src.
@@ -537,10 +545,16 @@ def run(db, kind: str, summary: str, steps: list[dict], progress=None, should_st
     move already under way always finishes). Returns a Result; nothing raises for a single file that
     can't be done: it's skipped, and the reason is in Result.skipped as (path, reason)."""
     op = _Op(db, _journal(db, kind, summary, steps, undoes), progress, should_stop)
-    early = op.trash_in_the_way()
-    moved_to = op.move()
-    trashing = op.reserve_trash(early)
-    op.do_the_rest(trashing, moved_to)
+    trashing: dict = {}
+    try:
+        early = op.trash_in_the_way()
+        moved_to = op.move()
+        trashing = op.reserve_trash(early)
+        op.do_the_rest(trashing, moved_to)
+    except BaseException:
+        db.rollback()  # (what wasn't committed; each finished step is in the journal already)
+        op.close(trashing)  # never left "running" with its Trash names held
+        raise
     return op.close(trashing)
 
 
@@ -584,8 +598,20 @@ class _Op:
         _mark_skipped(self.db, step, why)
         self.result.skipped.append((step["src"], why))
 
-    def finished(self, step, dst):
-        _mark_finished(self.db, step, dst)
+    def finished(self, step, dst) -> bool:
+        """The step's file is where it should be: index and journal follow. False (and skipped, with why)
+        if that failed (a damaged file the details can't be read from, say)."""
+        if not self.db.in_transaction:
+            self.db.execute("BEGIN")  # (so the savepoint nests in it and doesn't commit: commits stay batched)
+        self.db.execute("SAVEPOINT step")
+        try:
+            _mark_finished(self.db, step, dst)
+        except Exception as e:
+            self.db.execute("ROLLBACK TO step")
+            self.db.execute("RELEASE step")
+            self.skipped(step, f"done, but the library couldn't be brought up to date: {e}")
+            return False
+        self.db.execute("RELEASE step")
         self.result.finished += 1
         if step["action"] in ("move", "copy", "restore") and _unindexed(self.db, dst or step["dst"]):
             self.result.unindexed += 1
@@ -594,6 +620,7 @@ class _Op:
         if time.monotonic() - self.last_commit > 0.5:  # so the window can show the progress
             self.db.commit()
             self.last_commit = time.monotonic()
+        return True
 
     def _hidden(self, r, path, what):
         return _hidden(path, self.op_id, r["seq"], what)
@@ -665,15 +692,27 @@ class _Op:
                 dst = _free_destination(db, r, r["dst"])
                 move_file(temp, dst, self._hidden(r, dst, "partial"))
             except OSError as e:
+                why = e.strerror or str(e)
                 try:
                     rename_noreplace(temp, r["src"])  # put it back where it was
                 except OSError:
-                    continue  # left under way: recover() will finish it
+                    # its name was taken meanwhile (by another file in this operation): beside it, under a
+                    # free name, never left hidden
+                    folder = os.path.dirname(r["src"])
+                    try:
+                        alt = os.path.join(folder, free_name(folder, os.path.basename(r["src"])))
+                        rename_noreplace(temp, alt)
+                    except OSError:
+                        continue  # left under way: close() leaves the operation for recover()
+                    _update_step(db, r, dst=alt)
+                    if self.finished(r, alt):
+                        self.result.skipped.append((r["src"], f"{why}; it's at {os.path.basename(alt)} instead"))
+                    continue
                 db.execute("UPDATE photos SET path=? WHERE path=?", (r["src"], temp))
-                self.skipped(r, e.strerror or str(e))
+                self.skipped(r, why)
                 continue
-            self.finished(r, dst)
-            moved_to[r["src"]] = dst
+            if self.finished(r, dst):
+                moved_to[r["src"]] = dst
         return moved_to
 
     def reserve_trash(self, early) -> dict:
@@ -704,6 +743,9 @@ class _Op:
                 continue
             except OSError as e:
                 self.skipped(r, e.strerror or str(e))
+                continue
+            except Exception as e:  # (ExifTool stopping, say): this step only, not the whole operation
+                self.skipped(r, str(e) or type(e).__name__)
                 continue
             self.finished(r, dst)
 
@@ -749,6 +791,8 @@ class _Op:
         for r in db.execute("SELECT * FROM op_steps WHERE op_id=? AND done=?", (self.op_id, PLANNED)).fetchall():
             _mark_skipped(db, r, "stopped before it was done")
         state = "interrupted" if self.result.stopped else "done"
+        if db.execute("SELECT 1 FROM op_steps WHERE op_id=? AND done=?", (self.op_id, UNDER_WAY)).fetchone():
+            state = "running"  # a file still at its hidden name: recover() finishes it at the next start
         db.execute("UPDATE ops SET state=?, finished=? WHERE id=?", (state, _now(), self.op_id))
         db.commit()
         return self.result
@@ -778,47 +822,62 @@ def recover(db) -> list[str]:
         for r in db.execute(
             "SELECT * FROM op_steps WHERE op_id=? AND done IN (?, ?) ORDER BY seq", (op["id"], PLANNED, UNDER_WAY)
         ).fetchall():
-            src, dst, action = r["src"], r["dst"], r["action"]
-            if dst:
-                Path(_hidden(dst, op["id"], r["seq"], "partial")).unlink(missing_ok=True)
-            if action == "move":
-                fixed += _recover_move(db, op["id"], r, started)
-            elif action == "copy":
-                if os.path.lexists(dst) and os.path.lexists(src) and os.path.getsize(dst) == os.path.getsize(src):
-                    _mark_finished(db, r)
-                    fixed += 1
-                else:
-                    _mark_skipped(db, r, "interrupted before it was done")
-            elif action == "trash":
-                # (on a Mac, where macOS names it in the Trash, gone from its folder is enough)
-                went = trashcan.mac() or (dst and os.path.lexists(dst))
-                if went and not os.path.lexists(src):
-                    _mark_finished(db, r)
-                    fixed += 1
-                else:
-                    if dst:
-                        trashcan.unreserve(dst)
-                    _mark_skipped(db, r, "interrupted before it was done")
-            elif action == "restore":
-                if os.path.lexists(dst) and not os.path.lexists(src):
-                    trashcan.unreserve(src)
-                    _mark_finished(db, r)
-                    fixed += 1
-                else:
-                    _mark_skipped(db, r, "interrupted before it was done")
-            elif action in INDEX_ONLY:  # it and its being done are committed together: it wasn't
-                _mark_skipped(db, r, "interrupted before it was done")
-            elif action == "meta":  # ExifTool replaces a file in one step: it holds either all or none
-                Path(metadata.exiftool_temp_file(src)).unlink(missing_ok=True)
-                if os.path.lexists(src) and metadata.holds_values(src, json.loads(r["before"])["new"]):
-                    _mark_finished(db, r)
-                    fixed += 1
-                else:
-                    _mark_skipped(db, r, "interrupted before it was done")
+            if not db.in_transaction:
+                db.execute("BEGIN")
+            db.execute("SAVEPOINT step")
+            try:
+                fixed += _recover_step(db, op, r, started)
+            except Exception as e:  # (one file that can't be finished doesn't stop the rest, nor the next start)
+                db.execute("ROLLBACK TO step")
+                _mark_skipped(db, r, f"couldn't be finished after the interruption: {e}")
+            db.execute("RELEASE step")
         db.execute("UPDATE ops SET state='interrupted', finished=? WHERE id=?", (_now(), op["id"]))
         db.commit()
         notes.append(f"{op['summary']}: interrupted; {fixed} file(s) finished on recovery")
     return notes
+
+
+def _recover_step(db, op, r, started: bool) -> int:
+    """One unfinished step of an interrupted operation, finished or marked skipped. 1 if finished."""
+    fixed = 0
+    src, dst, action = r["src"], r["dst"], r["action"]
+    if dst:
+        Path(_hidden(dst, op["id"], r["seq"], "partial")).unlink(missing_ok=True)
+    if action == "move":
+        fixed += _recover_move(db, op["id"], r, started)
+    elif action == "copy":
+        if os.path.lexists(dst) and os.path.lexists(src) and os.path.getsize(dst) == os.path.getsize(src):
+            _mark_finished(db, r)
+            fixed += 1
+        else:
+            _mark_skipped(db, r, "interrupted before it was done")
+    elif action == "trash":
+        # (on a Mac, where macOS names it in the Trash, gone from its folder is enough)
+        went = trashcan.mac() or (dst and os.path.lexists(dst))
+        if went and not os.path.lexists(src):
+            _mark_finished(db, r)
+            fixed += 1
+        else:
+            if dst:
+                trashcan.unreserve(dst)
+            _mark_skipped(db, r, "interrupted before it was done")
+    elif action == "restore":
+        if os.path.lexists(dst) and not os.path.lexists(src):
+            trashcan.unreserve(src)
+            _mark_finished(db, r)
+            fixed += 1
+        else:
+            _mark_skipped(db, r, "interrupted before it was done")
+    elif action in INDEX_ONLY:  # it and its being done are committed together: it wasn't
+        _mark_skipped(db, r, "interrupted before it was done")
+    elif action == "meta":  # ExifTool replaces a file in one step: it holds either all or none
+        Path(metadata.exiftool_temp_file(src)).unlink(missing_ok=True)
+        if os.path.lexists(src) and metadata.holds_values(src, json.loads(r["before"])["new"]):
+            _mark_finished(db, r)
+            fixed += 1
+        else:
+            _mark_skipped(db, r, "interrupted before it was done")
+    return fixed
 
 
 def _second_phase_started(db, op_id) -> bool:

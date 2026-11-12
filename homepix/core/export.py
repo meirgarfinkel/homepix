@@ -1,6 +1,7 @@
 """Exporting: copies of photos for somewhere outside the library (to share, upload or print), either
 the original files or JPEGs made smaller. The library itself isn't changed, so this isn't journaled."""
 
+import contextlib
 import os
 
 from PIL import Image, ImageOps
@@ -34,6 +35,8 @@ def export(paths, folder, resize: int | None = None, quality: int = 85, progress
                 copy_file(src, dst, partial)
             done += 1
         except Exception as e:  # one photo that can't be read doesn't stop the rest
+            with contextlib.suppress(OSError):
+                os.unlink(partial)
             failed.append((src, str(e)))
         if progress:
             progress(i + 1, len(paths))
