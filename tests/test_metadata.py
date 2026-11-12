@@ -420,6 +420,24 @@ def test_rotating_in_the_viewer_shows_it_turned(window, app):
     assert w.viewer._best_image()[0].size().width() == before.height()
 
 
+def test_every_photo_action_is_on_the_tile_menu_and_flipping_works(window, app):
+    """Each action that changes a photo can be reached (PR #10's flips were made and never shown)."""
+    from PySide6.QtWidgets import QMenu
+
+    w = window
+    menu = QMenu(w)
+    w.photo.add_to(menu)
+    assert set(w.photo.targeted) <= set(menu.actions())
+    w.timeline.set_current(0)
+    path = w.timeline.items[0].path
+    before = md.read([path])[path].orientation
+    flip = next(a for a in menu.actions() if a.text() == "Flip horizontally")
+    flip.trigger()
+    wait_until(app, lambda: not w.ops.busy and md.read([path])[path].orientation != before)
+    assert md.read([path])[path].orientation == md.turned(before, "flip-h")
+    menu.deleteLater()
+
+
 def test_all_details_lists_the_tags(window, app, monkeypatch):
     from homepix.ui.views import details_dialogs
 

@@ -498,3 +498,40 @@ def test_the_qr_code_holds_the_pairing_link(app):
     pixels = np.frombuffer(img.constBits(), np.uint8).reshape(img.height(), img.bytesPerLine())[:, : img.width()]
     text, _, _ = cv2.QRCodeDetector().detectAndDecode(np.ascontiguousarray(pixels))
     assert text == link  # what the phone's camera reads
+
+
+def test_two_phones_get_their_library_at_the_same_time(home, lib):
+    """Each copy is made in a scratch file of its own (two phones once shared one, and one failed)."""
+    import sqlite3
+    import threading
+
+    from homepix.core.config import data_dir
+    from homepix.core.library import index_folder
+
+    pf, db = home
+    for i in range(60):
+        photo(lib / f"p{i}.jpg")
+    index_folder(lib, want_faces=False)
+    sizes = [r[0] for r in db.execute("SELECT size FROM photos")]
+    errors = []
+
+    def fetch(phone, extra):
+        for i in range(8):
+            try:
+                _, f = phones.library_for(phone, [*sizes, extra + i], [], None)  # (a new size: made again each time)
+                c = sqlite3.connect(f)
+                n = c.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+                c.close()
+                if n != 60:
+                    errors.append(f"{phone.name}: {n} photos")
+            except Exception as e:
+                errors.append(f"{phone.name}: {e!r}")
+
+    both = [phones.Phone("one", "r1"), phones.Phone("two", "r2")]
+    threads = [threading.Thread(target=fetch, args=(p, n)) for p, n in zip(both, (1, 10**6), strict=True)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert list(data_dir().glob("*.tmp.db")) == []  # (nothing left behind)

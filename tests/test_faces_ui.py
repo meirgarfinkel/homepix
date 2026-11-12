@@ -339,3 +339,39 @@ def test_a_follow_up_fills_the_page(window, app, monkeypatch):
         monkeypatch.setattr(window.who.grid, "fits", lambda fits=fits: fits)
         window._load_who()
         assert asked[-1] == ("Ann", wanted)
+
+
+def test_start_faces_over_asks_first_and_says_what_goes(window, pf, app, monkeypatch):
+    from homepix.core.config import data_dir
+
+    db = pf.open_db()
+    ids = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY photo_id")]
+    db.close()
+    window.naming.name(ids[:2], "Ann")
+    settle(app, window)
+    before = names(pf)
+    asked = []
+
+    def answer(button):
+        def warning(parent, title, text, *a, **k):
+            asked.append(text)
+            return button
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "warning", staticmethod(warning))
+
+    answer(QtWidgets.QMessageBox.StandardButton.Cancel)  # (no: nothing changes)
+    window.naming.start_over()
+    settle(app, window)
+    assert "Forget all 8 faces and the 1 person you named" in asked[0]
+    assert names(pf) == before and "Ann" in before
+
+    answer(QtWidgets.QMessageBox.StandardButton.Reset)
+    window.naming.start_over()
+    wait_until(app, lambda: not window.ops.busy)
+    db = pf.open_db()
+    try:
+        assert db.execute("SELECT COUNT(*) FROM people").fetchone()[0] == 0
+    finally:
+        db.close()
+    assert "Ann" not in names(pf)
+    assert any("before-faces-reset" in p.name for p in (data_dir() / "backups").iterdir())
