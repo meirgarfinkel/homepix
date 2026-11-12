@@ -8,7 +8,7 @@ import java.io.File
 
 /**
  * expected.json is made by HomePix on the computer (tests/test_phone_agrees.py, from its tokenizer,
- * split_matches, util.quick_hash and phones.qr_text): the phone must agree.
+ * split_matches, util.quick_hash, phones.qr_text and the database's schema): the phone must agree.
  */
 class SameAsDesktopTest {
     private val expected = JSONObject(javaClass.getResource("/expected.json")!!.readText())
@@ -59,6 +59,17 @@ class SameAsDesktopTest {
             val (clear, near) = Search.splitMatches(FloatArray(s.length()) { s.getDouble(it).toFloat() })
             assertEquals(ints(splits.getJSONArray(i).getJSONArray(0)), clear)
             assertEquals(ints(splits.getJSONArray(i).getJSONArray(1)), near)
+        }
+    }
+
+    @Test
+    fun theLibraryCopyHasWhatThePhoneReads() {
+        val lib = expected.getJSONObject("library")
+        assertEquals("KNOWN_VERSION is the computer's db.VERSION", lib.getInt("version"), KNOWN_VERSION)
+        val columns = lib.getJSONObject("columns")
+        for ((table, cols) in LIBRARY_NEEDS) {
+            val have = columns.getJSONArray(table).let { a -> List(a.length()) { a.getString(it) } }
+            assertEquals("$table columns the phone reads", emptyList<String>(), cols.filter { it !in have })
         }
     }
 }

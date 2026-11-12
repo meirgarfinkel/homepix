@@ -256,24 +256,26 @@ fun VideoPage(
  */
 fun motionVideo(context: Context, photo: File): File? {
     val start = motionStart(photo) ?: return null
-    val out = File(context.cacheDir, "motion/${photo.path.hashCode().toUInt()}_${photo.lastModified()}_${photo.length()}.mp4")
+    val out = File(clipsDir(context), "${photo.path.hashCode().toUInt()}_${photo.lastModified()}_${photo.length()}.mp4")
     if (out.isFile) return out
     out.parentFile!!.mkdirs()
-    val tmp = File(out.path + ".tmp")
-    RandomAccessFile(photo, "r").use { f ->
-        f.seek(start)
-        tmp.outputStream().use { o ->
-            val buf = ByteArray(1 shl 16)
-            while (true) {
-                val n = f.read(buf)
-                if (n <= 0) break
-                o.write(buf, 0, n)
+    writeWhole(out) { tmp ->
+        RandomAccessFile(photo, "r").use { f ->
+            f.seek(start)
+            tmp.outputStream().use { o ->
+                val buf = ByteArray(1 shl 16)
+                while (true) {
+                    val n = f.read(buf)
+                    if (n <= 0) break
+                    o.write(buf, 0, n)
+                }
             }
         }
     }
-    tmp.renameTo(out)
     return out
 }
+
+fun clipsDir(context: Context) = File(context.cacheDir, "motion")
 
 /** Where the video starts in a motion photo's file, from what its XMP says, or null if there's none. */
 fun motionStart(photo: File): Long? {

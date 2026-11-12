@@ -1,5 +1,6 @@
 """The phone app does some of what the computer does, in Kotlin: the tokenizer, splitting search matches,
-the quick fingerprint, reading the pairing link. android/app/src/test/resources/expected.json holds what
+the quick fingerprint, reading the pairing link, reading a library copy (the database's version and
+columns). android/app/src/test/resources/expected.json holds what
 the computer's code makes; the phone's tests check they make the same. This test makes it again from the
 computer's code and fails when the committed one differs, so a change here can't leave the phone behind.
 
@@ -52,6 +53,19 @@ def _made(committed: dict, tmp_path, monkeypatch) -> dict:
         "code": q["c"][0],
         "name": q["n"][0],
     }
+    import sqlite3
+
+    from homepix.core.db import TABLES, VERSION
+
+    TABLES_READ = ("photos", "faces", "people")  # (the ones the phone reads)
+    schema = sqlite3.connect(":memory:")
+    for create in TABLES.values():
+        schema.execute(create)
+    out["library"] = {
+        "version": VERSION,
+        "columns": {t: [r[1] for r in schema.execute(f"PRAGMA table_info({t})")] for t in TABLES_READ},
+    }
+    schema.close()
     return out
 
 

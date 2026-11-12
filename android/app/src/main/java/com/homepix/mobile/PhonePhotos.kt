@@ -87,7 +87,9 @@ class PhonePhotos(private val context: Context) {
     private val bySize = HashMap<Long, MutableList<File>>()
     private val byName = HashMap<String, MutableList<File>>()
     private val claimed = HashSet<File>()
-    private val turned = Turned.all(context) // fingerprint before turning -> file
+    private val turned = Turned.all(context) // file -> its fingerprint before it was turned here
+    private val turnedFrom = turned.entries.associate { (path, q) -> q to path }
+    private val found = HashSet<String>() // the files found by their own fingerprint
 
     init {
         val uri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -118,6 +120,7 @@ class PhonePhotos(private val context: Context) {
             val h = Fingerprints.of(context, f) ?: continue
             if (h == qhash) {
                 claimed += f
+                found += f.path
                 return f
             }
         }
@@ -126,13 +129,13 @@ class PhonePhotos(private val context: Context) {
 
     /** A photo turned in this app since the library last saw it, by the fingerprint it had before. */
     fun turnedHere(qhash: String): File? {
-        val f = turned[qhash]?.let(::File)?.takeIf { it.isFile && it !in claimed } ?: return null
+        val f = turnedFrom[qhash]?.let(::File)?.takeIf { it.isFile && it !in claimed } ?: return null
         claimed += f
         return f
     }
 
     /**
-     * The phone file a photo came from, by its place in the folder the phone syncs to the computer
+     * The phone file a photo came from, by its place in DCIM, where the phone sends from
      * ("Camera/PXL_1.jpg"): for a photo whose file has changed since (turned here, say), so its
      * fingerprint no longer matches.
      */
@@ -144,6 +147,12 @@ class PhonePhotos(private val context: Context) {
         return f
     }
 
-    /** Keeps the fingerprints made this time. */
-    fun save() = Fingerprints.save(context)
+    /**
+     * Keeps the fingerprints made this time, and lets go of the photos turned here that the library now
+     * knows as they are.
+     */
+    fun save() {
+        Fingerprints.save(context)
+        Turned.forget(context, caughtUp(turned, found) { File(it).isFile })
+    }
 }

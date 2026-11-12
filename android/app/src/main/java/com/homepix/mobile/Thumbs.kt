@@ -35,8 +35,10 @@ data class FaceThumb(val face: Face, val turn: Int = 0, val stamp: Long = face.s
 
 const val FACE_SIZE = 384
 
+fun thumbsDir(context: Context) = File(context.cacheDir, "thumbs2")
+
 private fun cacheFile(context: Context, key: String): File {
-    val dir = File(context.cacheDir, "thumbs2").apply { mkdirs() }
+    val dir = thumbsDir(context).apply { mkdirs() }
     val hash = MessageDigest.getInstance("SHA-1").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }
     return File(dir, "$hash.jpg")
 }
@@ -46,9 +48,7 @@ private fun cached(context: Context, key: String, build: () -> Bitmap): Bitmap {
     val f = cacheFile(context, key)
     BitmapFactory.decodeFile(f.path)?.let { return it }
     val bmp = build()
-    val tmp = File(f.path + ".tmp")
-    tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-    tmp.renameTo(f)
+    runCatching { writeWhole(f) { tmp -> tmp.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) } } }
     return bmp
 }
 
@@ -186,9 +186,4 @@ class ThumbKeyer : Keyer<Thumb> {
 class FaceKeyer : Keyer<FaceThumb> {
     override fun key(data: FaceThumb, options: Options) =
         "face|${data.face.file.path}|${data.face.x},${data.face.y}|${data.turn}|${data.stamp}"
-}
-
-/** Removes thumbnails from before the app made them from the photos themselves. */
-fun dropOldThumbs(context: Context) {
-    File(context.cacheDir, "thumbs").deleteRecursively()
 }

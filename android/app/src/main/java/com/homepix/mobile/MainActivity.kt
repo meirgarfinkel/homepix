@@ -106,7 +106,9 @@ class MainActivity : ComponentActivity() {
             .build()
         Coil.setImageLoader(loader)
         Thread {
-            dropOldThumbs(this) // (a folder to delete: never on the screen's thread)
+            // (files to look at and delete: never on the screen's thread)
+            prune(thumbsDir(this), THUMBS_CAP)
+            prune(clipsDir(this), CLIPS_CAP)
             deleteSharedPreferences("places") // (town names up to 0.5 kept where photos were taken)
         }.start()
         Turns.load(this)
@@ -177,22 +179,28 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
     var status by remember { mutableStateOf("Looking for your library…") }
     var tries by remember { mutableStateOf(0) }
     LaunchedEffect(tries) {
-        lib = withContext(Dispatchers.IO) {
-            val t0 = System.currentTimeMillis()
-            val roots = Library.find(context)
-            android.util.Log.i("HomePix", "found ${roots.size} libraries in ${System.currentTimeMillis() - t0} ms")
-            if (roots.isEmpty() && Computer.load(context) != null) {
-                status = "No library yet. It comes from your computer the next time this phone reaches it on Wi-Fi."
-                null
-            } else if (roots.isEmpty()) {
-                status = "No library yet. Pair this phone with HomePix on your computer (Settings, then Phones) " +
-                    "and your photos show here."
-                null
-            } else {
-                val t0 = System.currentTimeMillis()
-                Library.load(context, roots) { status = it }
-                    .also { android.util.Log.i("HomePix", "loaded in ${System.currentTimeMillis() - t0} ms") }
-            }
+        val t0 = System.currentTimeMillis()
+        val roots = withContext(Dispatchers.IO) { Library.find(context) }
+        android.util.Log.i("HomePix", "found ${roots.size} libraries in ${System.currentTimeMillis() - t0} ms")
+        lib = if (roots.isEmpty() && withContext(Dispatchers.IO) { Computer.load(context) } != null) {
+            status = "No library yet. It comes from your computer the next time this phone reaches it on Wi-Fi."
+            null
+        } else if (roots.isEmpty()) {
+            status = "No library yet. Pair this phone with HomePix on your computer (Settings, then Phones) " +
+                "and your photos show here."
+            null
+        } else try {
+            val t1 = System.currentTimeMillis()
+            Library.read(context, roots) { status = it }
+                .also { android.util.Log.i("HomePix", "loaded in ${System.currentTimeMillis() - t1} ms") }
+        } catch (e: LibraryUnreadable) {
+            status = "No library shown. ${e.message}"
+            null
+        } catch (e: Exception) {
+            // (a copy caught while it was being replaced, say: looked at again in a few seconds)
+            android.util.Log.w("HomePix", "library: $e")
+            status = "No library shown: it couldn't be read. Looking again…"
+            null
         }
     }
     val l = lib
@@ -203,7 +211,8 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
         LaunchedEffect(Unit) {
             while (true) {
                 delay(3000)
-                if (status.startsWith("No library") && Computer.load(context) != null) tries++
+                if (status.startsWith("No library") &&
+                    (status.endsWith("Looking again…") || withContext(Dispatchers.IO) { Computer.load(context) } != null)) tries++
             }
         }
     }
@@ -235,14 +244,14 @@ private fun App(resumes: Int, pairCode: PairCode?, pairTaken: () -> Unit) {
     // the search vectors, read once the timeline is showing
     LaunchedEffect(l) { withContext(Dispatchers.IO) { l.vectors } }
 
-    // Read the library again when a sync changes it: checked on coming back to the app, and every
+    // Read the library again when its details change: checked on coming back to the app, and every
     // 30 seconds while it's open. The new one is shown once nothing from the old one is open.
     var fresh by remember { mutableStateOf<Library?>(null) }
     LaunchedEffect(l, resumes) {
         while (fresh == null) {
             if (withContext(Dispatchers.IO) { l.changed() }) {
-                // a copy caught half-synced can't be read: try again next time
-                fresh = withContext(Dispatchers.IO) { runCatching { Library.load(context, Library.find(context)) {} }.getOrNull() }
+                // a copy caught half written can't be read: try again next time
+                fresh = runCatching { Library.read(context, withContext(Dispatchers.IO) { Library.find(context) }) }.getOrNull()
             }
             if (fresh == null) delay(30_000)
         }
