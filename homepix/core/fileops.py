@@ -602,7 +602,9 @@ class _Op:
         """The step's file is where it should be: index and journal follow. False (and skipped, with why)
         if that failed (a damaged file the details can't be read from, say)."""
         if not self.db.in_transaction:
-            self.db.execute("BEGIN")  # (so the savepoint nests in it and doesn't commit: commits stay batched)
+            # IMMEDIATE: holding the write lock from the start, a write elsewhere (the indexer) waits instead of
+            # failing this step with "database is locked". The savepoint nests in it, so commits stay batched.
+            self.db.execute("BEGIN IMMEDIATE")
         self.db.execute("SAVEPOINT step")
         try:
             _mark_finished(self.db, step, dst)
@@ -823,7 +825,7 @@ def recover(db) -> list[str]:
             "SELECT * FROM op_steps WHERE op_id=? AND done IN (?, ?) ORDER BY seq", (op["id"], PLANNED, UNDER_WAY)
         ).fetchall():
             if not db.in_transaction:
-                db.execute("BEGIN")
+                db.execute("BEGIN IMMEDIATE")
             db.execute("SAVEPOINT step")
             try:
                 fixed += _recover_step(db, op, r, started)
@@ -970,10 +972,15 @@ def inverse(db, op_id: int) -> list[dict]:
     return moves + others
 
 
+# (one a crash stopped before it changed anything has nothing to take back)
+_DID_SOMETHING = f"EXISTS (SELECT 1 FROM op_steps s WHERE s.op_id = ops.id AND s.done = {FINISHED})"
+
+
 def can_undo(db):
     """The operation Ctrl+Z would take back, or None."""
     return db.execute(
-        "SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' ORDER BY id DESC LIMIT 1"
+        "SELECT * FROM ops WHERE state IN ('done', 'interrupted') AND kind != 'undo' "
+        f"AND {_DID_SOMETHING} ORDER BY id DESC LIMIT 1"
     ).fetchone()
 
 
@@ -981,7 +988,8 @@ def can_redo(db):
     """The undo that Ctrl+Shift+Z would take back, or None. Doing anything new clears it."""
     newest = db.execute("SELECT MAX(id) FROM ops WHERE kind NOT IN ('undo', 'redo')").fetchone()[0] or 0
     return db.execute(
-        "SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? ORDER BY id DESC LIMIT 1",
+        "SELECT * FROM ops WHERE kind='undo' AND state IN ('done', 'interrupted') AND id > ? "
+        f"AND {_DID_SOMETHING} ORDER BY id DESC LIMIT 1",
         (newest,),
     ).fetchone()
 

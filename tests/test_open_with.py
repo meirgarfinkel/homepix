@@ -121,14 +121,23 @@ def test_a_launch_waits_for_a_copy_that_is_closing_then_opens(app):
         "import sys; from PySide6.QtCore import QCoreApplication; a = QCoreApplication([]); "
         "from homepix.ui.app import single_instance; sys.exit(0 if single_instance() is None else 1)"
     )
+    knocked = []
+    closing.newConnection.connect(lambda: knocked.append(True))
     second = subprocess.Popen([sys.executable, "-c", launch])
-    end = time.time() + 5
-    while time.time() < end and second.poll() is None:
-        app.processEvents()
-        time.sleep(0.05)
-    assert second.poll() is None  # not given up: it waits for the closing copy to go
-    closing.close()
-    wait_until(app, lambda: second.poll() is not None, timeout=10)
+    try:
+        wait_until(app, lambda: knocked, timeout=30)  # it's started and found the closing copy
+        end = time.time() + 1
+        while time.time() < end:
+            app.processEvents()
+            time.sleep(0.05)
+        assert second.poll() is None  # not given up: it waits for the closing copy to go
+        closing.close()
+        wait_until(app, lambda: second.poll() is not None, timeout=10)
+    finally:
+        closing.close()
+        if second.poll() is None:
+            second.kill()
+            second.wait()
     assert second.returncode == 1  # then it opens itself
 
 

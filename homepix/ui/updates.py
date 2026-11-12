@@ -26,7 +26,9 @@ class Updater:
         self.w = window
         self.busy = False
         self.ready = None  # (kind, version, file) downloaded at startup, waiting for a restart
+        self._held = None  # an install waiting for a change to files to finish
         window.update_bar.restart.connect(self.install_ready)
+        window.ops.history_changed.connect(self._install_held)
 
     def check_quietly(self):
         """At startup: download a newer HomePix without asking, then show the bar. Quiet on failure."""
@@ -115,6 +117,10 @@ class Updater:
     # --- installing ---------------------------------------------------------------------------------
 
     def _install(self, kind, version, path, ask=True):
+        if self.w.ops.busy:  # (never replace the program under a change to the user's files)
+            self._held = (kind, version, path, ask)
+            self.w.statusBar().showMessage("The update installs when the change under way is done.", 8000)
+            return
         if kind == "windows":  # the installer closes this copy, updates quietly and opens the new one
             try:
                 os.startfile(str(path), arguments=WINDOWS_QUIET)  # noqa: S606 (our own downloaded, checked installer)
@@ -129,6 +135,11 @@ class Updater:
             workers.run(_replace_mac_app, lambda res, err: self._installed(version, err, ask=ask), str(path))
         else:
             workers.run(_install_deb, lambda res, err: self._installed(version, err, res, path, ask), str(path))
+
+    def _install_held(self):
+        if self._held is not None and not self.w.ops.busy:
+            held, self._held = self._held, None
+            self._install(*held)
 
     def _installed(self, version, err, how=None, path=None, ask=True):
         self.busy = False

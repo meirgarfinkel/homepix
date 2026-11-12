@@ -50,7 +50,10 @@ class PortableCopies(QObject):
                 return
         elif now - self._changed_at < QUIET or now - self._last_run < GAP:
             return
-        self._busy, self._last_run = True, now
+        self._write(s)
+
+    def _write(self, s):
+        self._busy, self._last_run = True, time.time()
 
         def done(_, err):
             self._busy = False
@@ -61,8 +64,13 @@ class PortableCopies(QObject):
 
         workers.run(portable.refresh_copies, done)
 
+    def write_now(self):
+        """On hiding the window (it keeps running): bring the copies up to date in the background."""
+        if self.active and not self._busy:
+            self._write(portable.db_stamp())
+
     def flush(self):
-        """Bring every copy up to date now (on closing). Waits for one being written in the background."""
+        """Bring every copy up to date now (on quitting). Waits for one being written in the background."""
         self._timer.stop()
         if self.active:
             portable.refresh_copies()

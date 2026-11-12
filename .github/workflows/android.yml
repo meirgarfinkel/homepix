@@ -51,7 +51,7 @@ jobs:
           path: |
             android/app/src/main/assets/clip_text.onnx
             android/app/src/main/assets/clip_tokenizer.json
-          key: clip-text-mobileclip-s0
+          key: clip-text-mobileclip-s0-757d59c
       - if: startsWith(github.ref, 'refs/tags/android-v')
         name: Unpack the release key
         run: |

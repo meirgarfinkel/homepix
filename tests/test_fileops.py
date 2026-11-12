@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
 from conftest import open_window, photo, recycled_from, rel, trash_records, trashed_files, wait_until
@@ -371,7 +372,7 @@ def test_killed_partway_loses_nothing(home, lib, tmp_path, action, after):
     before = sorted(contents(lib).values())
     script = tmp_path / "killer.py"
     script.write_text(KILLER)
-    env = dict(os.environ, PYTHONPATH=os.getcwd())
+    env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parent.parent))
     p = subprocess.run([sys.executable, str(script), str(lib), action, str(after)], env=env)
     assert p.returncode == 9
 

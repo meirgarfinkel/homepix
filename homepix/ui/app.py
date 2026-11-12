@@ -85,8 +85,8 @@ def _exit(code):
     any point). A change to the user's files under way is waited for."""
     from ..core import exiftool
 
+    workers.wait_idle(10)  # (first: a change under way may be using ExifTool)
     exiftool.close_shared()  # else it can outlive the app
-    workers.wait_idle(10)
     atexit._run_exitfuncs()  # tidy-ups registered with atexit (os._exit skips them)
     sys.stdout.flush()
     sys.stderr.flush()

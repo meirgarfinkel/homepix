@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.io.File
 import java.net.URI
 import java.util.Properties
@@ -82,28 +83,46 @@ dependencies {
 
 // The search model (MobileCLIP's text half, the same one the desktop app uses) is too big for git: it's
 // taken from HomePix's models folder on this computer when it's there, or else downloaded once.
+// (one revision, the desktop's, and each file's SHA-256: homepix/core/ai/models.py)
+val hf = "https://huggingface.co/Xenova/mobileclip_s0/resolve/757d59c9c6870a76a4b0306f05f5061bca15c39f"
 val models = mapOf(
-    "clip_text.onnx" to ("https://huggingface.co/Xenova/mobileclip_s0/resolve/main/onnx/text_model_int8.onnx" to 42_799_230L),
-    "clip_tokenizer.json" to ("https://huggingface.co/Xenova/mobileclip_s0/resolve/main/tokenizer.json" to 2_224_081L),
+    "clip_text.onnx" to Triple(
+        "$hf/onnx/text_model_int8.onnx", 42_799_230L, "fc8d87978623385c17a46331ffb9cb5ab7fe8b61c513c094602b85f08edd0a0b",
+    ),
+    "clip_tokenizer.json" to Triple(
+        "$hf/tokenizer.json", 2_224_081L, "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85",
+    ),
 )
+fun sha256(f: File): String {
+    val d = MessageDigest.getInstance("SHA-256")
+    f.inputStream().use { input ->
+        val buf = ByteArray(1 shl 20)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            d.update(buf, 0, n)
+        }
+    }
+    return d.digest().joinToString("") { "%02x".format(it) }
+}
 val fetchModels by tasks.registering {
     val dir = layout.projectDirectory.dir("src/main/assets").asFile
     outputs.files(models.keys.map { File(dir, it) })
     doLast {
         val desktop = File(System.getProperty("user.home"), ".local/share/homepix/models")
         for ((name, source) in models) {
-            val (url, size) = source
+            val (url, size, sha) = source
             val dst = File(dir, name)
-            if (dst.length() == size) continue
+            if (dst.length() == size && sha256(dst) == sha) continue
             dir.mkdirs()
             val mine = File(desktop, name)
-            if (mine.length() == size) {
+            if (mine.length() == size && sha256(mine) == sha) {
                 mine.copyTo(dst, overwrite = true)
                 continue
             }
             val part = File(dst.path + ".part")
             URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
-            check(part.length() == size) { "$name didn't download whole (${part.length()} of $size bytes)" }
+            check(part.length() == size && sha256(part) == sha) { "$name didn't download whole, or isn't the right file" }
             check(part.renameTo(dst)) { "couldn't keep $name" }
         }
     }
