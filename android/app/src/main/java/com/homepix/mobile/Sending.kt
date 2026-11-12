@@ -139,8 +139,16 @@ data class PairCode(val addresses: List<String>, val port: Int, val fingerprint:
 
 class Refused(val status: Int, message: String, val have: Long = -1) : IOException(message)
 
+/** What sending needs from the computer (a [Link], or a stand-in in the tests). */
+interface Peer {
+    fun post(path: String, body: JSONObject): JSONObject
+
+    /** Send a file from offset on; how much of it the computer has now (all of it: it's in place). */
+    fun send(f: Local, sha: String, offset: Long): Long
+}
+
 /** A connection to the paired computer at one address. */
-class Link(private val host: String, private val port: Int, fingerprint: ByteArray, private val token: String) {
+class Link(private val host: String, private val port: Int, fingerprint: ByteArray, private val token: String) : Peer {
     private val ssl: SSLContext = SSLContext.getInstance("TLS").apply {
         init(null, arrayOf(Pinned(fingerprint)), null)
     }
@@ -165,7 +173,7 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
         return body
     }
 
-    fun post(path: String, body: JSONObject): JSONObject {
+    override fun post(path: String, body: JSONObject): JSONObject {
         val c = open("POST", path)
         val data = body.toString().toByteArray()
         c.doOutput = true
@@ -203,8 +211,7 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
         }
     }
 
-    /** Send a file from offset on; how much of it the computer has now (all of it: it's in place). */
-    fun send(f: Local, sha: String, offset: Long): Long {
+    override fun send(f: Local, sha: String, offset: Long): Long {
         val c = open("PUT", "/v1/file")
         c.doOutput = true
         c.setRequestProperty("X-Path", URLEncoder.encode(f.rel, "UTF-8").replace("+", "%20"))
@@ -338,7 +345,7 @@ fun cameraFiles(context: Context): List<Local> {
     return out
 }
 
-private fun sha256(f: File): String {
+internal fun sha256(f: File): String {
     val d = MessageDigest.getInstance("SHA-256")
     FileInputStream(f).use { input ->
         val buf = ByteArray(1 shl 20)
@@ -349,6 +356,58 @@ private fun sha256(f: File): String {
         }
     }
     return d.digest().hex()
+}
+
+/**
+ * One batch: asked about first by quick fingerprint (a moment each), so only the files the library doesn't
+ * have are read whole for their SHA-256; then by content, which says how much of each already came (an
+ * upload cut off goes on from there); then sent. done(file, sent) for each one dealt with. False: cut off
+ * part way (that file isn't done: it's tried again next time). The computer refusing throws [Refused].
+ */
+internal fun sendBatch(
+    batch: List<Local>,
+    peer: Peer,
+    quick: (Local) -> String?,
+    sha: (Local) -> String = { sha256(it.file) },
+    stopped: () -> Boolean = { false },
+    done: (Local, Boolean) -> Unit,
+): Boolean {
+    val q = batch.associateWith(quick)
+    val first = JSONArray()
+    for ((f, h) in q) first.put(JSONObject().put("path", f.rel).put("size", f.size).put("qhash", h ?: JSONObject.NULL))
+    val answer = peer.post("/v1/need", JSONObject().put("files", first))
+    val wanted = if (answer.optBoolean("quick")) {
+        val need = answer.getJSONArray("need")
+        val paths = HashSet<String>().apply { for (i in 0 until need.length()) add(need.getJSONObject(i).getString("path")) }
+        batch.filter { it.rel in paths || q[it] == null }
+    } else {
+        batch // (a HomePix before 1.17 asks by content only)
+    }
+    val hashes = wanted.associateWith(sha)
+    val have = HashMap<String, Long>()
+    if (hashes.isNotEmpty()) {
+        val ask = JSONArray()
+        for ((f, h) in hashes) ask.put(JSONObject().put("path", f.rel).put("size", f.size).put("sha256", h).put("qhash", q[f] ?: JSONObject.NULL))
+        val need = peer.post("/v1/need", JSONObject().put("files", ask)).getJSONArray("need")
+        for (i in 0 until need.length()) need.getJSONObject(i).let { have[it.getString("path")] = it.getLong("have") }
+    }
+    for (f in batch) {
+        if (stopped()) return false
+        val from = have[f.rel]
+        val h = hashes[f]
+        if (from != null && h != null) {
+            val got = try {
+                peer.send(f, h, from)
+            } catch (e: Refused) {
+                if (e.status == 409 && e.have >= 0) peer.send(f, h, e.have) else throw e
+            }
+            if (got != f.size) return false
+            done(f, true)
+        } else {
+            done(f, false)
+        }
+    }
+    return true
 }
 
 /** How sending is going, for the app to show. */
@@ -416,39 +475,8 @@ object Sending {
         try {
             for (batch in todo.chunked(BATCH)) {
                 if (stopped()) return false
-                // First by quick fingerprint (a moment each): only files the library doesn't have are read whole.
-                val quick = batch.associateWith { Fingerprints.of(context, it.file) }
-                val first = JSONArray()
-                for ((f, q) in quick) first.put(JSONObject().put("path", f.rel).put("size", f.size).put("qhash", q ?: JSONObject.NULL))
-                val answer = link.post("/v1/need", JSONObject().put("files", first))
-                val wanted = if (answer.optBoolean("quick")) {
-                    val need = answer.getJSONArray("need")
-                    val paths = HashSet<String>().apply { for (i in 0 until need.length()) add(need.getJSONObject(i).getString("path")) }
-                    batch.filter { it.rel in paths || quick[it] == null }
-                } else {
-                    batch // (a HomePix before 1.17 asks by content only)
-                }
-                val hashes = wanted.associateWith { sha256(it.file) }
-                val have = HashMap<String, Long>()
-                if (hashes.isNotEmpty()) {
-                    val ask = JSONArray()
-                    for ((f, sha) in hashes) {
-                        ask.put(JSONObject().put("path", f.rel).put("size", f.size).put("sha256", sha).put("qhash", quick[f] ?: JSONObject.NULL))
-                    }
-                    val need = link.post("/v1/need", JSONObject().put("files", ask)).getJSONArray("need")
-                    for (i in 0 until need.length()) need.getJSONObject(i).let { have[it.getString("path")] = it.getLong("have") }
-                }
-                for (f in batch) {
-                    if (stopped()) return false
-                    val from = have[f.rel]
-                    val sha = hashes[f]
-                    if (from != null && sha != null) {
-                        val got = try {
-                            link.send(f, sha, from)
-                        } catch (e: Refused) {
-                            if (e.status == 409 && e.have >= 0) link.send(f, sha, e.have) else throw e
-                        }
-                        if (got != f.size) return false
+                val whole = sendBatch(batch, link, { Fingerprints.of(context, it.file) }, stopped = stopped) { f, wasSent ->
+                    if (wasSent) {
                         count++
                         SendState.note(context, "sent" to System.currentTimeMillis())
                     }
@@ -456,6 +484,7 @@ object Sending {
                     sentFile.appendText(f.key + "\n")
                     left--
                 }
+                if (!whole) return false
                 SendState.note(context, "waiting" to left, "problem" to "")
             }
             SendState.note(context, "problem" to "", "waiting" to 0, "count" to count)
