@@ -59,19 +59,32 @@ class FileOps(QObject):
         self.window = window
         self.busy = False
         self._stop = False
+        self._next = None  # a change asked for while another ran: started when that one ends
 
     # --- running --------------------------------------------------------------------------------------
 
     def _in_background(
-        self, title: str, work, finished, exclusive: bool = True, rescan=lambda res: True, quiet: bool = False
+        self,
+        title: str,
+        work,
+        finished,
+        exclusive: bool = True,
+        rescan=lambda res: True,
+        quiet: bool = False,
+        wait: bool = True,
     ) -> bool:
         """work(progress, should_stop) on a worker thread, then finished(result, error) here.
         exclusive: no indexing meanwhile (anything that changes the library); rescan(result): whether it
         left something for indexing to find, so look through the folders again afterwards. quiet: no
-        progress window (for work nobody asked for just now, like auto import). False if it couldn't
-        start because another is under way."""
+        progress window (a quick one, or work nobody asked for just now, like auto import). wait: if
+        another is under way, start this one when it ends (False: don't; auto import tries again itself).
+        False if it won't run: another is under way and it doesn't wait, or one is waiting already."""
         if self.busy:
-            if not quiet:
+            if wait and self._next is None:
+                self._next = lambda: self._in_background(title, work, finished, exclusive, rescan, quiet)
+                self.window.statusBar().showMessage("This starts when the change under way is done.", 6000)
+                return True
+            if wait:
                 self.window.statusBar().showMessage("Still busy with the last one. A moment...", 4000)
             return False
         self.busy, self._stop = True, False
@@ -108,6 +121,9 @@ class FileOps(QObject):
                 found = err is not None or rescan(res)  # (after an error, look: something may have changed)
                 watcher.release(rescan=self.window.indexing and (found or was_indexing))
             finished(res, err)
+            then, self._next = self._next, None
+            if then is not None:
+                then()
             self.history_changed.emit()
 
         workers.run(job, after, must_finish=True)

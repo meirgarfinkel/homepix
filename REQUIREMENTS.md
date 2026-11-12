@@ -82,6 +82,7 @@ Agreed 2026-10-27, brought up to date 2026-11-11 (HomePix 1.16.4, phone app 0.5)
 | Ctrl+C / Ctrl+V through the **system clipboard**, so files paste into the file manager and other apps | v1 |
 | Delete to Trash (the Recycle Bin on Windows); undo and redo (Ctrl+Z / Ctrl+Shift+Z) for every operation | v1 |
 | Export (copy out, optionally resized or converted to JPEG); open in an external editor; show in folder | v1 |
+| One change to files at a time. One asked for while another runs starts by itself when that one ends (the status line says so), and isn't lost; an automatic import check that finds the library busy runs as soon as it's free. An update installs only once no change is under way, and quitting waits for the change under way | v1 |
 
 ## 5. Metadata (written into the files)
 

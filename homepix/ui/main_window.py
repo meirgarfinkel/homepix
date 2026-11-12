@@ -1193,8 +1193,8 @@ class MainWindow(QMainWindow):
         if background.on() and not getattr(self, "_quitting", False):
             # kept running for the import automations: the window only hides (the menu brings it back)
             self._save_window()
-            self.copies.flush()
             self.hide()
+            self.copies.write_now()
             e.ignore()
             return
         self.closing.emit()
