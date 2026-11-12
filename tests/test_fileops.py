@@ -332,10 +332,11 @@ KILLER = textwrap.dedent("""
     def die_soon(real):
         def wrapped(*a, **k):
             global count
-            real(*a, **k)
+            out = real(*a, **k)
             count += 1
             if count >= after:
                 os._exit(9)  # killed, with no clean-up at all
+            return out
         return wrapped
     fileops.rename_noreplace = die_soon(fileops.rename_noreplace)
     fileops.move_file = die_soon(fileops.move_file)
@@ -647,3 +648,94 @@ def test_copy_takes_the_sidecars(home, lib):
     fo.run(db, "copy", "test", fo.plan_into([lib / "IMG_1.jpg"], lib / "out", "copy"))
     assert sorted(os.listdir(lib / "out")) == ["IMG_1.jpg", "IMG_1.xmp"]
     assert {"IMG_1.jpg", "IMG_1.xmp"} <= set(os.listdir(lib))  # the originals stay
+
+
+# --- when one file can't be done ---------------------------------------------------------------------
+
+
+def test_a_move_onto_a_name_the_index_still_holds(home, lib):
+    """x.jpg was deleted in the file manager and indexing hasn't caught up: moving y.jpg to x.jpg works
+    (its row used to hold the name, and the move stopped with an error and stayed "running")."""
+    pf, db = home
+    make(pf, lib, ["x.jpg", "y.jpg"])
+    os.remove(lib / "x.jpg")
+    res = fo.run(db, "move", "test", [{"action": "move", "src": str(lib / "y.jpg"), "dst": str(lib / "x.jpg")}])
+    assert res.finished == 1 and not res.skipped
+    assert db.execute("SELECT state FROM ops").fetchone()[0] == "done"
+    index_matches_disk(db, lib)
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), reason="read-only folders")
+def test_a_move_that_cant_finish_is_never_left_hidden(home, lib):
+    """a -> b, then b -> a folder that can't be written to: b can't go, and its own name is a's now. It's
+    left beside it under a free name, never at its hidden one (where indexing lost it, with its faces)."""
+    pf, db = home
+    make(pf, lib, ["a.jpg", "b.jpg"])
+    shut = lib / "shut"
+    shut.mkdir()
+    shut.chmod(0o500)
+    try:
+        res = fo.run(
+            db,
+            "move",
+            "test",
+            [
+                {"action": "move", "src": str(lib / "a.jpg"), "dst": str(lib / "b.jpg")},
+                {"action": "move", "src": str(lib / "b.jpg"), "dst": str(shut / "b.jpg")},
+            ],
+        )
+    finally:
+        shut.chmod(0o700)
+    no_leftovers(lib)
+    index_matches_disk(db, lib)
+    assert sorted(os.listdir(lib)) == ["b.jpg", "b_1.jpg", "shut"]
+    assert len(res.skipped) == 1 and "b_1.jpg" in res.skipped[0][1]
+    assert db.execute("SELECT state FROM ops").fetchone()[0] == "done"
+
+
+def test_an_unexpected_error_skips_that_file_only(home, lib, monkeypatch):
+    pf, db = home
+    make(pf, lib, ["a.jpg", "b.jpg", "c.jpg"])
+    real = fo.copy_file
+
+    def copy(src, dst, partial):
+        if src.endswith("b.jpg"):
+            raise RuntimeError("something odd")
+        real(src, dst, partial)
+
+    monkeypatch.setattr(fo, "copy_file", copy)
+    res = fo.run(db, "copy", "test", fo.plan_into([lib / n for n in ("a.jpg", "b.jpg", "c.jpg")], lib / "sub", "copy"))
+    assert res.finished == 2 and [os.path.basename(p) for p, _ in res.skipped] == ["b.jpg"]
+    assert db.execute("SELECT state FROM ops").fetchone()[0] == "done"
+    index_matches_disk(db, lib)
+
+
+def test_a_copy_that_fails_partway_leaves_nothing_hidden(home, lib, monkeypatch):
+    import errno
+
+    from homepix.core import safefs
+
+    pf, db = home
+    make(pf, lib, ["a.jpg"])
+
+    def full(src, partial):
+        with open(partial, "xb") as f:
+            f.write(b"half")
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(safefs, "_copy_to_partial", full)
+    res = fo.run(db, "copy", "test", fo.plan_into([lib / "a.jpg"], lib / "sub", "copy"))
+    assert res.finished == 0 and len(res.skipped) == 1
+    no_leftovers(lib)
+
+
+def test_a_file_left_in_the_trash_doesnt_block_trashing_one_of_its_name(home, lib):
+    from homepix.core import trash
+
+    pf, db = home
+    make(pf, lib, ["a.jpg"])
+    folder, _ = trash.trash_for(lib / "a.jpg")
+    (folder / "files").mkdir(parents=True, exist_ok=True)
+    (folder / "files" / "a.jpg").write_bytes(b"left by another program, with no info file")
+    res = fo.run(db, "trash", "test", fo.plan_trash([str(lib / "a.jpg")]))
+    assert res.finished == 1 and not (lib / "a.jpg").exists()

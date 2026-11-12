@@ -88,6 +88,8 @@ def reserve(path) -> str:
     while True:
         info = folder / "info" / f"{name}.trashinfo"
         try:
+            if os.path.lexists(folder / "files" / name):  # (left by another program, with no info file)
+                raise FileExistsError
             fd = os.open(info, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             break
         except FileExistsError:

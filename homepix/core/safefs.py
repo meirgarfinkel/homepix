@@ -8,6 +8,7 @@ drives' filesystems), by checking first.
 Copies go to a hidden partial file, are flushed to disk, and only then take their real name.
 """
 
+import contextlib
 import ctypes
 import errno
 import os
@@ -84,11 +85,12 @@ def _copy_to_partial(src, partial):
 
 def copy_file(src, dst, partial):
     """Copy src to dst (which must not exist) by way of the hidden file partial."""
-    _copy_to_partial(src, partial)
     try:
+        _copy_to_partial(src, partial)
         rename_noreplace(partial, dst)
-    except BaseException:
-        os.unlink(partial)
+    except BaseException:  # (a disk that filled up, a source unplugged midway: no hidden half-copy left)
+        with contextlib.suppress(OSError):
+            os.unlink(partial)
         raise
 
 
@@ -103,6 +105,7 @@ def move_file(src, dst, partial):
             raise
     copy_file(src, dst, partial)
     if os.path.getsize(dst) != os.path.getsize(src):
+        os.unlink(dst)  # (the wrong copy goes; the original stays)
         raise OSError(errno.EIO, "the copy came out a different size; the original is kept", src)
     os.unlink(src)
 
