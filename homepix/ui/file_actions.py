@@ -14,6 +14,8 @@ from . import desktop
 from .fileops import FileOps, bad_name, counted, plural
 from .views.file_dialogs import BatchRenameDialog, ExportDialog, RenameDialog
 
+ASK_ABOVE = 20  # Delete on more photos than this asks first (Ctrl+A, Delete would take the whole library)
+
 
 def count_of(items) -> str:
     """'3 photos', '1 video', '3 photos and 1 video'."""
@@ -33,7 +35,7 @@ class FileActions:
         self.cut = a("Cut", lambda: self.to_clipboard(cut=True), [Key.Cut])
         self.copy = a("Copy", lambda: self.to_clipboard(cut=False), [Key.Copy])
         self.paste = a("Paste", lambda: self.paste_into(window.open_folder()), [Key.Paste])
-        self.select_all = a("Select all", window.timeline.select_all, [Key.SelectAll])
+        self.select_all = a("Select all", self._select_all, [Key.SelectAll])
         self.rename = a("Rename...", self.rename_them, ["F2"])
         self.move = a("Move to...", lambda: self.into_chosen("move"), ["Ctrl+Shift+M"])
         self.new_folder = a("Move to a new folder...", self.into_new_folder)
@@ -85,6 +87,11 @@ class FileActions:
             it = w.viewer.items[w.viewer.index]
             return [it] if it.id is not None else []  # one outside the library can only be looked at
         return w.timeline.selected_items() if shown is w.timeline else []
+
+    def _select_all(self):
+        """Ctrl+A: every photo shown, only when they're shown (not the grid hidden behind another page)."""
+        if self.w.stack.currentWidget() is self.w.timeline:
+            self.w.timeline.select_all()
 
     def update_enabled(self):
         has = bool(self.targets())
@@ -164,6 +171,16 @@ class FileActions:
         if not items:
             return
         w = self.w
+        if len(items) > ASK_ABOVE:
+            answer = QMessageBox.question(
+                w,
+                "Move to Trash",
+                f"Move {count_of(items)} to the Trash?\n\nEdit > Undo (Ctrl+Z) brings them back.",
+                QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Yes,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         if w.stack.currentWidget() is w.viewer:
             if not w.viewer.drop_current():
                 w.close_viewer()

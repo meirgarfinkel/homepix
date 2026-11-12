@@ -312,6 +312,8 @@ def test_a_rule_that_waits_offers_a_review(app, pf, lib, tmp_path, monkeypatch):
         assert names(tmp_path / "Phone") == ["a.jpg", "b.jpg"]  # nothing done yet
 
         def review(dlg):  # untick b.jpg, then Import
+            assert dlg.grid.item(0).text() == "a.jpg\n→ a.jpg"  # where it goes, under it (no hover tip)
+            assert "Hover" not in dlg.head.text()
             dlg.grid.item(1).setCheckState(review_dialog.Qt.CheckState.Unchecked)
             assert dlg.go.text() == "Import 1"
             return review_dialog.ReviewDialog.DialogCode.Accepted
@@ -327,6 +329,18 @@ def test_a_rule_that_waits_offers_a_review(app, pf, lib, tmp_path, monkeypatch):
         assert not w.review_bar.isVisible()
     finally:
         w.close()
+
+
+def test_review_says_where_each_file_goes(tmp_path):
+    import types
+
+    from homepix.ui.views.review_dialog import goes_to
+
+    r = types.SimpleNamespace(dest=str(tmp_path / "Pictures"))
+    assert (
+        goes_to(str(tmp_path / "Pictures" / "2024" / "2024_05_06_07_08_09.jpg"), r) == "→ 2024/2024_05_06_07_08_09.jpg"
+    )
+    assert goes_to(str(tmp_path / "elsewhere" / "a.jpg"), r) == "→ " + str(tmp_path / "elsewhere" / "a.jpg")
 
 
 def test_an_import_from_folder_inside_the_library(home, lib, tmp_path):

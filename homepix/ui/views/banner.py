@@ -15,7 +15,6 @@ class Banner(QFrame):
         self.label = QLabel()
         self.label.setWordWrap(True)
         self.button = QPushButton("They were deleted, remove them")
-        self.button.setToolTip("No files are touched.")
         self.button.clicked.connect(self.forget_missing)
         lay.addWidget(self.label, 1)
         lay.addWidget(self.button)

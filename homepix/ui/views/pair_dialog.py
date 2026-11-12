@@ -55,10 +55,6 @@ class PairDialog(QDialog):
         self.rule.addItem("Its own new import automation", None)
         for r in phones.free_rules(rules):
             self.rule.addItem(f"{r.name} (an existing automation)", r.id)
-        self.rule.setToolTip(
-            'Its own: its photos arrive in "Phone photos/<its name>" in your home folder, and are renamed by '
-            "date into year folders in your library. You can change that later under Import automations."
-        )
         self.rule.currentIndexChanged.connect(lambda _: self._new_code())
         row.addWidget(self.rule, 1)
         lay.addLayout(row)

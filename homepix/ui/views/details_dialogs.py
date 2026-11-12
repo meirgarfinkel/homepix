@@ -75,8 +75,6 @@ class DetailsDialog(QDialog):
         ]
         self.keywords = QLineEdit(", ".join(self.common_words))
         self.keywords.setPlaceholderText("e.g. holiday, beach (separated by commas)")
-        if n > 1 and any(d.keywords for d in ds):
-            self.keywords.setToolTip("Keywords they all share.")
         self.keywords.textEdited.connect(lambda: self._touched.add("keywords"))
         form.addRow("Keywords:", self.keywords)
 
@@ -231,7 +229,6 @@ class AllDetailsDialog(QDialog):
                 self.tree.addTopLevelItem(parent)
             text = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
             item = QTreeWidgetItem([tag, text if len(text) < 500 else text[:500] + "..."])
-            item.setToolTip(1, text[:2000])
             parent.addChild(item)
         self.tree.expandAll()
         self.find.textChanged.connect(self._filter)

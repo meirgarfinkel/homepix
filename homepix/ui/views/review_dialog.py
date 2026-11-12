@@ -47,6 +47,13 @@ def _thumb(path: str):
         return None
 
 
+def goes_to(dst: str, rule) -> str:
+    """Where one file will go, under its thumbnail: "→ 2024/2024_05_06_07_08_09.jpg" (from the rule's
+    destination)."""
+    rel = os.path.relpath(dst, rule.dest)
+    return "→ " + (dst if rel.startswith("..") else rel.replace(os.sep, "/"))
+
+
 def where_text(batch: autoimport.Batch) -> str:
     """Where they go: "into Pictures/From phone", "into the year folders in Pictures"."""
     r = batch.rule
@@ -60,7 +67,7 @@ class ReviewDialog(QDialog):
         super().__init__(parent)
         self.batch = batch
         self.setWindowTitle(f"New from {batch.rule.name}")
-        self.resize(760, 560)
+        self.resize(900, 600)
         lay = QVBoxLayout(self)
         self.head = QLabel()
         self.head.setWordWrap(True)
@@ -68,11 +75,14 @@ class ReviewDialog(QDialog):
         self.grid = QListWidget()
         self.grid.setViewMode(QListView.ViewMode.IconMode)
         self.grid.setIconSize(QSize(THUMB, THUMB))
-        self.grid.setGridSize(QSize(THUMB + 24, THUMB + 44))
+        fm = self.fontMetrics()
+        wide = max(THUMB + 24, fm.horizontalAdvance("→ 2024/2024_05_06_07_08_09_1.jpg") + 16)  # (a whole tidy name)
+        self.grid.setGridSize(QSize(wide, THUMB + 4 + 2 * (fm.height() + 4)))
         self.grid.setResizeMode(QListView.ResizeMode.Adjust)
         self.grid.setMovement(QListView.Movement.Static)
         self.grid.setUniformItemSizes(True)
-        self.grid.setWordWrap(True)
+        self.grid.setWordWrap(False)  # (two lines: its name, and where it goes; long ones shortened)
+        self.grid.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.grid.itemChanged.connect(self._changed)
         self.grid.itemDoubleClicked.connect(
             lambda it: it.setCheckState(
@@ -84,11 +94,10 @@ class ReviewDialog(QDialog):
         blank.fill(theme.color("field"))
         placeholder = QIcon(blank)
         for f, dst in batch.imports:
-            item = QListWidgetItem(placeholder, os.path.basename(f.path))
+            item = QListWidgetItem(placeholder, f"{os.path.basename(f.path)}\n{goes_to(dst, batch.rule)}")
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(Qt.CheckState.Checked)
             item.setData(Qt.ItemDataRole.UserRole, f.path)
-            item.setToolTip(f"{f.path}\n→ {dst}")
             self.grid.addItem(item)
             workers.run(_thumb, lambda img, err, it=item: self._got_thumb(it, img), f.path)
         self.note = QLabel()
@@ -139,8 +148,7 @@ class ReviewDialog(QDialog):
         verb = "Move" if b.rule.after == autoimport.MOVE else "Copy"
         self.head.setText(
             f"<b>{verb} {counted(p, v)} {where_text(b)}.</b> "
-            "Untick any you don't want now: they'll be offered again next time. "
-            "Hover over one to see where it will go."
+            "Untick any you don't want now: they'll be offered again next time."
         )
         notes = []
         if b.already:

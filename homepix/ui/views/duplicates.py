@@ -42,11 +42,6 @@ class _Groups(QAbstractListModel):
         return 0 if parent.isValid() else len(self.groups)
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if role == Qt.ItemDataRole.ToolTipRole:
-            g = self.groups[index.row()]
-            return (
-                "The same file" if g.how == "exact" else "They look the same"
-            ) + ". Click a copy to keep it instead."
         return None
 
     def set_groups(self, groups):
@@ -321,9 +316,7 @@ class DuplicatesView(QWidget):
         lay.addWidget(self.hint)
         row = FlowLayout()  # (wraps when the window is narrow)
         self.trash_button = QPushButton("Move extras to Trash...")
-        self.trash_button.setToolTip("Each group keeps its marked copy.")
         self.apart_button = QPushButton("Not duplicates")
-        self.apart_button.setToolTip("Never offer these as duplicates again")
         for b in (self.trash_button, self.apart_button):
             row.addWidget(b)
         lay.addLayout(row)
@@ -466,7 +459,6 @@ class DuplicatesView(QWidget):
         self.trash_button.setText(f"Move extras to Trash{which}...")
         self.trash_button.setEnabled(bool(chosen or deciding))
         self.apart_button.setEnabled(bool(chosen))
-        self.apart_button.setToolTip("Don't show these groups again" if chosen else "Select some groups first")
 
     def stop(self):
         self.loader.stop()

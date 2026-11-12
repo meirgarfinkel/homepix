@@ -168,18 +168,15 @@ class Sidebar(QTreeWidget):
         if people is not None:
             group = QTreeWidgetItem(["People", f"{people:,}" if people else ""])
             group.setData(0, PATH_ROLE, PEOPLE)
-            group.setToolTip(0, "People you've named")
             self._style_count(group)
             self.addTopLevelItem(group)
         if dupes is not None:
             review = QTreeWidgetItem(["Duplicates", f"{dupes:,}" if isinstance(dupes, int) and dupes else ""])
             review.setData(0, PATH_ROLE, DUPES)
-            review.setToolTip(0, "Copies of the same photo or video, to review")
             self._style_count(review)
             self.addTopLevelItem(review)
             junk = QTreeWidgetItem(["Declutter", ""])
             junk.setData(0, PATH_ROLE, JUNK)
-            junk.setToolTip(0, "Photos you may not need")
             self._style_count(junk)
             self.addTopLevelItem(junk)
         heading = QTreeWidgetItem(["Folders", ""])
@@ -189,12 +186,8 @@ class Sidebar(QTreeWidget):
         for root, node in folder_tree(roots, counts).items():
             item = self._add_node(None, node)
             item.setText(1, "")  # its count is All photos' again: just the name and the arrow
-            item.setToolTip(0, root)
             if not Path(root).is_dir():
                 item.setText(0, f"{node['name']} (not connected)")
-                item.setToolTip(
-                    0, f"{root}\nCan't be reached right now: is its drive plugged in? Its photos are still shown."
-                )
                 italic = QFont(self.font())
                 italic.setItalic(True)
                 item.setFont(0, italic)
@@ -210,7 +203,6 @@ class Sidebar(QTreeWidget):
                 it.setForeground(0, theme.color("muted"))  # (and the folders inside it)
             if path in excluded:
                 it.setText(0, f"{it.text(0)} (excluded)")
-                it.setToolTip(0, f"{path}\nLeft out of All photos, people and search. Right-click to include it again.")
         self.select(chosen or ALL)
         self._quiet = False
 

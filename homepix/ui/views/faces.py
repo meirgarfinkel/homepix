@@ -1,8 +1,6 @@
 """Faces as tiles: the "who is this?" page (a group of look-alikes to name at a time) and someone's
 faces (to take out the ones that aren't them)."""
 
-import os
-
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -119,7 +117,6 @@ class FaceGrid(QListWidget):
         for f in faces:
             item = QListWidgetItem(blank, "")
             item.setData(ID_ROLE, f["id"])
-            item.setToolTip(os.path.basename(f["path"]))
             self.addItem(item)
             item.setSelected(selected)
             self._items[f["id"]] = item
@@ -311,10 +308,6 @@ class PersonFaces(QWidget):
         self.hide_button = QPushButton("Not a face")
         self.hide_button.clicked.connect(lambda: self.hidden.emit(self._ids()))
         self.sort_button = QPushButton("Most like ticked")
-        self.sort_button.setToolTip(
-            "Put the faces most like the ones ticked first, then the rest, most "
-            "alike to least: tick a wrong one to find the others like it"
-        )
         self.sort_button.clicked.connect(
             lambda: self.grid.reorder(by_likeness(self.grid.faces, self.grid.selected_faces()))
         )
@@ -398,22 +391,14 @@ class WhoView(QWidget):
         self.name_button.setDefault(True)
         self.name_button.clicked.connect(self._name_selected)
         self.skip_button = QPushButton("Skip")
-        self.skip_button.setToolTip("Ask about another group (this one comes back next time)")
         self.skip_button.clicked.connect(self.skip)
         self.hide_button = QPushButton("No one I know")
-        self.hide_button.setToolTip(
-            "Strangers, or not faces: don't ask about these again (the ones ticked, or the whole group if none are)"
-        )
         self.hide_button.clicked.connect(
             lambda: self.hidden.emit([f["id"] for f in self._selected() or self.grid.faces])
         )
         self.sort_button = QPushButton("Most like ticked")
-        self.sort_button.setToolTip("Put the faces most like the ones ticked first, then the rest, most alike to least")
         self.sort_button.clicked.connect(self._sort_by_likeness)
         self.rest_button = QPushButton()
-        self.rest_button.setToolTip(
-            "Name the ticked faces, and remember the others aren't them (they can still be named someone else)"
-        )
         self.rest_button.clicked.connect(self._rest_arent_them)
         self.rest_button.hide()
         row = FlowLayout()  # (wraps when the window is narrow)
