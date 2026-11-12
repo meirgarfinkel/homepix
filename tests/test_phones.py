@@ -117,6 +117,8 @@ def test_pairing_gives_the_phone_a_secret_once(setup):
     phone = Phone(server.port, fingerprint(qr))
 
     assert phone.post("/v1/pair", {"code": "wrong", "name": "x"})[0] == 403
+    assert phone.post("/v1/pair", {"code": p.code, "name": "Pixel 7"})[0] == 429  # (a moment's wait first)
+    time.sleep(1.1)
     status, body = phone.post("/v1/pair", {"code": p.code, "name": "Pixel 7"})
     assert status == 200 and body["token"]
     assert [x.name for x in phones.load_phones()] == ["Pixel 7"]
@@ -289,7 +291,7 @@ def test_settings_pairs_a_phone_into_its_own_automation(app, home, lib, tmp_path
     ai.save_rules([old])
     window = QWidget()
     window.phone_link = PhoneLink(window)
-    monkeypatch.setattr(phone_server.Server, "_announce", lambda self: None)  # (not on the real network)
+    monkeypatch.setattr(phone_server.Server, "_announce", lambda self, ips: None)  # (not on the real network)
     seen = {}
 
     def pair_and_look(dlg):
@@ -352,7 +354,7 @@ def test_removing_a_phones_automation_unpairs_it(app, home, lib, tmp_path, monke
     phones.close_pairing()
     window = QWidget()
     window.phone_link = PhoneLink(window)
-    monkeypatch.setattr(phone_server.Server, "_announce", lambda self: None)
+    monkeypatch.setattr(phone_server.Server, "_announce", lambda self, ips: None)
     window.phone_link.refresh()
     dlg = SettingsDialog(window)
     dlg.rule_list.item(0).setSelected(True)
@@ -628,3 +630,114 @@ def test_an_upload_cut_off_long_ago_is_dropped(setup):
     os.utime(old, (week_ago, week_ago))
     phone.post("/v1/need", {"files": []})
     assert [p.name for p in (watch / phones.INCOMING).iterdir()] == [hashlib.sha256(data[::-1]).hexdigest() + ".part"]
+
+
+def test_wrong_codes_slow_down_only_that_device_and_never_close_pairing(setup, monkeypatch):
+    server, rule, _, _, _ = setup
+    now = [1_000_000.0]
+    monkeypatch.setattr(phones, "time", type("Clock", (), {"time": staticmethod(lambda: now[0])}))
+    p = phones.open_pairing(rule.id)
+    p.expires = now[0] + 3600
+    waits = []
+    for _ in range(25):  # (once 20 wrong codes from anyone closed the pairing)
+        with pytest.raises(phones.Refused) as e:
+            phones.pair("wrong", "x", "192.168.1.66")
+        assert e.value.status == 403
+        with pytest.raises(phones.Refused) as e:
+            phones.pair(p.code, "x", "192.168.1.66")  # (even the right code waits)
+        assert e.value.status == 429
+        waits.append(phones._wrong["192.168.1.66"][1] - now[0])
+        now[0] += waits[-1]
+    assert waits[:7] == [1, 2, 4, 8, 16, 32, 60] and set(waits[7:]) == {60}
+    phone, _ = phones.pair(p.code, "Pixel 7", "192.168.1.20")  # (another device: not held up)
+    assert phone.name == "Pixel 7"
+
+
+def _raw(port):
+    import socket
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+    return ctx.wrap_socket(socket.create_connection(("127.0.0.1", port), timeout=10))
+
+
+def test_the_secret_is_checked_before_the_body_is_read(setup):
+    server, _, _, _, _ = setup
+    s = _raw(server.port)
+    s.sendall(b"POST /v1/need HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer nope\r\nContent-Length: 3000000\r\n\r\n")
+    started = time.time()
+    answer = s.recv(4096)  # (no body sent: it doesn't wait for one)
+    s.close()
+    assert answer.startswith(b"HTTP/1.1 401") and time.time() - started < 5
+
+
+def test_only_the_addresses_phones_are_told_about_answer(monkeypatch):
+    monkeypatch.setattr(phones, "addresses", lambda: ["192.168.1.20"])
+    monkeypatch.setattr(phone_server, "_here", (0.0, set()))
+    assert phone_server._answers_at("192.168.1.20")
+    assert phone_server._answers_at("127.0.0.1") and phone_server._answers_at("::1")  # (an emulator's way in)
+    assert not phone_server._answers_at("172.17.0.1")  # (a container's network)
+    assert not phone_server._answers_at("10.8.0.2")  # (a VPN's)
+
+
+def test_too_many_connections_from_one_device_are_turned_away(setup):
+    import socket
+
+    server, rule, _, _, _ = setup
+    idle = [
+        socket.create_connection(("127.0.0.1", server.port), timeout=10) for _ in range(phone_server.MAX_PER_ADDRESS)
+    ]
+    try:
+        wait_until_true(lambda: server._http._open.get("127.0.0.1") == phone_server.MAX_PER_ADDRESS)
+        extra = socket.create_connection(("127.0.0.1", server.port), timeout=10)
+        assert extra.recv(1) == b""  # (closed at once)
+        extra.close()
+    finally:
+        for c in idle:
+            c.close()
+    wait_until_true(lambda: not server._http._open)
+    assert paired(server, rule).post("/v1/hello", {})[0] == 200  # (and answered again once they've gone)
+
+
+def wait_until_true(cond, timeout=10.0):
+    end = time.time() + timeout
+    while not cond() and time.time() < end:
+        time.sleep(0.05)
+    assert cond()
+
+
+def test_announced_again_when_the_computers_address_changes(monkeypatch):
+    import zeroconf
+
+    made = []
+
+    class FakeZeroconf:
+        def __init__(self, interfaces):
+            made.append(list(interfaces))
+
+        def register_service(self, info, allow_name_change=False):
+            pass
+
+        def unregister_service(self, info):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(zeroconf, "Zeroconf", FakeZeroconf)
+    ips = []
+    monkeypatch.setattr(phones, "addresses", lambda: list(ips))
+    s = phone_server.Server(port=0, announce=False)
+    s.port = 47820
+    s.announce_if_changed()  # (no network yet: nothing to announce)
+    ips.append("192.168.1.20")
+    s.announce_if_changed()
+    s.announce_if_changed()  # (the same: not again)
+    ips[0] = "10.0.0.7"  # (another network)
+    s.announce_if_changed()
+    assert made == [["192.168.1.20"], ["10.0.0.7"]]
+    s.stop()
+
+
+def test_the_port_is_never_shared_on_windows():
+    assert phone_server._Server.allow_reuse_address == (os.name != "nt")

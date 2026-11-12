@@ -37,7 +37,7 @@ from .util import load_json, quick_hash, save_json, within
 PORT = 47820  # (another is taken when it's in use, and kept)
 SERVICE = "_homepix._tcp.local."
 PAIR_MINUTES = 10
-PAIR_TRIES = 20  # wrong codes before a pairing is closed
+WRONG_WAIT_MAX = 60  # seconds: after each wrong code a device waits twice as long, up to this
 INCOMING = ".homepix-incoming"  # in the Import from folder: files still arriving (hidden: never imported)
 SPARE = 1 << 30  # an upload is refused when it would leave less than this free on the disk
 MAX_NEED = 2000  # files asked about at once
@@ -202,7 +202,6 @@ class Pairing:
     new_rule: bool = False  # the automation is made for the phone once it has paired
     code: str = field(default_factory=lambda: secrets.token_urlsafe(16))
     expires: float = field(default_factory=lambda: time.time() + PAIR_MINUTES * 60)
-    tries: int = 0
     phone: Phone | None = None  # once a phone has paired
 
 
@@ -215,6 +214,7 @@ def open_pairing(rule_id: str | None = None) -> Pairing:
     global _pairing
     with _lock:
         _pairing = Pairing(rule_id or uuid.uuid4().hex[:12], new_rule=rule_id is None)
+        _wrong.clear()  # (a new code: everyone may try at once)
         return _pairing
 
 
@@ -228,18 +228,24 @@ def pairing() -> Pairing | None:
     return _pairing
 
 
-def pair(code: str, name: str) -> tuple[Phone, str]:
-    """A phone trading the QR code's code for its own secret: (the phone, its secret)."""
-    global _pairing
+_wrong: dict[str, tuple[int, float]] = {}  # device address -> (wrong codes in a row, when it may try again)
+
+
+def pair(code: str, name: str, peer: str = "") -> tuple[Phone, str]:
+    """A phone trading the QR code's code for its own secret: (the phone, its secret). peer: the
+    device's address. A wrong code makes that device wait before its next try (1 s, 2 s, 4 s ... up to a
+    minute); it never closes the pairing, so no one else on the network can."""
     with _lock:
         p = _pairing
         if p is None or p.phone is not None or time.time() > p.expires:
             raise Refused("Pairing isn't open on the computer. Open it again in HomePix's Settings.")
+        wrong, until = _wrong.get(peer, (0, 0.0))
+        if time.time() < until:
+            raise Refused("That was a wrong code a moment ago. Wait a few seconds, then try again.", 429)
         if not hmac.compare_digest(code.encode(), p.code.encode()):
-            p.tries += 1
-            if p.tries >= PAIR_TRIES:
-                _pairing = None
+            _wrong[peer] = (wrong + 1, time.time() + min(2**wrong, WRONG_WAIT_MAX))
             raise Refused("That code isn't right. Scan the code on the computer again.")
+        _wrong.pop(peer, None)
         token = secrets.token_urlsafe(32)
         name = " ".join(str(name).split())[:60] or "Phone"
         phone = Phone(name=name, rule_id=p.rule_id, token_sha=_sha(token), paired=_now(), own_rule=p.new_rule)
