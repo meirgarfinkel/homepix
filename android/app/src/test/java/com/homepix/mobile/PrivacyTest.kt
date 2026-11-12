@@ -59,4 +59,14 @@ class PrivacyTest {
         val uses = File("src/main/java").walk().filter { it.extension == "kt" && it.readText().contains("Geocoder") }.toList()
         assertEquals(emptyList<File>(), uses)
     }
+
+    @Test
+    fun theAiLibrarySendsNothingToMicrosoft() {
+        // ONNX Runtime's own manifest starts its telemetry at launch: taken out, and off before it loads
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+        val starter = manifest.substringAfter("ai.onnxruntime.TelemetryInitializer", "").substringBefore("/>")
+        assertTrue(starter.contains("tools:node=\"remove\""))
+        val search = File("src/main/java/com/homepix/mobile/Search.kt").readText()
+        assertTrue(search.indexOf("ORT_DISABLE_TELEMETRY") in 0 until search.indexOf("OrtEnvironment.getEnvironment()"))
+    }
 }
