@@ -80,12 +80,30 @@ object Fingerprints {
 }
 
 /**
+ * A photo or video in the phone's DCIM folder, as the gallery lists it. taken: when, on the phone's
+ * clock (see [phoneTime]).
+ */
+class PhoneFile(val file: File, val taken: String, val video: Boolean, val duration: Double?, val width: Int?, val height: Int?)
+
+/**
+ * The time to show for a phone file, on the phone's clock: "2026-11-12 14:23:46". dateTaken: ms, or
+ * null/0 when the gallery has none; modified: the file's time in seconds.
+ */
+fun phoneTime(dateTaken: Long?, modified: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+    val ms = if (dateTaken != null && dateTaken > 0) dateTaken else modified * 1000
+    if (ms <= 0) return "0000-00-00 00:00:00"
+    return java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDateTime()
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+}
+
+/**
  * The photos and videos on the phone (the ones its gallery knows of), by size, and their fingerprints,
  * made only for files whose size a library photo has (see [Fingerprints]).
  */
 class PhonePhotos(private val context: Context) {
     private val bySize = HashMap<Long, MutableList<File>>()
     private val byName = HashMap<String, MutableList<File>>()
+    private val inDcim = ArrayList<PhoneFile>() // (the ones sending sends: shown before the library has them)
     private val claimed = HashSet<File>()
     private val turned = Turned.all(context) // file -> its fingerprint before it was turned here
     private val turnedFrom = turned.entries.associate { (path, q) -> q to path }
@@ -96,7 +114,12 @@ class PhonePhotos(private val context: Context) {
         val types = "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE},${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO}"
         context.contentResolver.query(
             uri,
-            arrayOf(MediaStore.Files.FileColumns.DATA, MediaStore.Files.FileColumns.SIZE),
+            arrayOf(
+                MediaStore.Files.FileColumns.DATA, MediaStore.Files.FileColumns.SIZE,
+                MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.Files.FileColumns.MEDIA_TYPE,
+                MediaStore.MediaColumns.DATE_TAKEN, MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.DURATION, MediaStore.MediaColumns.WIDTH, MediaStore.MediaColumns.HEIGHT,
+            ),
             "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN ($types)",
             null,
             null,
@@ -106,11 +129,24 @@ class PhonePhotos(private val context: Context) {
                 val f = File(path)
                 bySize.getOrPut(c.getLong(1)) { mutableListOf() } += f
                 byName.getOrPut(f.name.lowercase()) { mutableListOf() } += f
+                val rel = c.getString(2) ?: continue
+                if (!rel.startsWith("DCIM/") || rel.split('/').any { it.startsWith(".") } || f.name.startsWith(".")) continue
+                val video = c.getInt(3) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                val taken = phoneTime(if (c.isNull(4)) null else c.getLong(4), c.getLong(5))
+                inDcim += PhoneFile(
+                    f, taken, video,
+                    if (video && !c.isNull(6)) c.getLong(6) / 1000.0 else null,
+                    if (c.isNull(7)) null else c.getInt(7).takeIf { it > 0 },
+                    if (c.isNull(8)) null else c.getInt(8).takeIf { it > 0 },
+                )
             }
         }
     }
 
     val count: Int get() = bySize.values.sumOf { it.size }
+
+    /** The photos and videos in DCIM that no library photo has taken: not in the library yet. */
+    fun notInLibrary(): List<PhoneFile> = inDcim.filter { it.file !in claimed }
 
     /** A phone file with this size and fingerprint that no other photo has taken yet, or null. */
     fun find(size: Long, qhash: String): File? {

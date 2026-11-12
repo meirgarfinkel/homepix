@@ -23,6 +23,7 @@ class Item(
     val description: String? = null,
     val keywords: List<String> = emptyList(),
     private val moment: String? = null,
+    val inLibrary: Boolean = true, // false: only on this phone so far (no faces or search until the computer has it)
 ) {
     /**
      * When its file last changed, read with the library (not while it's shown: asking the phone's storage
@@ -205,10 +206,19 @@ class Library(
                     db.close()
                 }
             }
+            // Paired: the phone's own new photos too, before the computer has them (dated by the phone)
+            val waiting = HashSet<File>()
+            val paired = Computer.load(context) != null
+            if (paired) for (p in phone.notInLibrary()) {
+                all += Item(p.file, p.taken, if (p.video) "video" else "photo", p.duration, p.width, p.height, inLibrary = false)
+                    .also { it.stamp = p.file.lastModified() }
+                waiting += p.file.parentFile!!
+            }
             phone.save()
             folders.save()
             for ((key, theirs) in faces) for (item in theirs.keys) item.people += names.getValue(key)
-            android.util.Log.i("HomePix", "read ${all.size} photos, ${here.size} folders listed, ${matched.size} phone folders matched")
+            android.util.Log.i("HomePix", "read ${all.size} photos (${waiting.size} folders with some not in the library yet), " +
+                "${here.size} folders listed, ${matched.size} phone folders matched")
             say("Putting ${all.size} photos in order…")
             // newest first across all folders (each folder's list already is)
             val order = all.withIndex().sortedWith(
@@ -219,7 +229,9 @@ class Library(
             val people = faces.map { (key, theirs) ->
                 Person(names.getValue(key), theirs.keys.map { index.getValue(it) }.sorted(), theirs.values.firstOrNull { it != null })
             }.sortedByDescending { it.items.size }
-            val watched = roots.map { File(it, COPY) } + here.keys + matched
+            // (paired, the computer's file too, even before it first comes)
+            val watched = (roots.map { File(it, COPY) } + (if (paired) listOf(computerLibrary(context)) else emptyList()))
+                .distinct() + here.keys + matched + waiting
             return Library(roots, items, people, { readVectors(ids, index) }, watched, stampOf(watched))
         }
 

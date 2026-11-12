@@ -119,6 +119,7 @@ fun InfoSheet(lib: Library, item: Item, close: () -> Unit, openPerson: (Person) 
             item.description?.let { Text(it, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodyLarge) }
             InfoRow(Icons.Filled.DateRange) {
                 Text(if (item.taken.startsWith("0000")) "No date" else longDate(item.local), style = MaterialTheme.typography.bodyLarge)
+                if (!item.inLibrary) Small("Not in your library yet: it's sent the next time this phone is on the same Wi-Fi as the computer. Who's in it, and search, come after that.")
             }
             if (item.people.isNotEmpty()) InfoRow(Icons.Filled.Face) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
