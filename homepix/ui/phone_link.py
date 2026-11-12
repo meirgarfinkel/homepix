@@ -1,6 +1,6 @@
 """Answering paired phones while HomePix runs (and while a phone is being paired): starts the server
 when there's a phone to answer, stops it when there's none, and passes on (on the window's thread) when
-a phone pairs or a photo arrives."""
+a phone pairs, unpairs itself or a photo arrives."""
 
 from PySide6.QtCore import QObject, Signal
 
@@ -10,9 +10,11 @@ from ..core import phones
 class PhoneLink(QObject):
     paired = Signal(object)  # a phone (phones.Phone), when it has paired
     arrived = Signal(str)  # a phone's name, when one of its files is in place
+    unpaired = Signal(str)  # a phone's name, when it was unpaired on the phone
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.unpaired.connect(lambda _name: self.refresh())  # (no phone left: stop answering)
         self.server = None
         self.problem = ""  # why it can't answer phones, when it can't
 
@@ -25,6 +27,8 @@ class PhoneLink(QObject):
             self.paired.emit(phone)
         elif kind == "arrived":
             self.arrived.emit(phone.name)
+        elif kind == "unpaired":
+            self.unpaired.emit(phone.name)
 
     def refresh(self) -> bool:
         """Answer phones only when one is paired or being paired. Whether it's answering now."""

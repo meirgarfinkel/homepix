@@ -8,6 +8,7 @@ changes.
 Requests (JSON in and out, but the file itself):
 - POST /v1/pair {code, name}: pair, with the QR code's code. Answers {phone, token, computer}.
 - POST /v1/hello: check the secret works. Answers {computer, phone, ready}.
+- POST /v1/unpair: the phone was unpaired on the phone: unpair it here too (as Settings does). Answers {}.
 - POST /v1/need {files: [{path, size, sha256, qhash}]}: which to send. Answers {need: [{path, have}],
   quick: true}. Asked first with {path, size, qhash} alone, it answers {need: [{path}]}: those the
   library doesn't have by their quick fingerprint (the phone then makes the SHA-256 of only those).
@@ -166,6 +167,13 @@ class _Handler(BaseHTTPRequestHandler):
         phones.touch(phone.id)
         self._send(200, {"computer": phones.computer_name(), "phone": phone.name, "ready": _rule(phone) is not None})
 
+    def _POST_v1_unpair(self):
+        phone = self._phone()
+        self._json()
+        phones.unpair(phone.id)
+        self._send(200, {})
+        self.server.events("unpaired", phone)
+
     def _POST_v1_need(self):
         phone = self._phone()
         body = self._json()
@@ -297,8 +305,8 @@ def _context() -> ssl.SSLContext:
 
 class Server:
     """Answering phones, on PORT if it's free (else another, kept for next time), and announced on the
-    network. events(kind, phone) is called (from its own thread) when a phone pairs ("paired") or a file
-    has arrived ("arrived")."""
+    network. events(kind, phone) is called (from its own thread) when a phone pairs ("paired"), unpairs
+    itself ("unpaired") or a file has arrived ("arrived")."""
 
     def __init__(self, events=lambda kind, phone: None, port: int | None = None, announce: bool = True):
         self.events = events

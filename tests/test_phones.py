@@ -832,3 +832,54 @@ def test_a_long_computer_name_is_still_announced(monkeypatch, name):
 
 def test_the_port_is_never_shared_on_windows():
     assert phone_server._Server.allow_reuse_address == (os.name != "nt")
+
+
+def _own(rule):
+    """Marks the paired phone's automation as made for it (as pairing from Settings does)."""
+    ps = phones.load_phones()
+    for p in ps:
+        p.rule_id, p.own_rule = rule.id, True
+    phones.save_phones(ps)
+
+
+def test_a_phone_unpaired_on_the_phone_is_unpaired_here_as_settings_would(setup):
+    server, rule, _, events, _ = setup
+    phone = paired(server, rule)
+    _own(rule)
+    status, _ = phone.post("/v1/unpair", {})
+    assert status == 200
+    assert phones.load_phones() == [] and ai.load_rules() == []  # (its own automation goes with it)
+    assert ("unpaired", "Pixel 7") in events
+    assert phone.post("/v1/hello", {})[0] == 401
+    assert phone.post("/v1/unpair", {})[0] == 401  # (only a paired phone can ask)
+
+
+def test_a_phone_unpaired_on_the_phone_with_photos_waiting_keeps_its_automation(setup):
+    server, rule, watch, _, _ = setup
+    phone = paired(server, rule)
+    _own(rule)
+    photo(watch / "PXL_1.jpg")  # (sent, not imported yet)
+    assert phone.post("/v1/unpair", {})[0] == 200
+    assert phones.load_phones() == [] and [r.name for r in ai.load_rules()] == ["Phone"]
+
+
+def test_the_window_stops_answering_once_the_last_phone_unpairs_itself(app, setup, monkeypatch, request):
+    from conftest import wait_until
+    from PySide6.QtWidgets import QWidget
+
+    from homepix.ui.phone_link import PhoneLink
+
+    server, rule, _, _, _ = setup
+    paired(server, rule)
+    window = linked(QWidget(), PhoneLink, monkeypatch, request)
+    assert window.phone_link.refresh()
+    link_phone = Phone(window.phone_link.port, phones.identity().fingerprint)
+    p = phones.open_pairing(rule.id)
+    time.sleep(1.1)
+    status, body = link_phone.post("/v1/pair", {"code": p.code, "name": "Pixel 8"})
+    assert status == 200
+    phones.close_pairing()
+    phones.forget(next(x.id for x in phones.load_phones() if x.name == "Pixel 7"))
+    link_phone.token = body["token"]
+    assert link_phone.post("/v1/unpair", {})[0] == 200
+    wait_until(app, lambda: window.phone_link.server is None)

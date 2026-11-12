@@ -53,6 +53,9 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.resize(720, 820)
+        link = getattr(parent, "phone_link", None)
+        if link is not None:
+            link.unpaired.connect(lambda _name: self.refresh_rules())  # (a phone unpaired itself)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -357,9 +360,7 @@ class SettingsDialog(QDialog):
             QMessageBox.StandardButton.Cancel,
         )
         if answer == QMessageBox.StandardButton.Yes:
-            phones.forget(phone.id)
-            if rule is not None and not waiting:
-                autoimport.save_rules([r for r in autoimport.load_rules() if r.id != rule.id])
+            phones.unpair(phone.id)
             link = getattr(self.parent(), "phone_link", None)
             if link is not None:
                 link.refresh()
