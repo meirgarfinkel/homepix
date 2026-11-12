@@ -8,13 +8,26 @@ from pathlib import Path
 from ..config import data_dir
 from ..util import is_tty, say
 
-HF = "https://huggingface.co/Xenova/mobileclip_s0/resolve/main/"
-GH = "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/"
+# (pinned to one revision each, so the files are always the ones these checksums are of)
+HF = "https://huggingface.co/Xenova/mobileclip_s0/resolve/757d59c9c6870a76a4b0306f05f5061bca15c39f/"
+GH = "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/"
 MODELS = {
-    # local name: (url, size in bytes, sha256 or None)
-    "clip_vision.onnx": (HF + "onnx/vision_model.onnx", 45_543_630, None),
-    "clip_text.onnx": (HF + "onnx/text_model_int8.onnx", 42_799_230, None),
-    "clip_tokenizer.json": (HF + "tokenizer.json", 2_224_081, None),
+    # local name: (url, size in bytes, sha256)
+    "clip_vision.onnx": (
+        HF + "onnx/vision_model.onnx",
+        45_543_630,
+        "17d3c037b1d488c10c50e09f6009ea5a198caef4e0e8f4ea5617b7cb2d067ac0",
+    ),
+    "clip_text.onnx": (
+        HF + "onnx/text_model_int8.onnx",
+        42_799_230,
+        "fc8d87978623385c17a46331ffb9cb5ab7fe8b61c513c094602b85f08edd0a0b",
+    ),
+    "clip_tokenizer.json": (
+        HF + "tokenizer.json",
+        2_224_081,
+        "72ed5c96db5729294468543e4bc75fce14ca63f58e37300290189ba1c1e52b85",
+    ),
     "face_detect.onnx": (
         GH + "face_detection_yunet/face_detection_yunet_2023mar.onnx",
         232_589,
