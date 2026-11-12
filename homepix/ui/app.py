@@ -191,7 +191,7 @@ def add_menu_entry():
         text = (
             "[Desktop Entry]\nType=Application\nName=HomePix\n"
             "Comment=Browse, search and organize your photos\n"
-            f'Exec="{appimage}" %F\nIcon={icon}\nTerminal=false\n'
+            f'Exec="{appimage}" %F\nTryExec={appimage}\nIcon={icon}\nTerminal=false\n'  # (gone with the AppImage)
             "Categories=Graphics;Photography;Viewer;\nKeywords=photos;pictures;search;faces;\n"
             f"MimeType={';'.join(MIME_TYPES)};\n"
         )

@@ -21,6 +21,7 @@ def test_turning_it_on_starts_homepix_hidden_at_login_and_off_takes_that_away(au
     assert background.on()
     text = autostart.read_text()
     assert 'Exec="/home/me/Apps/HomePix x86_64.AppImage" --background\n' in text
+    assert "TryExec=/home/me/Apps/HomePix x86_64.AppImage\n" in text  # (deleted: skipped at login, no error)
     assert background.set_on(False) == ""
     assert not background.on()
     assert not autostart.exists()

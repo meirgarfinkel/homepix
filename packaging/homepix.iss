@@ -92,6 +92,14 @@ Root: HKA; Subkey: "Software\Classes\.m4v\OpenWithProgids"; ValueType: string; V
 Root: HKA; Subkey: "Software\Classes\Applications\HomePix.exe\SupportedTypes"; ValueType: string; ValueName: ".m4v"; ValueData: ""
 Root: HKA; Subkey: "Software\HomePix\Capabilities\FileAssociations"; ValueType: string; ValueName: ".m4v"; ValueData: "HomePix.Photo"
 
+[InstallDelete]
+; what an older version put there and this one doesn't have (an updated library's old files)
+Type: filesandordirs; Name: "{app}\_internal"
+
+[UninstallDelete]
+; the login entry "Keep running in the background" makes, which would fail at every login without HomePix
+Type: files; Name: "{userstartup}\HomePix.vbs"
+
 [Run]
 Filename: "{app}\HomePix.exe"; Description: "Open HomePix now"; Flags: nowait postinstall skipifsilent
 ; after an update from inside the app (setup /SILENT /relaunch=1), open HomePix again

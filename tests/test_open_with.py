@@ -30,6 +30,7 @@ def test_the_menu_entry_says_which_files_it_opens(pf, tmp_path, monkeypatch):
     app.add_menu_entry()
     text = (tmp_path / "share" / "applications" / "homepix.desktop").read_text()
     assert 'Exec="/apps/HomePix.AppImage" %F' in text
+    assert "TryExec=/apps/HomePix.AppImage\n" in text  # (the AppImage deleted: the menu leaves it out)
     assert "MimeType=image/jpeg;" in text and "image/heic;" in text and "video/mp4;" in text
 
 

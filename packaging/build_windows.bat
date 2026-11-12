@@ -10,9 +10,12 @@ set "PY=python"
 py -3.12 -c "" >nul 2>nul && set "PY=py -3.12"
 
 echo 1/5  Setting up a clean Python environment for building...
+rem made afresh when requirements.lock changes, so nothing left over from older versions gets bundled
+fc /b requirements.lock build\env\requirements.lock >nul 2>nul || if exist build\env rmdir /s /q build\env
 if not exist build\env\Scripts\python.exe %PY% -m venv build\env || goto fail
-build\env\Scripts\python -m pip install --quiet --upgrade pip || goto fail
-build\env\Scripts\python -m pip install --quiet -r requirements.txt pyinstaller || goto fail
+rem every package at the version and hash in the lock file (PyInstaller too)
+build\env\Scripts\python -m pip install --quiet --require-hashes -r requirements.lock || goto fail
+copy /y requirements.lock build\env\requirements.lock >nul
 
 echo 2/5  Bundling HomePix with PyInstaller...
 if exist build\dist rmdir /s /q build\dist

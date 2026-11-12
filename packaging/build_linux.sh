@@ -34,16 +34,16 @@ mkdir -p "$BUILD"
 cd "$BUILD"
 
 echo "1/4  Setting up a clean Python environment for building..."
-# Made afresh when requirements.txt changes, so nothing left over from older versions gets bundled.
-STAMP="$(sha256sum "$ROOT/requirements.txt" | cut -c1-16)"
+# Made afresh when requirements.lock changes, so nothing left over from older versions gets bundled.
+STAMP="$(sha256sum "$ROOT/requirements.lock" | cut -c1-16)"
 if [ "$(cat "$ENV/.requirements" 2>/dev/null)" != "$STAMP" ]; then
   rm -rf "$ENV"
 fi
 if [ ! -x "$ENV/bin/python" ]; then
   "$PYTHON" -m venv "$ENV"
 fi
-"$ENV/bin/python" -m pip install --quiet --upgrade pip
-"$ENV/bin/python" -m pip install --quiet -r "$ROOT/requirements.txt" pyinstaller
+# every package at the version and hash in the lock file (PyInstaller too), never whatever PyPI has that day
+"$ENV/bin/python" -m pip install --quiet --require-hashes -r "$ROOT/requirements.lock"
 echo "$STAMP" > "$ENV/.requirements"
 
 echo "2/4  Bundling HomePix with PyInstaller..."

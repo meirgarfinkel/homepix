@@ -14,3 +14,5 @@ segno>=1.6
 # Phones sending photos over the home network: the computer's own encryption key, and being found on the network
 cryptography>=42
 zeroconf>=0.132
+# Listing this computer's network addresses (imported by phones.py; zeroconf needs it too)
+ifaddr>=0.2
