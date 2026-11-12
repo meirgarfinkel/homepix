@@ -1,6 +1,6 @@
 # Builds the HomePix phone app (android/), runs its unit tests and lint, when something in android/ or
 # the desktop code it has to agree with changes.
-# Pushing a tag like android-v0.2 also publishes the APK as a GitHub Release. Phone releases are never
+# Pushing a tag like android-v0.8 also publishes the APK as a GitHub Release. Phone releases are never
 # marked "latest": the desktop app's update check reads the latest release, which stays the desktop's.
 #
 # A tag build signs the APK with the repo's release key (secrets ANDROID_KEYSTORE, base64, and

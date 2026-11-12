@@ -435,12 +435,13 @@ def _qhash(value) -> str:
     return q
 
 
-def needs(db, watch: str, files: list[dict]) -> list[dict]:
+def needs(db, watch: str, files: list[dict], refused: list | None = None) -> list[dict]:
     """Which of these files the computer still needs. Each is {path, size, sha256, qhash} (qhash, its
     quick fingerprint (util.quick_hash), optional), or, asked first, {path, size, qhash}: then one the
     library has by its quick fingerprint isn't needed, and the phone makes the SHA-256 only of the
     others. Answers [{path, have}], have being how much of it already came (an upload cut off goes on
-    from there; left out when asked by qhash alone)."""
+    from there; left out when asked by qhash alone). refused: gets the paths of the ones it doesn't take
+    (a name or a kind of file it can't use), for the phone to say so."""
     if len(files) > MAX_NEED:
         raise Refused(f"At most {MAX_NEED} files at a time.", 400)
     _clear_parts(watch)
@@ -452,7 +453,12 @@ def needs(db, watch: str, files: list[dict]) -> list[dict]:
             sha = str(f["sha256"]).lower() if f.get("sha256") is not None else None
             if sha is None and qhash is None:
                 continue
-            target = _target(watch, rel)
+            try:
+                target = _target(watch, rel)
+            except Refused:
+                if refused is not None and isinstance(rel, str):
+                    refused.append(rel)
+                continue
             part = _part(watch, sha) if sha else None
         except (KeyError, TypeError, ValueError, Refused):
             continue  # (one it can't send: left out)

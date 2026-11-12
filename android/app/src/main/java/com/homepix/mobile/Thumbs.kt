@@ -52,16 +52,42 @@ private fun cached(context: Context, key: String, build: () -> Bitmap): Bitmap {
     return bmp
 }
 
-/** How far the photo is turned to be shown upright, in degrees clockwise. */
-private fun rotation(file: File): Int = try {
-    when (ExifInterface(file).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
-        ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
-        ExifInterface.ORIENTATION_ROTATE_180 -> 180
-        ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
-        else -> 0
-    }
+/** The photo's EXIF orientation (1 to 8; 1 when it says none). */
+private fun orientation(file: File): Int = try {
+    ExifInterface(file).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
 } catch (e: Exception) {
-    0
+    ExifInterface.ORIENTATION_NORMAL
+}
+
+/** How far the photo is turned to be shown upright, in degrees clockwise (a mirrored one: see [upright]). */
+private fun rotation(file: File): Int = when (orientation(file)) {
+    ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
+    ExifInterface.ORIENTATION_ROTATE_180, ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180
+    ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
+    else -> 0
+}
+
+/** Is the photo stored mirrored (a front camera's, say)? Then it's flipped as well as turned. */
+private fun mirrored(o: Int) = o in setOf(
+    ExifInterface.ORIENTATION_FLIP_HORIZONTAL, ExifInterface.ORIENTATION_FLIP_VERTICAL,
+    ExifInterface.ORIENTATION_TRANSPOSE, ExifInterface.ORIENTATION_TRANSVERSE,
+)
+
+/**
+ * The stored picture shown upright, the way the viewer and the computer show it: turned, and flipped
+ * side to side after for a mirrored orientation (as EXIF defines them).
+ */
+private fun upright(bmp: Bitmap, o: Int): Bitmap {
+    val m = Matrix()
+    val deg = when (o) {
+        ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90f
+        ExifInterface.ORIENTATION_ROTATE_180, ExifInterface.ORIENTATION_FLIP_VERTICAL -> 180f
+        ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270f
+        else -> 0f
+    }
+    if (deg != 0f) m.postRotate(deg)
+    if (mirrored(o)) m.postScale(-1f, 1f)
+    return if (m.isIdentity) bmp else Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
 }
 
 /** The largest power of two to shrink by while keeping `have` at least `need` pixels. */
@@ -112,7 +138,7 @@ private fun photoThumb(file: File, size: Int): Bitmap {
     if (bounds.outWidth <= 0) return ThumbnailUtils.createImageThumbnail(file, Size(size, size), null)
     val opts = BitmapFactory.Options().apply { inSampleSize = sampleFor(min(bounds.outWidth, bounds.outHeight), size) }
     val bmp = BitmapFactory.decodeFile(file.path, opts) ?: error("Can't read ${file.name}")
-    return turned(shortSide(bmp, size), rotation(file))
+    return upright(shortSide(bmp, size), orientation(file))
 }
 
 class ThumbFetcher(private val data: Thumb, private val options: Options) : Fetcher {
@@ -140,6 +166,8 @@ private fun faceCrop(f: Face): Bitmap {
     val rawW = bounds.outWidth
     val rawH = bounds.outHeight
     if (rawW <= 0) error("Can't read ${f.file.name}")
+    val o = orientation(f.file)
+    if (mirrored(o)) return mirroredFaceCrop(f, rawW, rawH, o)
     val deg = rotation(f.file)
     val (w, h) = if (deg == 90 || deg == 270) rawH to rawW else rawW to rawH // upright size
     // a square around the face, with room around it, in the upright photo
@@ -164,6 +192,19 @@ private fun faceCrop(f: Face): Bitmap {
         try { d.decodeRegion(raw, opts) } finally { d.recycle() }
     }
     return turned(shortSide(part, FACE_SIZE), deg)
+}
+
+/** A mirrored photo's face: the whole photo, shrunk, set upright, then the square around the face cut from it. */
+private fun mirroredFaceCrop(f: Face, rawW: Int, rawH: Int, o: Int): Bitmap {
+    val opts = BitmapFactory.Options().apply { inSampleSize = sampleFor(min(rawW, rawH), 1536) }
+    val up = upright(BitmapFactory.decodeFile(f.file.path, opts) ?: error("Can't read ${f.file.name}"), o)
+    val w = up.width
+    val h = up.height
+    val side = min(max(f.w * w, f.h * h) * 1.6f, min(w, h).toFloat())
+    val l = ((f.x + f.w / 2) * w - side / 2).coerceIn(0f, w - side)
+    val t = ((f.y + f.h / 2) * h - side / 2).coerceIn(0f, h - side)
+    val part = Bitmap.createBitmap(up, l.toInt(), t.toInt(), side.toInt().coerceAtLeast(1), side.toInt().coerceAtLeast(1))
+    return shortSide(part, FACE_SIZE)
 }
 
 class FaceFetcher(private val data: FaceThumb, private val options: Options) : Fetcher {

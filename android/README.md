@@ -1,8 +1,10 @@
 # HomePix on Android
 
-A read-only phone viewer for a HomePix library: timeline, people and search. It reads the
-portable copy HomePix keeps in each library folder (`.homepix/library.db`), so it doesn't have to
-find faces or work out search vectors again. Searching uses the same MobileCLIP text model as the desktop app.
+The HomePix phone app: the photos and videos on the phone, with who's in them and search from your
+library (timeline, people, search), turning and trashing on the phone, and sending new photos to
+HomePix on the computer over the home Wi-Fi. Paired, the computer sends it a small library file of
+what it knows about the phone's photos, so the phone never has to find faces or work out search
+vectors. Searching uses the same MobileCLIP text model as the desktop app.
 
 ## Build
 
@@ -22,7 +24,7 @@ Each release build is also copied to `dist/HomePix-dev.apk`, or to the folder na
 Android 11 or newer.
 
 1. Install `HomePix-dev.apk` (`adb install`, or open the file on the phone), open it and allow "All files access".
-2. On the computer: HomePix > Settings > Phones > Pair a phone..., and pick the import automation.
+2. On the computer: HomePix > Settings > Phones > Pair a phone... (pairing makes the phone's own import automation).
 3. In the app: the ⚙ tab (or "Pair with a computer") > scan the code.
 
 Opening the code with the phone's camera app works too: HomePix asks before pairing.

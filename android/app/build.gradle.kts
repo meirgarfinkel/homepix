@@ -4,7 +4,8 @@ import java.net.URI
 import java.util.Properties
 
 // The key every published HomePix.apk is signed with, so each new one installs over the last. GitHub's
-// build gets it from the repo's secrets (HOMEPIX_KEYSTORE, HOMEPIX_KEYSTORE_PASSWORD); a computer from the
+// build gets it from the repo's secrets ANDROID_KEYSTORE and ANDROID_KEYSTORE_PASSWORD, handed to it as
+// HOMEPIX_KEYSTORE and HOMEPIX_KEYSTORE_PASSWORD; a computer from the
 // file homepix.signing names in ~/.gradle/gradle.properties. Without either, the build is signed with
 // that computer's debug key, which is fine for trying a change.
 val releaseKey: Pair<File, String>? = run {
@@ -70,7 +71,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("io.coil-kt:coil-video:2.7.0")
     implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("androidx.media3:media3-ui:1.6.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.1")

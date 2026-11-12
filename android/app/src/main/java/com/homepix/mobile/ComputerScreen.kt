@@ -43,6 +43,7 @@ private class Status(
     val away: String = "",
     val running: Boolean = false,
     val unpaired: Boolean = false,
+    val refused: Int = 0,
 )
 
 private fun status(context: android.content.Context): Status {
@@ -52,7 +53,7 @@ private fun status(context: android.content.Context): Status {
     return Status(
         c, s.getLong("sent", 0), s.getInt("waiting", 0), s.getString("problem", "").orEmpty(),
         s.getString("away", "").orEmpty(), System.currentTimeMillis() - running < 15 * 60_000,
-        Computer.prefs(context).getBoolean("unpaired", false),
+        Computer.prefs(context).getBoolean("unpaired", false), s.getInt("refused", 0),
     )
 }
 
@@ -62,7 +63,13 @@ private fun status(context: android.content.Context): Status {
  * this phone was just unpaired here.
  */
 @Composable
-fun ComputerScreen(pending: PairCode?, pendingTaken: () -> Unit, unpaired: (String) -> Unit = {}, said: String = "") {
+fun ComputerScreen(
+    pending: PairCode?,
+    pendingTaken: () -> Unit,
+    unpaired: (String) -> Unit = {},
+    said: String = "",
+    inTabs: Boolean = false, // (the tabs' frame already keeps it below the status bar)
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf<Status?>(null) } // (null until first read)
@@ -110,7 +117,7 @@ fun ComputerScreen(pending: PairCode?, pendingTaken: () -> Unit, unpaired: (Stri
     }
 
     Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(24.dp),
+        Modifier.fillMaxSize().then(if (inTabs) Modifier else Modifier.statusBarsPadding()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Computer", style = MaterialTheme.typography.headlineSmall)
@@ -149,6 +156,11 @@ fun ComputerScreen(pending: PairCode?, pendingTaken: () -> Unit, unpaired: (Stri
                 Text(if (st.sent > 0) "Last sent ${ago(st.sent)}" else "Nothing sent yet")
                 if (st.running) Text("Sending now…")
                 else if (st.waiting > 0) Text("${st.waiting} to check or send")
+                if (st.refused > 0) Text(
+                    if (st.refused == 1) "1 file in DCIM isn't sent: HomePix doesn't take its name or kind of file."
+                    else "${st.refused} files in DCIM aren't sent: HomePix doesn't take their names or kinds of file.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (st.away.isNotEmpty()) Text(st.away, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (st.problem.isNotEmpty()) Text(st.problem, color = MaterialTheme.colorScheme.error)
                 if (note.isNotEmpty()) Text(note, color = MaterialTheme.colorScheme.onSurfaceVariant)

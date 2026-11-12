@@ -93,9 +93,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Month
 import java.time.format.TextStyle
@@ -213,14 +217,10 @@ private fun BoxScope.Scrollbar(lib: Library, cells: List<Cell>, items: List<Int>
     var dragging by remember { mutableStateOf(false) }
     var dragAt by remember { mutableFloatStateOf(0f) } // where the handle is while dragging, 0 (top) to 1
     val handleH = with(density) { 44.dp.toPx() }
-    val months = remember(cells) {
-        var last = ""
-        Array(cells.size) { n ->
-            when (val c = cells[n]) {
-                is Cell.Header -> c.label.also { last = it }
-                is Cell.Photo -> monthName(lib.items[items[c.pos]].month).also { last = it }
-            }
-        }
+    // the month under the handle, worked out only for the cell it's on (not a name for every cell)
+    fun monthAt(n: Int): String = when (val c = cells[n]) {
+        is Cell.Header -> c.label
+        is Cell.Photo -> monthName(lib.items[items[c.pos]].month)
     }
     val years = remember(cells) {
         cells.withIndex().filter { it.value is Cell.Header }
@@ -239,6 +239,10 @@ private fun BoxScope.Scrollbar(lib: Library, cells: List<Cell>, items: List<Int>
     Box(
         Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(36.dp)
             .onSizeChanged { height = it.height }
+            .systemGestureExclusion { r -> // (where the handle is, the system's back swipe doesn't start)
+                val top = now() * (height - handleH)
+                androidx.compose.ui.geometry.Rect(0f, top - handleH / 2, r.size.width.toFloat(), top + handleH * 1.5f)
+            }
             .pointerInput(cells) {
                 // only a touch on the handle itself drags it; anything else falls through to the photos
                 awaitEachGesture {
@@ -281,7 +285,7 @@ private fun BoxScope.Scrollbar(lib: Library, cells: List<Cell>, items: List<Int>
         )
     }
     if (dragging) {
-        val label = months[(dragAt * span).roundToInt().coerceIn(0, cells.size - 1)]
+        val label = monthAt((dragAt * span).roundToInt().coerceIn(0, cells.size - 1))
         Text(label, Modifier.align(Alignment.TopEnd)
             .offset { IntOffset(-with(density) { 76.dp.roundToPx() }, y.roundToInt()) }
             .clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.primaryContainer)
@@ -293,10 +297,16 @@ private fun BoxScope.Scrollbar(lib: Library, cells: List<Cell>, items: List<Int>
 @Composable
 private fun PhotoCell(item: Item, size: Int, onClick: () -> Unit) {
     Edits.version // (made again when a photo is turned)
-    Box(Modifier.aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClick)) {
+    // (what TalkBack reads: "Photo, Nov 12, 2024" or "Video, 0:31, Nov 12, 2024")
+    val d = item.duration?.toInt()
+    val label = (if (item.kind == "video") "Video, " + (if (d != null) "%d:%02d, ".format(d / 60, d % 60) else "") else "Photo, ") +
+        dayText(item.local)
+    Box(
+        Modifier.aspectRatio(1f).background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClickLabel = "Open", onClick = onClick).semantics { contentDescription = label },
+    ) {
         AsyncImage(Thumb(item.file, item.kind == "video", size, Turns.of(item.file), item.stamp), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         if (item.kind == "video") {
-            val d = item.duration?.toInt()
             Text(if (d != null) "%d:%02d".format(d / 60, d % 60) else "▶",
                 Modifier.align(Alignment.BottomEnd).padding(4.dp).background(Color(0x99000000)).padding(horizontal = 4.dp),
                 color = Color.White, style = MaterialTheme.typography.labelSmall)
@@ -336,6 +346,7 @@ class SearchState(private val context: Context) {
     var matches by mutableStateOf<List<Int>>(emptyList())
     var related by mutableStateOf<List<Int>>(emptyList())
     private var model: Search? = null
+    private val loading = kotlinx.coroutines.sync.Mutex()
 
     /** The × in the search bar: an empty bar and no results. */
     fun clear() {
@@ -369,14 +380,23 @@ class SearchState(private val context: Context) {
             return
         }
         note = if (model == null || !lib.vectorsReady) "Getting search ready…" else "Searching…"
-        val r = withContext(Dispatchers.Default) {
-            val m = model ?: Search(context).also { model = it }
-            m.search(lib, rest, only)
+        try {
+            val r = withContext(Dispatchers.Default) {
+                // (two quick searches load the model once)
+                val m = loading.withLock { model ?: Search(context).also { model = it } }
+                m.search(lib, rest, only)
+            }
+            matches = r.matches
+            related = r.related
+            note = (if (only != null) "${r.matches.size} matches in ${r.searched} photos of $who" else "${r.matches.size} matches in ${r.searched} photos")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("HomePix", "search: $e")
+            note = "Search didn't work this time. Try again."
+        } finally {
+            busy = false
         }
-        matches = r.matches
-        related = r.related
-        note = (if (only != null) "${r.matches.size} matches in ${r.searched} photos of $who" else "${r.matches.size} matches in ${r.searched} photos")
-        busy = false
     }
 }
 
@@ -419,8 +439,7 @@ fun SearchScreen(lib: Library, s: SearchState, open: (List<Int>, Int) -> Unit, o
     }
 }
 
-/** Material's "rotate left" icon, which the built-in icon set doesn't have. */
-// Google Photos' rotate icon (Material's "rotate 90 degrees counter-clockwise")
+/** Google Photos' rotate icon (Material's "rotate 90 degrees counter-clockwise"), which the built-in set doesn't have. */
 private val RotateIcon by lazy {
     icon("Rotate", "M7.34,6.41L0.86,12.9l6.49,6.48 6.49,-6.48 -6.5,-6.49zM3.69,12.9l3.66,-3.66L11,12.9l-3.66,3.66 -3.65,-3.66zM19.36,6.64C17.61,4.88 15.3,4 13,4L13,0.76L8.76,5 13,9.24L13,6c1.79,0 3.58,0.68 4.95,2.05 2.73,2.73 2.73,7.17 0,9.9C16.58,19.32 14.79,20 13,20c-0.97,0 -1.94,-0.21 -2.84,-0.61l-1.49,1.49C10.02,21.62 11.51,22 13,22c2.3,0 4.61,-0.88 6.36,-2.64 3.52,-3.51 3.52,-9.21 0,-12.72z")
 }
@@ -654,6 +673,10 @@ private fun share(context: Context, item: Item) {
 
 private fun play(context: Context, item: Item) {
     val uri = FileProvider.getUriForFile(context, "com.homepix.mobile.files", item.file)
-    context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "video/*")
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "video/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+    } catch (e: android.content.ActivityNotFoundException) {
+        android.widget.Toast.makeText(context, "No app on this phone plays this video.", android.widget.Toast.LENGTH_LONG).show()
+    }
 }
