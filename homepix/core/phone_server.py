@@ -8,8 +8,10 @@ changes.
 Requests (JSON in and out, but the file itself):
 - POST /v1/pair {code, name}: pair, with the QR code's code. Answers {phone, token, computer}.
 - POST /v1/hello: check the secret works. Answers {computer, phone, ready}.
-- POST /v1/need {files: [{path, size, sha256}]}: which to send. Answers {need: [{path, have}]}.
-- POST /v1/library {sizes, sources, version}: what HomePix knows about the phone's photos (see
+- POST /v1/need {files: [{path, size, sha256, qhash}]}: which to send. Answers {need: [{path, have}],
+  quick: true}. Asked first with {path, size, qhash} alone, it answers {need: [{path}]}: those the
+  library doesn't have by their quick fingerprint (the phone then makes the SHA-256 of only those).
+- POST /v1/library {qhashes, sources, version}: what HomePix knows about the photos the phone has (see
   phones.library_for). Answers {same: true} when the phone's version is current, else the file itself
   (a SQLite database like a folder's portable copy), with its version in X-Version.
 - PUT /v1/file, the file's bytes from X-Offset on, with X-Path (URL-encoded), X-Size, X-Mtime (ms) and
@@ -173,16 +175,17 @@ class _Handler(BaseHTTPRequestHandler):
             need = phones.needs(db, watch, [f for f in files if isinstance(f, dict)])
         finally:
             db.close()
-        self._send(200, {"need": need})
+        self._send(200, {"need": need, "quick": True})
 
     def _POST_v1_library(self):
         body = self._json()
         phone = self._phone()
-        sizes, sources = body.get("sizes"), body.get("sources", [])
-        if not isinstance(sizes, list) or not isinstance(sources, list):
+        # (a phone before 0.7 tells only its files' sizes: it gets only the photos it sent)
+        qhashes, sources = body.get("qhashes", []), body.get("sources", [])
+        if not isinstance(qhashes, list) or not isinstance(sources, list):
             raise phones.Refused("That isn't readable.", 400)
         rule = _rule(phone, paused_too=True)
-        version, path = phones.library_for(phone, sizes, sources, rule.watch if rule else None)
+        version, path = phones.library_for(phone, qhashes, sources, rule.watch if rule else None)
         if body.get("version") == version:
             self._send(200, {"same": True, "version": version})
             return

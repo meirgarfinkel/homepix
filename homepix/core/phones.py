@@ -32,7 +32,7 @@ from pathlib import Path
 from . import autoimport
 from .autoimport import MEDIA_EXTS
 from .config import data_dir
-from .util import load_json, save_json
+from .util import load_json, quick_hash, save_json, within
 
 PORT = 47820  # (another is taken when it's in use, and kept)
 SERVICE = "_homepix._tcp.local."
@@ -271,7 +271,6 @@ def make_rule(name: str, rule_id: str, folders: list[str], rules: list):
     library: when the library holds the home folder)."""
     from .autoimport import Rule
     from .settings import excluded_folders, set_excluded
-    from .util import within
 
     base, n = Path.home() / "Phone photos", 1
     while True:
@@ -388,36 +387,96 @@ def _hash(path: Path) -> str:
     return d.hexdigest()
 
 
-def _have_content(db, sha: str) -> bool:
+def _have_content(db, sha: str, qhash: str | None, watch: str) -> bool:
     """Is this content in the library, or was it imported before (and since deleted, or its import
-    undone)? Then it's never sent again."""
+    undone)? Then it's never sent again. (qhash: its quick fingerprint, to find it in the library by.)"""
+    from . import duplicates
+
     if db.execute("SELECT 1 FROM import_seen WHERE sha256=? LIMIT 1", (sha,)).fetchone():
         return True
-    return db.execute("SELECT 1 FROM photos WHERE sha256=? LIMIT 1", (sha,)).fetchone() is not None
+    if db.execute("SELECT 1 FROM photos WHERE sha256=? LIMIT 1", (sha,)).fetchone():
+        return True
+    if qhash is None:
+        return False
+    rows = _in_library(db, qhash, watch)
+    return bool(rows) and sha in duplicates._sha256(db, rows).values()
+
+
+def _in_library(db, qhash: str, watch: str) -> list:
+    """The library's photos with this quick fingerprint (not counting the Import from folder: when it's
+    inside the library, its photos are indexed, but they're on their way in)."""
+    rows = db.execute("SELECT id, path, sha256 FROM photos WHERE qhash=?", (qhash,)).fetchall()
+    return [r for r in rows if not within(r["path"], [watch])]
+
+
+def _qhash(value) -> str:
+    q = str(value).lower()
+    if len(q) != 40 or any(c not in "0123456789abcdef" for c in q):
+        raise ValueError(q)
+    return q
 
 
 def needs(db, watch: str, files: list[dict]) -> list[dict]:
-    """Which of these files ({path, size, sha256}) the computer still needs: [{path, have}], have being
-    how much of it already came (an upload cut off goes on from there)."""
+    """Which of these files the computer still needs. Each is {path, size, sha256, qhash} (qhash, its
+    quick fingerprint (util.quick_hash), optional), or, asked first, {path, size, qhash}: then one the
+    library has by its quick fingerprint isn't needed, and the phone makes the SHA-256 only of the
+    others. Answers [{path, have}], have being how much of it already came (an upload cut off goes on
+    from there; left out when asked by qhash alone)."""
     if len(files) > MAX_NEED:
         raise Refused(f"At most {MAX_NEED} files at a time.", 400)
+    _clear_parts(watch)
     out = []
     for f in files:
         try:
-            rel, size, sha = f["path"], int(f["size"]), str(f["sha256"]).lower()
-            target, part = _target(watch, rel), _part(watch, sha)
+            rel, size = f["path"], int(f["size"])
+            qhash = _qhash(f["qhash"]) if f.get("qhash") is not None else None
+            sha = str(f["sha256"]).lower() if f.get("sha256") is not None else None
+            if sha is None and qhash is None:
+                continue
+            target = _target(watch, rel)
+            part = _part(watch, sha) if sha else None
         except (KeyError, TypeError, ValueError, Refused):
             continue  # (one it can't send: left out)
         try:
-            if target.is_file() and target.stat().st_size == size and _hash(target) == sha:
+            if target.is_file() and target.stat().st_size == size and _same(target, size, sha, qhash):
                 continue  # here already, waiting to be imported
         except OSError:
             pass
-        if _have_content(db, sha):
+        if sha is None:
+            if not _in_library(db, qhash, watch):
+                out.append({"path": rel})
+            continue
+        if _have_content(db, sha, qhash, watch):
             continue
         have = part.stat().st_size if part.is_file() else 0
         out.append({"path": rel, "have": have if have <= size else 0})
     return out
+
+
+def _same(path: Path, size: int, sha: str | None, qhash: str | None) -> bool:
+    return _hash(path) == sha if sha else quick_hash(path, size) == qhash
+
+
+PART_DAYS = 7  # an upload cut off and not gone on with for this long is dropped
+
+
+def _clear_parts(watch: str):
+    """Drop uploads cut off long ago (the photo deleted on the phone before it was all sent, say)."""
+    try:
+        parts = list(Path(watch, INCOMING).glob("*.part"))
+    except OSError:
+        return
+    for p in parts:
+        lock = _busy(str(p))
+        if not lock.acquire(blocking=False):
+            continue  # (coming in now)
+        try:
+            if time.time() - p.stat().st_mtime > PART_DAYS * 86400:
+                p.unlink()
+        except OSError:
+            pass
+        finally:
+            lock.release()
 
 
 _receiving: dict[str, threading.Lock] = {}
@@ -489,28 +548,28 @@ def _library_files(phone_id: str) -> tuple[Path, Path]:
     return folder() / f"{phone_id}.db", folder() / f"{phone_id}.version"
 
 
-def library_for(phone: Phone, sizes: list, sources: list, watch: str | None) -> tuple[str, Path]:
-    """What HomePix knows about the photos this phone has (a phone tells the sizes of its files and
-    their places, as it sends them: "Camera/PXL_1.jpg"), as a small library file: (its version, the
-    file). watch: the phone's Import from folder (photos are found by where they came from only among
-    those imported from it). Made again only when the library, its settings or the phone's files have
-    changed since."""
+def library_for(phone: Phone, qhashes: list, sources: list, watch: str | None) -> tuple[str, Path]:
+    """What HomePix knows about the photos this phone has (a phone tells the quick fingerprints of its
+    files, util.quick_hash, and their places, as it sends them: "Camera/PXL_1.jpg"), as a small library
+    file: (its version, the file). Only photos the phone has go in it. watch: the phone's Import from
+    folder (photos are found by where they came from only among those imported from it). Made again only
+    when the library, its settings or the phone's files have changed since."""
     from .portable import db_stamp, phone_copy
     from .settings import load_settings
 
-    if len(sizes) > MAX_FILES or len(sources) > MAX_FILES:
+    if len(qhashes) > MAX_FILES or len(sources) > MAX_FILES:
         raise Refused("That's too many files at once.", 413)
     try:
-        sizes = sorted({int(x) for x in sizes})
+        qhashes = sorted({_qhash(x) for x in qhashes})
     except (TypeError, ValueError):
         raise Refused("That isn't readable.", 400) from None
     sources = sorted({str(x) for x in sources})
     s = load_settings()
-    stamp = json.dumps([db_stamp(), s.get("folders"), s.get("excluded"), watch, sizes, sources])
+    stamp = json.dumps([db_stamp(), s.get("folders"), s.get("excluded"), watch, qhashes, sources])
     version = hashlib.sha256(stamp.encode()).hexdigest()[:32]
     db, ver = _library_files(phone.id)
     with _busy(str(db)):
         if not (db.is_file() and ver.is_file() and ver.read_text() == version):
-            phone_copy(db, set(sizes), set(sources), watch)
+            phone_copy(db, set(qhashes), set(sources), watch)
             ver.write_text(version)
     return version, db

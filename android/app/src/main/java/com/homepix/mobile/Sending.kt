@@ -43,8 +43,8 @@ import javax.net.ssl.X509TrustManager
 /*
  * Sending the phone's new photos and videos (everything in DCIM) to HomePix on the computer it's paired
  * with, over the home network: encrypted, trusting only the computer whose key was in the QR code.
- * The computer is asked first which files it still needs (by content), so nothing it has is sent
- * again. Deleting is never sent. Runs in the background whenever a photo is taken and every 15 minutes,
+ * The computer is asked first which files it still needs (by quick fingerprint, then by content for
+ * the ones it doesn't have), so nothing it has is sent again, and only those are read whole. Deleting is never sent. Runs in the background whenever a photo is taken and every 15 minutes,
  * only on Wi-Fi (or another unmetered network).
  */
 
@@ -416,16 +416,33 @@ object Sending {
         try {
             for (batch in todo.chunked(BATCH)) {
                 if (stopped()) return false
-                val hashes = batch.associateWith { sha256(it.file) }
-                val ask = JSONArray()
-                for ((f, sha) in hashes) ask.put(JSONObject().put("path", f.rel).put("size", f.size).put("sha256", sha))
-                val need = link.post("/v1/need", JSONObject().put("files", ask)).getJSONArray("need")
+                // First by quick fingerprint (a moment each): only files the library doesn't have are read whole.
+                val quick = batch.associateWith { Fingerprints.of(context, it.file) }
+                val first = JSONArray()
+                for ((f, q) in quick) first.put(JSONObject().put("path", f.rel).put("size", f.size).put("qhash", q ?: JSONObject.NULL))
+                val answer = link.post("/v1/need", JSONObject().put("files", first))
+                val wanted = if (answer.optBoolean("quick")) {
+                    val need = answer.getJSONArray("need")
+                    val paths = HashSet<String>().apply { for (i in 0 until need.length()) add(need.getJSONObject(i).getString("path")) }
+                    batch.filter { it.rel in paths || quick[it] == null }
+                } else {
+                    batch // (a HomePix before 1.17 asks by content only)
+                }
+                val hashes = wanted.associateWith { sha256(it.file) }
                 val have = HashMap<String, Long>()
-                for (i in 0 until need.length()) need.getJSONObject(i).let { have[it.getString("path")] = it.getLong("have") }
-                for ((f, sha) in hashes) {
+                if (hashes.isNotEmpty()) {
+                    val ask = JSONArray()
+                    for ((f, sha) in hashes) {
+                        ask.put(JSONObject().put("path", f.rel).put("size", f.size).put("sha256", sha).put("qhash", quick[f] ?: JSONObject.NULL))
+                    }
+                    val need = link.post("/v1/need", JSONObject().put("files", ask)).getJSONArray("need")
+                    for (i in 0 until need.length()) need.getJSONObject(i).let { have[it.getString("path")] = it.getLong("have") }
+                }
+                for (f in batch) {
                     if (stopped()) return false
                     val from = have[f.rel]
-                    if (from != null) {
+                    val sha = hashes[f]
+                    if (from != null && sha != null) {
                         val got = try {
                             link.send(f, sha, from)
                         } catch (e: Refused) {
@@ -453,28 +470,41 @@ object Sending {
             SendState.note(context, "problem" to (e.message ?: "Sending stopped."))
             if (e is Refused && e.status == 401) Computer.prefs(context).edit().putBoolean("unpaired", true).apply()
             return false
+        } finally {
+            Fingerprints.save(context)
         }
     }
 
     /**
      * What HomePix knows about the photos on this phone (who's in them, their search data...), as a small
-     * library file in the app's own storage: the computer is told the sizes of the phone's photos and
-     * videos and the places of those in DCIM, and sends the file only when something's changed.
+     * library file in the app's own storage: the computer is told the quick fingerprints of the phone's
+     * photos and videos (only photos the phone has go in the file) and the places of those in DCIM, and
+     * sends the file only when something's changed.
      */
     private fun fetchLibrary(context: Context, link: Link) {
         val prefs = SendState.prefs(context)
-        val sizes = JSONArray()
+        val qhashes = JSONArray()
+        val seen = HashSet<String>()
+        val keys = HashSet<String>()
         val uri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
         val types = "${MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE},${MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO}"
         context.contentResolver.query(
-            uri, arrayOf(MediaStore.MediaColumns.SIZE), "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN ($types)", null, null,
-        )?.use { c -> val seen = HashSet<Long>(); while (c.moveToNext()) if (seen.add(c.getLong(0))) sizes.put(c.getLong(0)) }
+            uri, arrayOf(MediaStore.MediaColumns.DATA), "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN ($types)", null, null,
+        )?.use { c ->
+            while (c.moveToNext()) {
+                val f = File(c.getString(0) ?: continue)
+                keys += Fingerprints.key(f)
+                val q = Fingerprints.of(context, f) ?: continue
+                if (seen.add(q)) qhashes.put(q)
+            }
+        }
+        Fingerprints.save(context, keys) // (only those of files still here)
         val sources = JSONArray()
         cameraFiles(context).forEach { sources.put(it.rel) }
         val dst = computerLibrary(context)
         val known = prefs.getString("library", null)?.takeIf { dst.isFile } // (the computer answers "the same" to it)
         val version = link.library(
-            JSONObject().put("sizes", sizes).put("sources", sources).put("version", known ?: JSONObject.NULL), dst,
+            JSONObject().put("qhashes", qhashes).put("sources", sources).put("version", known ?: JSONObject.NULL), dst,
         ) ?: return
         prefs.edit().putString("library", version).putLong("library_at", System.currentTimeMillis()).apply()
     }

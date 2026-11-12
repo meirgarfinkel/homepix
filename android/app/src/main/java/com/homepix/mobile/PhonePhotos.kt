@@ -29,15 +29,63 @@ fun quickHash(file: File): String {
 }
 
 /**
- * The photos and videos on the phone (the ones its gallery knows of), by size, and their fingerprints,
- * made only for files whose size a library photo has, and kept from one start to the next.
+ * The quick fingerprints made of the phone's files, kept from one start to the next ("path|size|modified"
+ * -> fingerprint), for the library screen and for sending alike.
  */
-class PhonePhotos(context: Context) {
+object Fingerprints {
+    private val known = HashMap<String, String>()
+    private var loaded = false
+
+    private fun cacheFile(context: Context) = File(context.cacheDir, "fingerprints.tsv")
+
+    private fun load(context: Context) {
+        if (loaded) return
+        loaded = true
+        val f = cacheFile(context)
+        if (f.isFile) runCatching {
+            f.forEachLine { line ->
+                val i = line.lastIndexOf('\t')
+                if (i > 0) known[line.substring(0, i)] = line.substring(i + 1)
+            }
+        }
+    }
+
+    fun key(f: File) = "${f.path}|${f.length()}|${f.lastModified()}"
+
+    /** The file's quick fingerprint (made now if it's new or changed), or null if it can't be read. */
+    fun of(context: Context, f: File): String? {
+        val key = key(f)
+        synchronized(this) {
+            load(context)
+            known[key]?.let { return it }
+        }
+        val h = runCatching { quickHash(f) }.getOrNull() ?: return null
+        synchronized(this) { known[key] = h }
+        return h
+    }
+
+    /** Keeps them on the phone; keep: the keys of files still here, or null to keep them all. */
+    fun save(context: Context, keep: Set<String>? = null) {
+        val lines = synchronized(this) {
+            if (keep != null) known.keys.retainAll(keep)
+            known.map { (k, v) -> "$k\t$v\n" }
+        }
+        val dst = cacheFile(context)
+        val tmp = File.createTempFile("fingerprints", ".tmp", context.cacheDir) // (one of its own: two may save at once)
+        runCatching {
+            tmp.bufferedWriter().use { w -> lines.forEach(w::write) }
+            if (!tmp.renameTo(dst)) tmp.delete()
+        }.onFailure { tmp.delete() }
+    }
+}
+
+/**
+ * The photos and videos on the phone (the ones its gallery knows of), by size, and their fingerprints,
+ * made only for files whose size a library photo has (see [Fingerprints]).
+ */
+class PhonePhotos(private val context: Context) {
     private val bySize = HashMap<Long, MutableList<File>>()
     private val byName = HashMap<String, MutableList<File>>()
-    private val cacheFile = File(context.cacheDir, "fingerprints.tsv")
-    private val known = HashMap<String, String>() // "path|size|modified" -> fingerprint
-    private val used = HashMap<String, String>()
     private val claimed = HashSet<File>()
     private val turned = Turned.all(context) // fingerprint before turning -> file
 
@@ -58,12 +106,6 @@ class PhonePhotos(context: Context) {
                 byName.getOrPut(f.name.lowercase()) { mutableListOf() } += f
             }
         }
-        if (cacheFile.isFile) {
-            cacheFile.forEachLine { line ->
-                val i = line.lastIndexOf('\t')
-                if (i > 0) known[line.substring(0, i)] = line.substring(i + 1)
-            }
-        }
     }
 
     val count: Int get() = bySize.values.sumOf { it.size }
@@ -73,9 +115,7 @@ class PhonePhotos(context: Context) {
         val same = bySize[size] ?: return null
         for (f in same) {
             if (f in claimed) continue
-            val key = "${f.path}|${f.length()}|${f.lastModified()}"
-            val h = known[key] ?: runCatching { quickHash(f) }.getOrNull() ?: continue
-            used[key] = h
+            val h = Fingerprints.of(context, f) ?: continue
             if (h == qhash) {
                 claimed += f
                 return f
@@ -104,10 +144,6 @@ class PhonePhotos(context: Context) {
         return f
     }
 
-    /** Keeps the fingerprints made this time (only those of files still on the phone). */
-    fun save() {
-        val tmp = File(cacheFile.path + ".tmp")
-        tmp.bufferedWriter().use { w -> for ((k, v) in used) w.write("$k\t$v\n") }
-        tmp.renameTo(cacheFile)
-    }
+    /** Keeps the fingerprints made this time. */
+    fun save() = Fingerprints.save(context)
 }
