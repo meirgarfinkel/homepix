@@ -48,6 +48,7 @@ fun ComputerScreen(pending: PairCode?, pendingTaken: () -> Unit) {
     var message by remember { mutableStateOf("") }
     var tick by remember { mutableIntStateOf(0) }
     var asking by remember { mutableStateOf(false) }
+    var linkNote by remember { mutableStateOf("") } // how pairing from a link went, until OK
 
     fun start(code: PairCode) {
         busy = true
@@ -60,8 +61,17 @@ fun ComputerScreen(pending: PairCode?, pendingTaken: () -> Unit) {
         }
     }
 
-    LaunchedEffect(pending) {
-        pending?.let { start(it); pendingTaken() }
+    // A code opened as a link (from the camera app, or any app or web page) only pairs after a yes here,
+    // and never over a pairing that's already there. It's let go of only once it's answered, so this
+    // screen stays while the library is still loading.
+    fun startLinked(code: PairCode) {
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { pair(context, code) } }
+            busy = false
+            r.onSuccess { pendingTaken(); computer = Computer.load(context) }
+                .onFailure { linkNote = it.message ?: "Pairing didn't work. Try again." }
+        }
     }
     LaunchedEffect(Unit) { // (how sending is going, kept up to date)
         while (true) { delay(2000); tick++ }
@@ -124,6 +134,38 @@ fun ComputerScreen(pending: PairCode?, pendingTaken: () -> Unit) {
             }
         }
         if (message.isNotEmpty()) Text(message, color = MaterialTheme.colorScheme.error)
+    }
+
+    val linked = pending?.takeIf { !busy }
+    val now = computer
+    if (linked != null) {
+        val note = when {
+            linkNote.isNotEmpty() -> linkNote
+            now != null -> "This phone is paired with ${now.name}. To pair with another computer, unpair first."
+            linked.addresses.isEmpty() -> "That code isn't for a computer on this network."
+            else -> null
+        }
+        if (note != null) {
+            AlertDialog(
+                onDismissRequest = { linkNote = ""; pendingTaken() },
+                title = { Text("Not paired") },
+                text = { Text(note) },
+                confirmButton = { TextButton(onClick = { linkNote = ""; pendingTaken() }) { Text("OK") } },
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { pendingTaken() },
+                title = { Text("Pair with ${linked.name.ifBlank { "this computer" }}?") },
+                text = {
+                    Text(
+                        "This phone's photos and videos will be sent to the computer at ${linked.addresses.first()}. " +
+                            "Only go on if you just opened the code in HomePix's Settings on your own computer.",
+                    )
+                },
+                confirmButton = { TextButton(onClick = { startLinked(linked) }) { Text("Pair") } },
+                dismissButton = { TextButton(onClick = { pendingTaken() }) { Text("Cancel") } },
+            )
+        }
     }
 
     if (asking) {

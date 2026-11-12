@@ -2,7 +2,6 @@ package com.homepix.mobile
 
 import android.content.Context
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.runtime.produceState
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
@@ -586,7 +585,7 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
             }
         }
         if (chrome && current != null) {
-            // as Google Photos has it: the day, and the time and place, at the top; what to do with it at the bottom
+            // as Google Photos has it: the day and the time at the top; what to do with it at the bottom
             Box(Modifier.fillMaxWidth().background(Color(0x66000000)).statusBarsPadding().height(64.dp)) {
                 IconButton(onClick = close, Modifier.align(Alignment.CenterStart)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
@@ -596,12 +595,9 @@ fun Viewer(lib: Library, items: List<Int>, start: Int, close: () -> Unit, openPe
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(dayText(current.local), color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                    val place by produceState<String?>(null, current) {
-                        value = withContext(Dispatchers.IO) { whereTaken(current.file, current.kind == "video") }
-                            ?.let { (lat, lon) -> Places.name(context, lat, lon) }
-                    }
-                    val line = listOfNotNull(timeText(context, current.local), place).joinToString(" • ")
-                    if (line.isNotEmpty()) Text(line, color = Color(0xCCFFFFFF), style = MaterialTheme.typography.bodyMedium,
+                    // (no place name: finding one would send where the photo was taken to Google)
+                    val line = timeText(context, current.local)
+                    if (!line.isNullOrEmpty()) Text(line, color = Color(0xCCFFFFFF), style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
