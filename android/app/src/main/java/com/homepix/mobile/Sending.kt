@@ -201,10 +201,8 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
                 answer(c) // (the same as before, or refused)
                 return null
             }
-            val tmp = File(dst.path + ".tmp")
-            tmp.parentFile?.mkdirs()
-            c.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it, 1 shl 16) } }
-            if (!tmp.renameTo(dst)) throw IOException("Couldn't keep the library's details.")
+            dst.parentFile?.mkdirs()
+            writeWhole(dst) { tmp -> c.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it, 1 shl 16) } } }
             return c.getHeaderField("X-Version")
         } finally {
             c.disconnect()

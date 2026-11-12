@@ -6,6 +6,7 @@ import android.os.Environment
 import android.util.Half
 import org.json.JSONArray
 import java.io.File
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.max
 
 /**
@@ -70,12 +71,19 @@ class Library(
     val vectors: Vectors get() = vecs.value
     val vectorsReady: Boolean get() = vecs.isInitialized()
 
-    /** Has a library's copy, or a folder of photos, changed since this was read (a sync brought something)? */
+    /** Has a library's copy, or a folder of photos, changed since this was read (new details came, say)? */
     fun changed(): Boolean = stampOf(watched) != stamp
 
     companion object {
         const val DIM = 512
         private const val COPY = ".homepix/library.db"
+
+        /** One read of the library at a time: two at once would write the same copies in the app's storage. */
+        private val reading = kotlinx.coroutines.sync.Mutex()
+
+        /** [load] on a background thread, after any read already under way. */
+        suspend fun read(context: android.content.Context, roots: List<File>, say: (String) -> Unit = {}): Library =
+            reading.withLock { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { load(context, roots, say) } }
 
         private fun stampOf(files: List<File>) = files.joinToString("|") { "${it.lastModified()}:${it.length()}" }
 
@@ -103,8 +111,8 @@ class Library(
         /**
          * Reads every library folder's copy. A photo is shown from the library folder if it's there, or
          * else from wherever the same file is on the phone (the original in the camera folder, matched
-         * by fingerprint), so only the database has to be synced to the phone. say: progress for the
-         * loading screen.
+         * by fingerprint), so only the small library file has to come to the phone. say: progress for the
+         * loading screen. Throws [LibraryUnreadable] for a copy this app can't read.
          */
         fun load(context: android.content.Context, roots: List<File>, say: (String) -> Unit): Library {
             val cacheDir = context.cacheDir
@@ -126,6 +134,7 @@ class Library(
                 android.util.Log.i("HomePix", "copy ${System.currentTimeMillis() - t0} ms")
                 val db = SQLiteDatabase.openDatabase(local.path, null, SQLiteDatabase.OPEN_READONLY)
                 try {
+                    check(db)
                     val excluded = excluded(db)
                     val from = cameFrom(db)
                     val byId = HashMap<Long, Item>()
@@ -243,7 +252,7 @@ class Library(
                     }
                 }
             } catch (e: Exception) {
-                // a copy replaced by a newer sync while this was read: that library is read again anyway
+                // a copy replaced by a newer one while this was read: that library is read again anyway
                 android.util.Log.w("HomePix", "search vectors: $e")
             }
             val vectors = FloatArray(data.size * DIM)
@@ -259,10 +268,23 @@ class Library(
             val stamp = File(cacheDir, "library-$n.stamp")
             val want = "${src.path}|${src.length()}|${src.lastModified()}"
             if (!dst.exists() || !stamp.exists() || stamp.readText() != want) {
-                src.copyTo(dst, overwrite = true)
+                stamp.delete()
+                // whole, under its own name first: an older library still reading its search data keeps the old one
+                writeWhole(dst) { src.copyTo(it, overwrite = true) }
                 stamp.writeText(want)
             }
             return dst
+        }
+
+        private fun check(db: SQLiteDatabase) {
+            val missing = LIBRARY_NEEDS.flatMap { (table, cols) ->
+                val have = db.rawQuery("PRAGMA table_info($table)", null).use { c ->
+                    HashSet<String>().apply { while (c.moveToNext()) add(c.getString(1)) }
+                }
+                cols.filter { it !in have }.map { "$table.$it" }
+            }
+            val version = db.rawQuery("PRAGMA user_version", null).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+            libraryProblem(version, missing)?.let { throw LibraryUnreadable(it) }
         }
 
         /**
@@ -340,13 +362,39 @@ private class Folders(cacheDir: File) {
     /** Keeps the folders looked at this time (a file name can't hold a "/"). */
     fun save() = runCatching {
         if (now == kept) return@runCatching
-        val tmp = File(cacheFile.path + ".tmp")
-        tmp.bufferedWriter().use { w ->
-            for ((path, v) in now) if ('\t' !in path && '\n' !in path) {
-                w.write(path); w.write("\t"); w.write(v.first.toString()); w.write("\t")
-                w.write(v.second.joinToString("/")); w.write("\n")
+        writeWhole(cacheFile) { tmp ->
+            tmp.bufferedWriter().use { w ->
+                for ((path, v) in now) if ('\t' !in path && '\n' !in path) {
+                    w.write(path); w.write("\t"); w.write(v.first.toString()); w.write("\t")
+                    w.write(v.second.joinToString("/")); w.write("\n")
+                }
             }
         }
-        tmp.renameTo(cacheFile)
     }
+}
+
+/** A library copy this app can't read, with what to tell the user. */
+class LibraryUnreadable(message: String) : Exception(message)
+
+/** What this app reads from a library copy: anything missing, and it can't show the library. */
+val LIBRARY_NEEDS = mapOf(
+    "photos" to listOf(
+        "id", "path", "taken", "kind", "duration", "size", "qhash", "width", "height", "description",
+        "keywords", "moment", "error", "clip",
+    ),
+    "faces" to listOf("photo_id", "person_id", "x", "y", "w", "h", "px", "hidden"),
+    "people" to listOf("id", "name"),
+)
+
+/** The newest library version this app was made with (homepix/core/db.py VERSION). */
+const val KNOWN_VERSION = 15
+
+/**
+ * What to say about a library copy of this version missing these columns ("photos.moment"), or null
+ * if it can be read. A newer version with every column still reads: most changes on the computer add.
+ */
+fun libraryProblem(version: Int, missing: List<String>): String? = when {
+    missing.isEmpty() -> null
+    version > KNOWN_VERSION -> "This library was saved by a newer HomePix than this app knows. Update the HomePix app on this phone."
+    else -> "This library was saved by an older HomePix than this app reads. Update HomePix on the computer, then open it once."
 }

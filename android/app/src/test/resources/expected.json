@@ -323,5 +323,52 @@
   "fingerprint": "abababababababababababababababababababababababababababababababab",
   "code": "c0de-_X",
   "name": "Den PC & co"
+ },
+ "library": {
+  "version": 15,
+  "columns": {
+   "photos": [
+    "id",
+    "path",
+    "size",
+    "mtime",
+    "qhash",
+    "kind",
+    "taken",
+    "taken_source",
+    "moment",
+    "duration",
+    "clip",
+    "faces_done",
+    "error",
+    "error_reader",
+    "keywords",
+    "description",
+    "details_done",
+    "sha256",
+    "phash",
+    "width",
+    "height"
+   ],
+   "faces": [
+    "id",
+    "photo_id",
+    "x",
+    "y",
+    "w",
+    "h",
+    "score",
+    "emb",
+    "px",
+    "person_id",
+    "locked",
+    "hidden",
+    "not_person"
+   ],
+   "people": [
+    "id",
+    "name"
+   ]
+  }
  }
 }
