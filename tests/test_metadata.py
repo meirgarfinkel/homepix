@@ -185,9 +185,8 @@ def test_shift_a_batch_and_the_live_photo_clip_moves_with_it(home, lib):
     result, cant = edit_and_run(db, fo, [a, b], md.Edit(shift=dt.timedelta(hours=-3, minutes=-15)))
     assert result.finished == 3 and not cant
     assert row(db, a)["taken"] == "2021-03-04 06:45:00" and row(db, b)["taken"] == "2021-03-05 15:15:00"
-    clock = dt.datetime.strptime(utc, "%Y:%m:%d %H:%M:%S") - dt.timedelta(hours=3, minutes=15)
-    assert row(db, clip)["taken"] == str(clock)  # a video's date is its clock, as stored (like its name)
-    assert row(db, clip)["moment"] == "2021-03-04 06:45:01"  # its local time, to stay with its photo
+    assert row(db, clip)["taken"] == "2021-03-04 06:45:01"  # a video's date is local time, like its photo's
+    assert row(db, clip)["moment"] == "2021-03-04 06:45:01"
     index(pf, lib)
     assert row(db, clip)["kind"] == "motion"  # still its photo's clip
 

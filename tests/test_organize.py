@@ -7,7 +7,7 @@ import time
 
 import numpy as np
 import pytest
-from conftest import wait_until
+from conftest import open_window, wait_until
 from PIL import Image
 from test_fileops import contents, index_matches_disk, no_leftovers
 
@@ -286,5 +286,82 @@ def test_tidying_from_the_window_previews_then_organizes_and_undo_takes_it_back(
         ]
         w.ops.undo()
         wait_until(app, lambda: not w.ops.busy and files(lib) == ["2019/2019_05_06_07_08_09.jpg", "new/IMG_1.jpg"])
+    finally:
+        w.close()
+
+
+# --- the one-time rename to local time (1.17) -----------------------------------------------------
+
+
+def test_names_from_utc_are_renamed_to_local_time_once_and_undone(israel, home, lib):
+    pf, db = home
+    # named by UTC before 1.17 (its photo says 09:30:05 local, Israel summer is UTC+3)
+    shot(lib / "2024" / "2024_07_01_06_30_05.jpg", "2024:07:01 09:30:05")
+    (lib / "2024" / "2024_07_01_06_30_05.xmp").write_text("<x/>")  # its sidecar goes with it
+    # crossing into the next year: the 2021 folder
+    shot(lib / "2020" / "2020_12_31_23_30_00.jpg", "2021:01:01 01:30:00")
+    # outside a year folder: renamed where it is
+    shot(lib / "Trip" / "2023_03_03_08_00_00.jpg", "2023:03:03 10:00:00")
+    # left alone: already local; a second apart (one clock); not an organized name; not a time zone apart
+    shot(lib / "2022" / "2022_04_19_14_13_28.jpg", "2022:04:19 14:13:28")
+    shot(lib / "2022" / "2022_04_19_14_13_30.jpg", "2022:04:19 14:13:31")
+    shot(lib / "2022" / "IMG_1.jpg", "2022:05:05 05:05:05")
+    shot(lib / "2022" / "2022_06_06_06_06_06.jpg", "2022:06:06 08:16:06")
+    before = files(lib)
+    pf.index_folder(lib, want_faces=False)
+
+    p = organize.plan_local_names(db, [lib])
+    assert sorted((os.path.relpath(c.src, lib), os.path.relpath(c.dst, lib)) for c in p.changes) == [
+        ("2020/2020_12_31_23_30_00.jpg", "2021/2021_01_01_01_30_00.jpg"),
+        ("2024/2024_07_01_06_30_05.jpg", "2024/2024_07_01_09_30_05.jpg"),
+        ("2024/2024_07_01_06_30_05.xmp", "2024/2024_07_01_09_30_05.xmp"),
+        ("Trip/2023_03_03_08_00_00.jpg", "Trip/2023_03_03_10_00_00.jpg"),
+    ]
+    fo.run(db, "organize", "Rename to local time", p.as_steps())
+    indexed = {os.path.relpath(r[0], lib) for r in db.execute("SELECT path FROM photos")}
+    assert indexed == {f for f in files(lib) if f.endswith(".jpg")}
+    no_leftovers(lib)
+    assert organize.plan_local_names(db, [lib]).changes == []  # done, it stays so
+
+    fo.undo(db)
+    assert files(lib) == before
+
+
+def test_a_local_name_taken_already_gets_the_next_number(israel, home, lib):
+    pf, db = home
+    shot(lib / "2024" / "2024_07_01_09_30_05.jpg", "2024:07:01 09:30:05")  # another photo, same second
+    shot(lib / "2024" / "2024_07_01_06_30_05.jpg", "2024:07:01 09:30:05")
+    pf.index_folder(lib, want_faces=False)
+    p = organize.plan_local_names(db, [lib])
+    assert [os.path.basename(c.dst) for c in p.changes] == ["2024_07_01_09_30_05_1.jpg"]
+
+
+def test_the_window_renames_once_after_every_date_is_read_again(israel, home, lib, app):
+    from homepix.core.settings import load_settings
+    from homepix.ui.organizer import LOCAL_NAMES
+
+    pf, db = home
+    shot(lib / "2024" / "2024_07_01_06_30_05.jpg", "2024:07:01 09:30:05")
+    pf.index_folder(lib, want_faces=False)
+    db.execute("UPDATE photos SET details_done=0")  # (as after the upgrade: its date to be read again)
+    db.commit()
+    w = open_window(app)
+    try:
+        w.watcher.finished.emit()  # a pass ended, but a date is still to be read: not yet
+        wait_until(app, lambda: not w.organizer._looking)
+        assert files(lib) == ["2024/2024_07_01_06_30_05.jpg"] and not load_settings().get(LOCAL_NAMES)
+
+        db.execute("UPDATE photos SET details_done=1")
+        db.commit()
+        w.watcher.finished.emit()
+        wait_until(app, lambda: load_settings().get(LOCAL_NAMES) and not w.ops.busy)
+        assert files(lib) == ["2024/2024_07_01_09_30_05.jpg"]
+        assert w.ops.history()[0] == "Rename 1 file to local time"
+
+        w.ops.undo()  # undone, it stays undone
+        wait_until(app, lambda: not w.ops.busy)
+        w.watcher.finished.emit()
+        wait_until(app, lambda: not w.organizer._looking and not w.ops.busy)
+        assert files(lib) == ["2024/2024_07_01_06_30_05.jpg"]
     finally:
         w.close()

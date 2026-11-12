@@ -16,10 +16,12 @@ class IndexWatcher(QObject):
 
     state(dict): the indexer's snapshot, twice a second while it runs (and once when it stops).
     library_changed(): photos were added, moved or removed: time to reload what's shown.
+    finished(): a pass ended.
     """
 
     state = Signal(dict)
     library_changed = Signal()
+    finished = Signal()
 
     def __init__(self, parent=None, rescan: bool = True):
         super().__init__(parent)
@@ -94,6 +96,8 @@ class IndexWatcher(QObject):
             self._refresh()
         if not running:
             self._shown_done = 0
+            if self._was_running:
+                self.finished.emit()
         self._was_running = running
 
     def _refresh(self):
