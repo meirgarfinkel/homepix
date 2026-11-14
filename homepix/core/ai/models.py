@@ -6,7 +6,7 @@ import urllib.request
 from pathlib import Path
 
 from ..config import data_dir
-from ..util import say
+from ..util import https_context, say
 
 # (pinned to one revision each, so the files are always the ones these checksums are of)
 HF = "https://huggingface.co/Xenova/mobileclip_s0/resolve/757d59c9c6870a76a4b0306f05f5061bca15c39f/"
@@ -61,7 +61,7 @@ def ensure_models(names):
         tmp = dest.with_suffix(dest.suffix + ".part")
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "homepix/0.1"})
-            with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
+            with urllib.request.urlopen(req, timeout=60, context=https_context()) as r, open(tmp, "wb") as out:
                 while True:
                     chunk = r.read(1 << 20)
                     if not chunk:
