@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import shutil
+import ssl
+import sys
 import threading
 import time
 from pathlib import Path
@@ -15,6 +17,33 @@ import numpy as np
 def say(msg=""):
     """A line for the app's log (app.log when started from the menu)."""
     print(msg, flush=True)
+
+
+# Where Linux and macOS keep the certificates they trust. The OpenSSL bundled in the Linux builds was made
+# on AlmaLinux, so it only looks where Red Hat keeps them (/etc/pki/tls): on Ubuntu or Debian it would
+# trust no one, and every download would fail.
+CA_FILES = (
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu, Mint, Arch
+    "/etc/pki/tls/certs/ca-bundle.crt",  # Fedora, RHEL, Alma, Rocky
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  # (the same, newer)
+    "/etc/ssl/ca-bundle.pem",  # openSUSE
+    "/etc/ssl/cert.pem",  # macOS, Alpine
+)
+
+
+def https_context() -> ssl.SSLContext:
+    """For downloads over HTTPS (models, updates): the system's own trusted certificates, wherever this
+    system keeps them. Windows' come from Windows itself."""
+    ctx = ssl.create_default_context()
+    if sys.platform != "win32" and not ctx.get_ca_certs():
+        for f in CA_FILES:
+            if os.path.isfile(f):
+                try:
+                    ctx.load_verify_locations(cafile=f)
+                    break
+                except (OSError, ssl.SSLError):
+                    continue
+    return ctx
 
 
 def folder_prefix(folder) -> str:

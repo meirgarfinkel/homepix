@@ -9,6 +9,7 @@ import sys
 import urllib.request
 
 from .. import __version__
+from .util import https_context
 
 RELEASES = "https://api.github.com/repos/meirgarfinkel/homepix/releases?per_page=50"
 DOWNLOADS = "https://github.com/meirgarfinkel/homepix/releases/download/"  # the only place updates come from
@@ -47,7 +48,7 @@ def latest_release(kind: str | None = None) -> dict:
     """The newest desktop release (the highest vX.Y.Z, not what GitHub calls latest: a phone release
     marked so by mistake would stop updates), with the file for kind if given. {} if there's none."""
     req = urllib.request.Request(RELEASES, headers={"Accept": "application/vnd.github+json", "User-Agent": "homepix"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=20, context=https_context()) as r:
         return newest(json.load(r), kind)
 
 
@@ -90,7 +91,7 @@ def download(asset: dict, dest, progress=lambda done, total: None, should_stop=l
     tmp = f"{dest}.part"
     done, sha = 0, hashlib.sha256()
     req = urllib.request.Request(url, headers={"User-Agent": "homepix"})
-    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
+    with urllib.request.urlopen(req, timeout=60, context=https_context()) as r, open(tmp, "wb") as out:
         while chunk := r.read(1 << 20):
             if should_stop():
                 out.close()
