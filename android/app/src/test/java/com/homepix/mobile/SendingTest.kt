@@ -171,4 +171,42 @@ class SendingTest {
         assertEquals("Camera/IMG_1.jpg", placeOf("external_primary", "DCIM/Camera/", "IMG_1.jpg"))
         assertEquals("SD 1A2B-3C4D/Camera/IMG_1.jpg", placeOf("1a2b-3c4d", "DCIM/Camera/", "IMG_1.jpg"))
     }
+
+    @Test
+    fun aComputerThatDoesntAnswerAtFirstIsTriedAgain() {
+        val waited = mutableListOf<Long>()
+        var tries = 0
+        val got = retrying(listOf(2_000, 5_000), sleep = { waited += it }) {
+            if (++tries < 3) throw java.net.SocketTimeoutException("failed to connect to /10.0.0.7 (port 47820) after 3000ms")
+            "answered"
+        }
+        assertEquals("answered", got)
+        assertEquals(listOf(2_000L, 5_000L), waited)
+    }
+
+    @Test
+    fun oneThatNeverAnswersIsSaidInWords() {
+        var tries = 0
+        val e = assertThrows(NoAnswer::class.java) {
+            retrying(listOf(2_000, 5_000), sleep = {}) { tries++; throw java.net.ConnectException("ECONNREFUSED") }
+        }
+        assertEquals(3, tries)
+        assertEquals("homeserver didn't answer in time. Photos are sent the next time it does.", stoppedBecause(e, "homeserver"))
+    }
+
+    @Test
+    fun whatTheComputerSaidIsNotTriedAgain() {
+        var tries = 0
+        assertThrows(Refused::class.java) { retrying(sleep = {}) { tries++; throw Refused(507, "Not enough space.") } }
+        assertEquals(1, tries)
+        assertEquals("Not enough space.", stoppedBecause(Refused(507, "Not enough space."), "homeserver"))
+    }
+
+    @Test
+    fun aConnectionDroppedPartWayIsSaidInWords() {
+        assertEquals(
+            "The connection to homeserver dropped. Sending goes on from where it stopped next time.",
+            stoppedBecause(java.net.SocketException("Software caused connection abort"), "homeserver"),
+        )
+    }
 }
