@@ -32,8 +32,8 @@ android {
         applicationId = "com.homepix.mobile"
         minSdk = 30 // (Android 11: all-files access and the phone's trash)
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8"
+        versionCode = 9
+        versionName = "0.9"
     }
 
     signingConfigs {

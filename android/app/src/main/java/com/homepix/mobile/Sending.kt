@@ -140,6 +140,39 @@ data class PairCode(val addresses: List<String>, val port: Int, val fingerprint:
 
 class Refused(val status: Int, message: String, val have: Long = -1) : IOException(message)
 
+/** The computer didn't answer, after a few tries. */
+class NoAnswer(cause: IOException) : IOException("No answer", cause)
+
+/** Did this connection fail because nothing answered (not because of something it said)? */
+fun noAnswer(e: IOException) =
+    e is NoAnswer || e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.net.NoRouteToHostException
+
+/**
+ * attempt(), tried again after each wait while nothing answers (a moment's Wi-Fi drop, or a computer
+ * busy for a few seconds); [NoAnswer] when it never does. Anything else is thrown at once.
+ */
+fun <T> retrying(waits: List<Long> = listOf(2_000, 5_000), sleep: (Long) -> Unit = Thread::sleep, attempt: () -> T): T {
+    var tries = 0
+    while (true) {
+        try {
+            return attempt()
+        } catch (e: IOException) {
+            if (!noAnswer(e)) throw e
+            if (tries == waits.size) throw NoAnswer(e)
+            sleep(waits[tries++])
+        }
+    }
+}
+
+/** Why sending stopped, in words: a dropped or unanswered connection said plainly, not as Java's message. */
+fun stoppedBecause(e: IOException, computer: String): String = when {
+    e is NoAnswer -> "$computer didn't answer in time. Photos are sent the next time it does."
+    noAnswer(e) || e is java.net.SocketException || e is java.io.EOFException ->
+        "The connection to $computer dropped. Sending goes on from where it stopped next time."
+    e is Refused -> e.message ?: "$computer said no."
+    else -> e.message ?: "Sending stopped."
+}
+
 /** What sending needs from the computer (a [Link], or a stand-in in the tests). */
 interface Peer {
     fun post(path: String, body: JSONObject): JSONObject
@@ -154,16 +187,26 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
         init(null, arrayOf(Pinned(fingerprint)), null)
     }
 
-    private fun open(method: String, path: String): HttpsURLConnection {
+    /** Connected, with setup applied first; tried again after a moment when the computer doesn't answer. */
+    private fun open(method: String, path: String, setup: HttpsURLConnection.() -> Unit = {}): HttpsURLConnection {
         if (!isPrivateAddress(host)) throw IOException("$host isn't on this network, so nothing is sent to it.")
-        val c = URL("https", host, port, path).openConnection() as HttpsURLConnection
-        c.sslSocketFactory = ssl.socketFactory
-        c.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true } // (the key itself is checked)
-        c.connectTimeout = CONNECT_MS
-        c.readTimeout = 60_000
-        c.requestMethod = method
-        if (token.isNotEmpty()) c.setRequestProperty("Authorization", "Bearer $token")
-        return c
+        return retrying {
+            val c = URL("https", host, port, path).openConnection() as HttpsURLConnection
+            c.sslSocketFactory = ssl.socketFactory
+            c.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true } // (the key itself is checked)
+            c.connectTimeout = CONNECT_MS
+            c.readTimeout = 60_000
+            c.requestMethod = method
+            if (token.isNotEmpty()) c.setRequestProperty("Authorization", "Bearer $token")
+            c.setup()
+            try {
+                c.connect()
+            } catch (e: IOException) {
+                c.disconnect()
+                throw e
+            }
+            c
+        }
     }
 
     private fun answer(c: HttpURLConnection): JSONObject {
@@ -175,11 +218,12 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
     }
 
     override fun post(path: String, body: JSONObject): JSONObject {
-        val c = open("POST", path)
         val data = body.toString().toByteArray()
-        c.doOutput = true
-        c.setRequestProperty("Content-Type", "application/json")
-        c.setFixedLengthStreamingMode(data.size)
+        val c = open("POST", path) {
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setFixedLengthStreamingMode(data.size)
+        }
         try {
             c.outputStream.use { it.write(data) }
             return answer(c)
@@ -190,12 +234,13 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
 
     /** Ask for the library's details about these files: written to dst when they've changed (true). */
     fun library(body: JSONObject, dst: File): String? {
-        val c = open("POST", "/v1/library")
         val data = body.toString().toByteArray()
-        c.doOutput = true
-        c.setRequestProperty("Content-Type", "application/json")
-        c.setFixedLengthStreamingMode(data.size)
-        c.readTimeout = 120_000
+        val c = open("POST", "/v1/library") {
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setFixedLengthStreamingMode(data.size)
+            readTimeout = 120_000
+        }
         try {
             c.outputStream.use { it.write(data) }
             if (c.responseCode != 200 || c.contentType?.startsWith("application/json") == true) {
@@ -211,14 +256,15 @@ class Link(private val host: String, private val port: Int, fingerprint: ByteArr
     }
 
     override fun send(f: Local, sha: String, offset: Long): Long {
-        val c = open("PUT", "/v1/file")
-        c.doOutput = true
-        c.setRequestProperty("X-Path", URLEncoder.encode(f.rel, "UTF-8").replace("+", "%20"))
-        c.setRequestProperty("X-Size", f.size.toString())
-        c.setRequestProperty("X-Mtime", f.modified.toString())
-        c.setRequestProperty("X-Sha256", sha)
-        c.setRequestProperty("X-Offset", offset.toString())
-        c.setFixedLengthStreamingMode(f.size - offset)
+        val c = open("PUT", "/v1/file") {
+            doOutput = true
+            setRequestProperty("X-Path", URLEncoder.encode(f.rel, "UTF-8").replace("+", "%20"))
+            setRequestProperty("X-Size", f.size.toString())
+            setRequestProperty("X-Mtime", f.modified.toString())
+            setRequestProperty("X-Sha256", sha)
+            setRequestProperty("X-Offset", offset.toString())
+            setFixedLengthStreamingMode(f.size - offset)
+        }
         try {
             c.outputStream.use { out ->
                 FileInputStream(f.file).use { input ->
@@ -510,7 +556,7 @@ object Sending {
             ""
         } catch (e: IOException) {
             if (e is Refused && e.status == 401) return unpairedThere(context)
-            "Couldn't get the library's details from ${computer.name}: ${e.message ?: "no answer"}"
+            "Couldn't get the library's details. " + stoppedBecause(e, computer.name)
         }
         val sentFile = File(context.filesDir, "sent.tsv")
         val sent = HashSet<String>().apply { if (sentFile.isFile) sentFile.forEachLine { add(it) } }
@@ -550,7 +596,7 @@ object Sending {
             return true
         } catch (e: IOException) {
             if (e is Refused && e.status == 401) return unpairedThere(context)
-            SendState.note(context, "problem" to (e.message ?: "Sending stopped."))
+            SendState.note(context, "problem" to stoppedBecause(e, computer.name))
             return false
         } finally {
             Fingerprints.save(context)
