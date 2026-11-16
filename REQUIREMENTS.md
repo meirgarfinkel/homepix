@@ -58,6 +58,8 @@ Agreed 2026-10-27, brought up to date 2026-11-12 (HomePix 1.17, phone app 0.8). 
 | Folders: the library's real folder tree | v1 |
 | People: a page per person | v1 |
 | Search results | v1 |
+| One Back button, in the toolbar, wherever there's somewhere to go back to: the viewer to the page it was opened from, someone's faces to their photos, their photos and Who is this? to People. No other back buttons (none beside a page's title) | v1 |
+| Faces show as their pictures come, on threads of their own: on a slow disk, a page of faces never holds up going to another page, and pictures not made yet when the page is left wait until it shows again | v1 |
 | Viewer: full screen, zoom, previous/next. A video plays as soon as it's shown, with controls over its bottom that fade while it plays: play/pause, time, a bar to jump with, sound on/off (kept while the app runs), open in another app. Click or Space/K/Enter plays or pauses, J and L jump 10 s, M mutes, double-click is full screen; it stops on leaving it | v1 |
 | Info panel: date **and where it came from**, camera, size, dimensions, GPS, people, path | v1 |
 | No hover tips (they got in the way). Whatever the user needs to know is visible text; an icon-only control keeps a tip only with the owner's approval | v1 |

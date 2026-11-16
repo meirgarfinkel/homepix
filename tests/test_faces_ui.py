@@ -214,7 +214,7 @@ def test_someones_faces_and_taking_out_one_that_isnt_them(window, pf, app):
     settle(app, window)
     wait_until(app, lambda: window.person_faces.grid.count() == 5)
     assert names(pf)[5] is None
-    window.person_faces.back.emit()
+    window.back_action.trigger()
     wait_until(app, lambda: len(window.timeline.items) == 5)
 
 
@@ -403,3 +403,71 @@ def test_the_who_page_names_the_same_way_as_the_name_window(app, monkeypatch):
     v.name.matches.itemClicked.emit(v.name.matches.item(0))
     assert named == [([0, 2], "Hannah Demo")]
     v.close()
+
+
+def test_face_pictures_dont_hold_up_other_pages_and_stop_when_the_page_is_left(app, monkeypatch):
+    """On a slow disk a page of faces is hundreds of crops: the next page's load mustn't wait behind
+    them, and those not made yet when the page is left are made only once it shows again."""
+    import threading
+
+    from homepix.ui import workers
+    from homepix.ui.views import faces as faces_view
+
+    gate, made = threading.Event(), []
+
+    def slow_crop(face, size):  # (a photo read from a slow disk)
+        gate.wait(10)
+        made.append(face["id"])
+        raise OSError("no photo")
+
+    monkeypatch.setattr(faces_view, "face_thumb", slow_crop)
+    grid = faces_view.FaceGrid()
+    grid.show()
+    grid.set_faces([{"id": i, "path": f"/x/{i}.jpg"} for i in range(50)])
+    loaded = threading.Event()
+    workers.run(lambda: None, lambda res, err: loaded.set())  # e.g. the timeline's photos
+    wait_until(app, loaded.is_set)  # (while every face is still waiting on the disk)
+    grid.hide()
+    gate.set()
+    wait_until(app, lambda: len(grid._asked) <= 2)  # all but those already started were left
+    left = len(made)
+    assert left <= 2
+    grid.show()
+    wait_until(app, lambda: len(made) == 50)
+    grid.close()
+
+
+def test_one_back_button_for_the_viewer_and_every_page_that_has_somewhere_to_go_back_to(window, pf, app):
+    from homepix.core import people
+    from homepix.ui.views.sidebar import ALL, PEOPLE, WHO, faces_place, person_place
+
+    db = pf.open_db()
+    ann = [r[0] for r in db.execute("SELECT id FROM faces ORDER BY photo_id")]
+    db.close()
+    window.naming.name(ann[:5], "Ann")
+    settle(app, window)
+    db = pf.open_db()
+    pid = people.person_id(db, "Ann")
+    db.close()
+    back = window.back_action
+    window.show_place(ALL)
+    wait_until(app, lambda: len(window.timeline.items) == 8)
+    assert not back.isVisible()  # (a sidebar page: nowhere to go back to)
+    window.open_viewer(0)
+    assert back.isVisible()
+    back.trigger()
+    assert window.stack.currentWidget() is window.timeline and not back.isVisible()
+    window.show_place(faces_place(pid))
+    wait_until(app, lambda: window.stack.currentWidget() is window.person_faces)
+    assert back.isVisible()
+    back.trigger()  # someone's faces -> their photos
+    wait_until(app, lambda: window.place == person_place(pid) and len(window.timeline.items) == 5)
+    assert back.isVisible()
+    back.trigger()  # their photos -> People
+    wait_until(app, lambda: window.place == PEOPLE and window.stack.currentWidget() is window.people)
+    assert not back.isVisible()
+    window.show_place(WHO)
+    wait_until(app, lambda: window.stack.currentWidget() is window.who)
+    back.trigger()
+    wait_until(app, lambda: window.place == PEOPLE)
+    assert not [b for b in window.findChildren(QtWidgets.QAbstractButton) if b.text() in ("Their photos", "People")]
