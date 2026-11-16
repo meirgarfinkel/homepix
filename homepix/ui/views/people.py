@@ -93,6 +93,7 @@ class PeopleView(QListWidget):
                     lambda f, err, row=row: gen == self._generation and self._face_ready(row, f, err),
                     person["face"],
                     CROP,
+                    pictures=True,
                 )
 
     def set_who(self, who):

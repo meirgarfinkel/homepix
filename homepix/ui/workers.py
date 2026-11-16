@@ -16,6 +16,9 @@ _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-job")
 # threads, so neither waits behind the other or behind thumbnails and lists.
 _changes = ThreadPoolExecutor(max_workers=1, thread_name_prefix="homepix-change")
 _viewing = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-view")
+# Face pictures too: a page of them can be hundreds of crops (each a photo read from disk when it isn't
+# made yet), which mustn't hold up loading the page the user goes to next.
+_pictures = ThreadPoolExecutor(max_workers=2, thread_name_prefix="homepix-pictures")
 _pending = 0  # jobs submitted to the pool and not finished yet
 _vital = 0  # of those, the ones quitting must wait for
 _idle = threading.Condition()
@@ -53,15 +56,16 @@ def _counted(job, must_finish):
     return run_it
 
 
-def run(fn, callback, *args, must_finish=False, viewing=False):
+def run(fn, callback, *args, must_finish=False, viewing=False, pictures=False):
     """Run fn(*args) on a worker thread, then callback(result, error) on the UI thread.
     error is None on success, else the exception (and result None). must_finish: quitting waits for
-    it however long it takes (changes to the user's files). viewing: decoding for the viewer."""
+    it however long it takes (changes to the user's files). viewing: decoding for the viewer.
+    pictures: making face pictures."""
     global _pending, _vital
     with _idle:
         _pending += 1
         _vital += must_finish
-    pool = _changes if must_finish else _viewing if viewing else _pool
+    pool = _changes if must_finish else _viewing if viewing else _pictures if pictures else _pool
     return pool.submit(_counted(_job(fn, callback, args), must_finish))
 
 

@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QStackedWidget,
     QToolBar,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -286,17 +285,10 @@ class MainWindow(QMainWindow):
         self.page_header.setObjectName("pageHeader")
         head = QHBoxLayout(self.page_header)
         head.setContentsMargins(24, 18, 10, 4)  # the count ends where the years beside the photos do
-        self.page_back = QToolButton()
-        self.page_back.setObjectName("pageBack")
-        self.page_back.setText("People")
-        self.page_back.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.page_back.clicked.connect(lambda: self.show_place(PEOPLE))
-        self.page_back.hide()
         self.page_title = QLabel("All photos")
         self.page_title.setObjectName("pageTitle")
         self.count_label = QLabel()
         self.count_label.setObjectName("pageCount")
-        head.addWidget(self.page_back)
         head.addWidget(self.page_title)
         head.addStretch()
         head.addWidget(self.count_label)
@@ -363,7 +355,6 @@ class MainWindow(QMainWindow):
         self.person_faces.not_them.connect(lambda ids: self.naming.not_them(ids, self.person_faces.person["id"]))
         self.person_faces.someone_else.connect(lambda ids: self.naming.ask_and_name(ids, "Who is this?"))
         self.person_faces.hidden.connect(self.naming.hide)
-        self.person_faces.back.connect(lambda: self.show_place(person_place(self.person_faces.person["id"])))
         self.viewer.current_changed.connect(lambda i: self._load_viewer_faces())
         self.viewer.faces_toggled.connect(self._faces_toggled)
         self.viewer.face_clicked.connect(self._face_menu)
@@ -432,7 +423,6 @@ class MainWindow(QMainWindow):
             action.setIcon(theme.icon(name, checked="text"))  # white on grey when on
         self.search_box.icon = theme.icon("search")
         self.search_box.clear_icon = theme.icon("clear", "muted")
-        self.page_back.setIcon(theme.icon("back", "muted"))
         self.search_box.update()
         self.brand.setPixmap(theme.brand_mark())
         self.timeline.viewport().update()
@@ -457,7 +447,7 @@ class MainWindow(QMainWindow):
         bar.addWidget(name)
         bar.addWidget(_spacer(14))
         self.back_action = QAction("Back", self)
-        self.back_action.triggered.connect(self.close_viewer)
+        self.back_action.triggered.connect(self.go_back)  # (the one Back: the viewer's, and every page's)
         self.back_action.setVisible(False)
         bar.addAction(self.back_action)
         self._show_label(bar, self.back_action)
@@ -901,7 +891,27 @@ class MainWindow(QMainWindow):
         else:
             title = PAGE_TITLES.get(self.place) or Path(self.place).name or self.place
         self.page_title.setText(title)
-        self.page_back.setVisible(pid is not None and not self.query)
+        self._show_back()
+
+    def _back_place(self):
+        """Where Back goes from this page (None: nowhere, it's one of the sidebar's)."""
+        pid, fid = person_of(self.place), faces_of(self.place)
+        if self.query:
+            return None  # (the search box's clear button leaves a search)
+        if fid is not None:
+            return person_place(fid)
+        if pid is not None or self.place == WHO:
+            return PEOPLE
+        return None
+
+    def _show_back(self):
+        self.back_action.setVisible(self.stack.currentWidget() is self.viewer or self._back_place() is not None)
+
+    def go_back(self):
+        if self.stack.currentWidget() is self.viewer:
+            self.close_viewer()
+        elif (place := self._back_place()) is not None:
+            self.show_place(place)
 
     def _place_name(self) -> str:
         """ " in 2023", " of Mom", or nothing for all photos."""
@@ -1073,8 +1083,7 @@ class MainWindow(QMainWindow):
 
     def _switch_to(self, widget):
         self.stack.setCurrentWidget(widget)
-        in_viewer = widget is self.viewer
-        self.back_action.setVisible(in_viewer)
+        self._show_back()
         self.page_header.setVisible(widget in (self.timeline, self.people))  # the others have their own
         self.zoom.setEnabled(widget is self.timeline)
         self.files.update_enabled()

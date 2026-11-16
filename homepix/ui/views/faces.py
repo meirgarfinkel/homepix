@@ -2,7 +2,7 @@
 faces (to take out the ones that aren't them)."""
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -28,6 +28,15 @@ from .people import CROP
 
 TILE = 112
 ID_ROLE = Qt.ItemDataRole.UserRole
+BATCH = 200  # face pictures asked for at a time: the first ones, then more as they're scrolled to
+
+
+def _face_picture(face, unwanted):
+    """The face's picture, read here on a worker thread, or None if it isn't wanted any more (the
+    page changed, or was left before its turn came)."""
+    if unwanted():
+        return None
+    return QImage(str(face_thumb(face, CROP)))
 
 
 class _Tile(QStyledItemDelegate):
@@ -97,6 +106,7 @@ class FaceGrid(QListWidget):
         self.faces = []
         self._loaded = 0  # faces whose pictures were asked for (the first ones; the rest as they're scrolled to)
         self._generation = 0
+        self._showing = False  # (read on worker threads: pictures not made yet are left while it's hidden)
         self._items, self._asked = {}, set()  # face id -> its tile; ids whose pictures were asked for
         self.itemDoubleClicked.connect(lambda it: self.opened.emit(self.faces[self.row(it)]))
 
@@ -109,7 +119,7 @@ class FaceGrid(QListWidget):
         self.faces = []
         self.clear()  # (says the selection changed: with no faces left)
         self.faces = faces
-        self._loaded = min(len(faces), 600)  # (set first: adding items can repaint)
+        self._loaded = min(len(faces), BATCH)  # (set first: adding items can repaint)
         self._generation += 1
         self._items, self._asked = {}, set()
         blank = self._placeholder_icon()
@@ -119,7 +129,7 @@ class FaceGrid(QListWidget):
             self.addItem(item)
             item.setSelected(selected)
             self._items[f["id"]] = item
-        self._request_pictures(faces[:600])  # (more as they're scrolled to: see paintEvent)
+        self._request_pictures(faces[:BATCH])  # (more as they're scrolled to: see paintEvent)
 
     def reorder(self, faces: list[dict]):
         """The same faces in another order, keeping their pictures and what's ticked."""
@@ -140,14 +150,19 @@ class FaceGrid(QListWidget):
     def _request_pictures(self, faces):
         """Make the pictures of these faces, if they haven't been asked for."""
         gen = self._generation
+
+        def unwanted():
+            return gen != self._generation or not self._showing
+
         for f in faces:
             if f["id"] not in self._asked:
                 self._asked.add(f["id"])
                 workers.run(
-                    face_thumb,
-                    lambda file, err, fid=f["id"]: gen == self._generation and self._picture_ready(fid, file, err),
+                    _face_picture,
+                    lambda img, err, fid=f["id"]: gen == self._generation and self._picture_ready(fid, img, err),
                     f,
-                    CROP,
+                    unwanted,
+                    pictures=True,
                 )
 
     def _placeholder_icon(self) -> QIcon:
@@ -155,12 +170,22 @@ class FaceGrid(QListWidget):
         pm.fill(self.palette().color(QPalette.ColorRole.AlternateBase))
         return QIcon(pm)
 
-    def _picture_ready(self, fid, file, err):
+    def _picture_ready(self, fid, img, err):
+        if err is None and img is None:  # left while the page was hidden: asked for again when it shows
+            self._asked.discard(fid)
+            return
         item = self._items.get(fid)
-        if err is None and item is not None:
-            pm = QPixmap(str(file))
-            if not pm.isNull():
-                item.setIcon(QIcon(pm))
+        if err is None and item is not None and not img.isNull():
+            item.setIcon(QIcon(QPixmap.fromImage(img)))
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._showing = True
+        self._request_pictures(self.faces[: self._loaded])  # (those left while it was hidden)
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._showing = False
 
     def selected_faces(self) -> list[dict]:
         return [self.faces[r] for it in self.selectedItems() if (r := self.row(it)) < len(self.faces)]
@@ -177,7 +202,7 @@ class FaceGrid(QListWidget):
         if self._loaded < len(self.faces) and self.count():  # the rest, once they come into view
             last = self.indexAt(self.viewport().rect().bottomRight())
             if not last.isValid() or last.row() >= self._loaded - 50:
-                start, self._loaded = self._loaded, min(len(self.faces), self._loaded + 600)
+                start, self._loaded = self._loaded, min(len(self.faces), self._loaded + BATCH)
                 self._request_pictures(self.faces[start : self._loaded])
         if self.count() == 0 and self.empty_text:
             p = QPainter(self.viewport())
@@ -306,7 +331,6 @@ class PersonFaces(QWidget):
     someone_else = Signal(list)
     hidden = Signal(list)
     opened = Signal(dict)
-    back = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -332,10 +356,8 @@ class PersonFaces(QWidget):
         self.sort_button.clicked.connect(
             lambda: self.grid.reorder(by_likeness(self.grid.faces, self.grid.selected_faces()))
         )
-        photos = QPushButton("Their photos")
-        photos.clicked.connect(self.back)
         row = FlowLayout()  # (wraps when the window is narrow)
-        for b in (self.not_button, self.else_button, self.hide_button, self.sort_button, photos):
+        for b in (self.not_button, self.else_button, self.hide_button, self.sort_button):
             row.addWidget(b)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 18, 24, 12)

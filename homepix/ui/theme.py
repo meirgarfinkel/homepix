@@ -269,9 +269,6 @@ QLabel#pageCount {{ color: {ok}; }}
 QLabel#pageCount[busy="true"] {{ color: {muted}; }}
 QLabel#hint {{ color: {muted}; }}
 QLabel#problem {{ color: {danger}; }}
-QToolButton#pageBack {{ border: none; border-radius: 14px; padding: 4px 12px 4px 6px; color: {muted};
-                        font-weight: 500; }}
-QToolButton#pageBack:hover {{ background: {hover}; color: {text}; }}
 
 QTreeWidget#sidebar {{ background: {side}; color: {sideText}; border: none; padding: 10px 8px; outline: 0; }}
 QTreeWidget#sidebar::item {{ min-height: 28px; padding: 0 4px; border: none; }}
