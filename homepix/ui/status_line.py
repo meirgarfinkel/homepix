@@ -57,6 +57,9 @@ class StatusLine(QWidget):
             elif s["phase"] == "sharpening" and s.get("sharpen_todo"):
                 self.bar.setRange(0, s["sharpen_todo"])
                 self.bar.setValue(s["sharpen_done"])
+            elif s["phase"] == "face pictures" and s.get("pictures_todo"):
+                self.bar.setRange(0, s["pictures_todo"])
+                self.bar.setValue(s["pictures_done"])
             else:
                 self.bar.setRange(0, 0)  # busy, amount unknown
         self.refresh()

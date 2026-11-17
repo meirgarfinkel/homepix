@@ -14,7 +14,7 @@ from .config import MISSING_MIN, MISSING_SHARE, THUMB_SIZE, data_dir
 from .db import open_db, to_blob
 from .media import IMAGE_EXTS, READER, load_photo
 from .people import auto_assign, auto_assign_if_changed
-from .thumbs import photo_thumb, prune_thumbs, sharpen_thumbs
+from .thumbs import face_thumb, make_face_thumbs, photo_thumb, prune_thumbs, sharpen_thumbs
 from .util import folder_prefix, quick_hash
 from .video import VIDEO_EXTS, is_video, video_frame, video_meta
 
@@ -70,7 +70,7 @@ def index_folder(
 
     on_progress(info) is called with a dict:
       phase: "scanning" | "loading" | "indexing" | "sharpening" (thumbnails: sharpen_done of
-        sharpen_todo) | "done"
+        sharpen_todo) | "face pictures" (pictures_done of pictures_todo) | "done"
       found, todo, done, faces, errors, moved, removed, rate (photos/s), eta (seconds),
       unreachable (kept: in folders that couldn't be read), missing (kept: see forget_missing)
     should_stop() is polled between photos; return True to stop early.
@@ -260,7 +260,8 @@ def _index_all(db, todo, want_faces, info, report, stop):
 
 def _after_indexing(db, prefix, want_faces, info, report, stop, deadline, changed: bool):
     """After indexing: recognize named people, read the details written in the files, work out how
-    they look (for duplicates), sharpen thumbnails, and pair Live Photos with their clips."""
+    they look (for duplicates), sharpen thumbnails, make the face pictures not made yet, and pair Live
+    Photos with their clips."""
 
     def stopping():  # (checked before each step too: some take a moment to get going)
         return bool(info.get("stopped")) or stop()
@@ -286,6 +287,20 @@ def _after_indexing(db, prefix, want_faces, info, report, stop, deadline, change
             report(info)
 
         sharpen_thumbs(db, prefix, lambda: stop() or bool(deadline and time.time() > deadline), sharpened)
+    if want_faces and not stopping():
+        began = time.time()
+
+        def pictured(done, todo):
+            rate = done / max(time.time() - began, 1e-6)
+            info.update(
+                phase="face pictures",
+                pictures_done=done,
+                pictures_todo=todo,
+                pictures_eta=(todo - done) / rate if done else None,
+            )
+            report(info)
+
+        make_face_thumbs(db, prefix, lambda: stop() or bool(deadline and time.time() > deadline), pictured)
     if changed or info["moved"] or redated:
         link_motion(db)
         db.commit()
@@ -387,9 +402,13 @@ def _index_photo(db, clip, faces, path, st, prev, img) -> int:
             "INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?,?,?,?,?,?,?,?)",
             [(pid, x, y, w, h, s, to_blob(v), px) for x, y, w, h, s, v, px in found],
         )
-    # The photo is already decoded, so its thumbnail is nearly free now. If it fails, it's made on demand later.
+    # The photo is already decoded, so its thumbnail and face pictures are nearly free now. If they fail,
+    # they're made on demand later.
     with contextlib.suppress(OSError):
         photo_thumb(qh, path, img)
+    for x, y, w, h, *_ in found:
+        with contextlib.suppress(Exception):  # (a face picture is never worth stopping indexing for)
+            face_thumb({"x": x, "y": y, "w": w, "h": h, "qhash": qh, "path": path}, img=img)
     return len(found)
 
 

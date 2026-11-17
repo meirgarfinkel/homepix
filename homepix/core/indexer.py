@@ -83,7 +83,8 @@ class Indexer:
     """Runs index_folder over the library folders on a background thread.
 
     snapshot() returns the state as a dict:
-      running, phase ("idle" | "scanning" | "loading" | "indexing" | "sharpening" | "elsewhere"), folder, done, todo,
+      running, phase ("idle" | "scanning" | "loading" | "indexing" | "sharpening" | "face pictures" |
+      "elsewhere"), folder, done, todo,
       eta (seconds or None), error (a message to show, or None), missing (photos kept that can't be
       found), changes (goes up by one after each pass that added, moved or removed photos: compare it to
       know when to reload), last_run (time or None).
@@ -142,6 +143,9 @@ class Indexer:
                 sharpen_done=info.get("sharpen_done", 0),
                 sharpen_todo=info.get("sharpen_todo", 0),
                 sharpen_eta=info.get("sharpen_eta"),
+                pictures_done=info.get("pictures_done", 0),
+                pictures_todo=info.get("pictures_todo", 0),
+                pictures_eta=info.get("pictures_eta"),
             )
 
     def _run(self):
