@@ -6,11 +6,12 @@ from PySide6.QtCore import QPoint, QPointF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QFont, QIcon, QImage, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QListView, QListWidget, QListWidgetItem
 
+from ...core.config import FACE_SIZE
 from ...core.thumbs import face_thumb
 from .. import theme, workers
 
 FACE = 132
-CROP = 160  # face crops are made (and kept) at this size
+CROP = FACE_SIZE  # face pictures are made (and kept) at this size
 WHO_TILE = -1  # the id of the "Who is this?" circle
 
 

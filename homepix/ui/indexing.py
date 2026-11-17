@@ -134,4 +134,9 @@ def describe(s: dict) -> str:
         if s.get("sharpen_eta") and s["sharpen_done"] >= 100:  # the speed settles after the first few
             text += f", {time_left(s['sharpen_eta'])}"
         return text
+    if s["phase"] == "face pictures" and s.get("pictures_todo"):
+        text = f"Making face pictures: {s['pictures_done']:,} of {s['pictures_todo']:,}"
+        if s.get("pictures_eta") and s["pictures_done"] >= 100:
+            text += f", {time_left(s['pictures_eta'])}"
+        return text
     return "Looking for new photos..."
