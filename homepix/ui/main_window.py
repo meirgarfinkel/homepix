@@ -98,7 +98,10 @@ def load_library(place, index=None):
             )
             months = group_by_month(items)
         counts = folder_counts(db)
-        unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
+        unnamed = db.execute(
+            "SELECT EXISTS (SELECT 1 FROM faces f WHERE f.person_id IS NULL AND f.hidden = 0 "
+            f"AND {known_people.FOREGROUND})"
+        ).fetchone()[0]
         total = sum(n for f, n in counts.items() if not within(f, excluded))
         return months, counts, total, named_people(db), bool(unnamed)
     finally:

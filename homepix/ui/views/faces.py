@@ -402,7 +402,7 @@ class WhoView(QWidget):
     """One group of unnamed look-alike faces at a time, none ticked to start with: those ticked are
     named (or hidden), so a face is only named once it's been clicked. Right after a group is named,
     the faces that might be that person too come once (a follow-up: "Is this Ann?"), then the
-    groups again, the least like anyone named first."""
+    groups again, the people in the most photos first."""
 
     named = Signal(list, str)  # face ids, name
     confirmed = Signal(list, list, str)  # a follow-up's faces that are them, those that aren't, name

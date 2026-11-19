@@ -13,9 +13,12 @@ from .config import (
     ASSIGN_MARGIN,
     ASSIGN_MIN_PX,
     ASSIGN_SIM,
+    BACKGROUND_SHARE,
     CLUSTER_SIM,
     FOLLOW_UP_FACES,
     MAYBE_SIM,
+    SMALL_ASSIGN_MARGIN,
+    SMALL_ASSIGN_SIM,
     SUBGROUP_SIM,
     db_file,
 )
@@ -27,12 +30,21 @@ class Stopped(Exception):
     """should_stop() said to stop partway."""
 
 
+# A face worth asking about (SQL, on faces as f): not too small to tell (ASSIGN_MIN_PX), and not in the
+# background (less than BACKGROUND_SHARE of the size of the biggest face in its photo). The others, mostly
+# strangers behind the people photographed, are only ever recognized (auto_assign), never asked about.
+FOREGROUND = (
+    f"(COALESCE(f.px, {ASSIGN_MIN_PX}) >= {ASSIGN_MIN_PX} AND MAX(f.w, f.h) >= {BACKGROUND_SHARE!r} * "
+    "(SELECT MAX(MAX(g.w, g.h)) FROM faces g WHERE g.photo_id = f.photo_id AND g.hidden = 0))"
+)
+
+
 def load_faces(db, where="1=1", params=(), should_stop=lambda: False):
     """(rows, their normalized embeddings). Raises Stopped if should_stop() says to (checked every few
     thousand faces)."""
     cur = db.execute(
         f"SELECT f.id, f.photo_id, f.x, f.y, f.w, f.h, f.score, f.emb, f.person_id, f.locked, "
-        f"f.not_person, p.path, p.qhash "
+        f"f.not_person, f.px, p.path, p.qhash "
         f"FROM faces f JOIN photos p ON p.id = f.photo_id WHERE {where}",
         params,
     )
@@ -158,8 +170,9 @@ def auto_assign_if_changed(db, should_stop=lambda: False) -> int:
 def auto_assign(db, write: bool = True, should_stop=lambda: False):
     """Tag unnamed faces that clearly match someone already named: on average as alike as
     ASSIGN_SIM to the RECOGNIZE_K most alike of the faces they were named on, ASSIGN_MARGIN more than
-    to anyone else, big enough to tell (ASSIGN_MIN_PX), and not on the wrong side of what their
-    "that isn't them" marks taught (_not_them_model). Returns how many; with write=False, the
+    to anyone else (for a face smaller than ASSIGN_MIN_PX, harder to tell: SMALL_ASSIGN_SIM and
+    SMALL_ASSIGN_MARGIN), and not on the wrong side of what their "that isn't them" marks taught
+    (_not_them_model). Returns how many; with write=False, the
     [(person id, face id)] it would tag instead, changing nothing."""
     try:
         return _auto_assign(db, write, should_stop)
@@ -173,8 +186,8 @@ def _auto_assign(db, write, should_stop):
     rows, embs = (
         load_faces(
             db,
-            "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0 AND (f.px IS NULL OR f.px >= ?)",
-            (ASSIGN_MIN_PX,),
+            "f.person_id IS NULL AND f.locked = 0 AND f.hidden = 0",
+            (),
             should_stop,
         )
         if people
@@ -186,7 +199,12 @@ def _auto_assign(db, write, should_stop):
     order = np.argsort(-sims, axis=1)
     best = sims[np.arange(len(rows)), order[:, 0]]
     second = sims[np.arange(len(rows)), order[:, 1]] if len(people) > 1 else np.full(len(rows), -1.0)
-    ok = (best >= ASSIGN_SIM) & (best - second >= ASSIGN_MARGIN)
+    small = np.array([r["px"] is not None and r["px"] < ASSIGN_MIN_PX for r in rows])
+    ok = np.where(
+        small,
+        (best >= SMALL_ASSIGN_SIM) & (best - second >= SMALL_ASSIGN_MARGIN),
+        (best >= ASSIGN_SIM) & (best - second >= ASSIGN_MARGIN),
+    )
     ok &= np.array([r["not_person"] != people[j] for r, j in zip(rows, order[:, 0], strict=True)])
     for j in set(order[ok, 0].tolist()):  # what "that isn't them" taught can still say no
         if should_stop():
@@ -234,8 +252,9 @@ def reset_faces(db):
 
 
 def cluster_unnamed(db):
-    """Group unnamed faces that look like the same person, biggest group first."""
-    rows, embs = load_faces(db, "f.person_id IS NULL AND f.hidden = 0")
+    """Group the unnamed faces worth asking about (FOREGROUND) that look like the same person,
+    biggest group first."""
+    rows, embs = load_faces(db, f"f.person_id IS NULL AND f.hidden = 0 AND {FOREGROUND}")
     if not rows:
         return []
     quality = np.array([r["score"] * min(r["w"], r["h"]) for r in rows])
@@ -498,9 +517,10 @@ _KEEP = ("id", "photo_id", "x", "y", "w", "h", "score", "path", "qhash")
 
 
 def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
-    """Unnamed faces in groups of look-alikes: who to ask about. Those least like anyone named come
-    first (NEW: someone not named yet), then those that might be someone named (MAYBE), then those
-    that look like them (KNOWN); within each, the biggest and clearest first. In each group the
+    """Unnamed faces worth asking about (FOREGROUND) in groups of look-alikes: who to ask about. The
+    biggest groups come first (the people in the most photos: naming them names the most), the
+    clearest first among groups as big. Each group is NEW (someone not named yet), MAYBE (it might be
+    someone named) or KNOWN (it looks like them). In each group the
     clearest face comes first and the closest look-alikes sit together (see likeness_order). Each
     face has its "emb" (normalized), to sort by, and its group's "tier" and "like": the name of who
     it looks like (None for NEW). Changes nothing (about a second for 40,000 faces)."""
@@ -525,20 +545,22 @@ def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
             {**{k: g[i][k] for k in _KEEP}, "emb": embs[i], "tier": tier, "like": like}
             for i in likeness_order(embs, quality)
         ]
-        out.append((tier, -len(g), -float(quality.mean()), faces))
-    out.sort(key=lambda t: t[:3])
+        out.append((-len(g), -float(quality.mean()), faces))
+    out.sort(key=lambda t: t[:2])
     return [faces for *_, faces in out]
 
 
 def follow_up(db, name: str, limit: int = FOLLOW_UP_FACES) -> list[dict]:
-    """Right after naming someone: the unnamed faces that might be them (at least MAYBE_SIM alike,
+    """Right after naming someone: the unnamed faces worth asking about that might be them (at least MAYBE_SIM alike,
     not yet enough to be recognized, or held back), from all the groups, most alike first. None
     that were said not to be them. Each with its "emb", as in who_groups."""
     pid = person_id(db, name)
     owners, refs = reference_faces(db)
     if pid is None or not (owners == pid).any():
         return []
-    rows, embs = load_faces(db, "f.person_id IS NULL AND f.hidden = 0 AND f.not_person IS NOT ?", (pid,))
+    rows, embs = load_faces(
+        db, f"f.person_id IS NULL AND f.hidden = 0 AND f.not_person IS NOT ? AND {FOREGROUND}", (pid,)
+    )
     if not rows:
         return []
     alike = likeness_to(embs, owners, refs, [pid])[:, 0]
