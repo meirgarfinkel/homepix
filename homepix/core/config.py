@@ -11,13 +11,13 @@ THUMB_SIZE = 640  # photo thumbnails in the grid (older 320 px ones are replaced
 MIN_FACE_PX = 36  # ignore tiny background faces (in WORK_SIZE pixels)
 FACE_SCORE = 0.85  # face detector confidence needed
 CLUSTER_SIM = 0.40  # how alike two faces must be to group them
-SUBGROUP_SIM = 0.55  # ...and to sit side by side inside a group (Who is this?)
 ASSIGN_SIM = 0.55  # how alike a face must be to the faces someone was named on (the 3 most alike,
 # on average) to be recognized as them...
 ASSIGN_MARGIN = 0.08  # ...and how much more than to anyone else's
 MAYBE_SIM = 0.40  # a face this alike to someone (but not enough to be recognized) might be them:
 # asked about right after naming them, and Who is this? leaves it till later
 FOLLOW_UP_FACES = 30  # ...at most this many at a time
+FOLLOW_UP_UNSURE = 10  # ...and after them, the faces just recognized as them that are least like them
 ASSIGN_MIN_PX = 80  # faces smaller than this (in the pixels they were read from) are never
 # recognized by themselves: too blurry to tell people apart (they can still be named)
 SMALL_ASSIGN_SIM = 0.65  # ...a smaller one (a background face) is recognized only when it's this alike

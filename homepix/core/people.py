@@ -16,10 +16,10 @@ from .config import (
     BACKGROUND_SHARE,
     CLUSTER_SIM,
     FOLLOW_UP_FACES,
+    FOLLOW_UP_UNSURE,
     MAYBE_SIM,
     SMALL_ASSIGN_MARGIN,
     SMALL_ASSIGN_SIM,
-    SUBGROUP_SIM,
     db_file,
 )
 from .db import backup, from_blob
@@ -449,11 +449,15 @@ def plan_not(db, face_ids):
 
 
 def plan_confirm(db, yes, no, name: str):
-    """After naming someone, of the faces that might be them: yes are them, no aren't (still unnamed
-    and free to be anyone else, but remembered as not them, to learn from). One change."""
+    """After naming someone, of the faces that might be them: yes are them, no aren't (unnamed if they
+    were recognized as them, free to be anyone else, and remembered as not them, to learn from). One
+    change."""
     pid, people = _new_person(db, name)
     now = _faces_now(db, no) if no else {}
-    faces = {**{f: [*now[str(f)][:3], pid] for f in no if str(f) in now}, **{f: [pid, 1, 0] for f in yes}}
+    faces = {
+        **{f: [None, 0, 0, pid] if now[str(f)][0] == pid else [*now[str(f)][:3], pid] for f in no if str(f) in now},
+        **{f: [pid, 1, 0] for f in yes},
+    }
     return _plan_change(db, faces, people, recognize=True, learn=True, teach={pid} if no else ())
 
 
@@ -521,7 +525,7 @@ def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
     biggest groups come first (the people in the most photos: naming them names the most), the
     clearest first among groups as big. Each group is NEW (someone not named yet), MAYBE (it might be
     someone named) or KNOWN (it looks like them). In each group the
-    clearest face comes first and the closest look-alikes sit together (see likeness_order). Each
+    clearest face comes first and the most different faces come first (see different_first). Each
     face has its "emb" (normalized), to sort by, and its group's "tier" and "like": the name of who
     it looks like (None for NEW). Changes nothing (about a second for 40,000 faces)."""
     groups = [g for g in cluster_unnamed(db) if len(g) >= min_faces]
@@ -543,63 +547,60 @@ def who_groups(db, min_faces: int = 2) -> list[list[dict]]:
                 tier, like = (KNOWN if alike[j] >= ASSIGN_SIM else MAYBE), names.get(people[j])
         faces = [
             {**{k: g[i][k] for k in _KEEP}, "emb": embs[i], "tier": tier, "like": like}
-            for i in likeness_order(embs, quality)
+            for i in different_first(embs, quality)
         ]
         out.append((-len(g), -float(quality.mean()), faces))
     out.sort(key=lambda t: t[:2])
     return [faces for *_, faces in out]
 
 
-def follow_up(db, name: str, limit: int = FOLLOW_UP_FACES) -> list[dict]:
-    """Right after naming someone: the unnamed faces worth asking about that might be them (at least MAYBE_SIM alike,
-    not yet enough to be recognized, or held back), from all the groups, most alike first. None
-    that were said not to be them. Each with its "emb", as in who_groups."""
+def follow_up(db, name: str, limit: int = FOLLOW_UP_FACES, unsure: int = FOLLOW_UP_UNSURE) -> list[dict]:
+    """Right after naming someone, the faces worth asking about (FOREGROUND) to check: first the
+    unnamed ones that might be them (at least MAYBE_SIM alike, not yet enough to be recognized, or
+    held back), from all the groups, the limit most alike, the most different of those first; then
+    the unsure faces just recognized as them that are least like them, least first (where wrong
+    matches are). None that were said not to be them. Each with its "emb", as in who_groups."""
     pid = person_id(db, name)
     owners, refs = reference_faces(db)
     if pid is None or not (owners == pid).any():
         return []
-    rows, embs = load_faces(
-        db, f"f.person_id IS NULL AND f.hidden = 0 AND f.not_person IS NOT ? AND {FOREGROUND}", (pid,)
+
+    def faces(where, pick):
+        rows, embs = load_faces(db, f"{where} AND f.hidden = 0 AND {FOREGROUND}", (pid,))
+        if not rows:
+            return []
+        chosen = pick(likeness_to(embs, owners, refs, [pid])[:, 0], rows, embs)
+        return [{**{k: rows[i][k] for k in _KEEP}, "emb": embs[i]} for i in chosen]
+
+    def likely(alike, rows, embs):
+        best = [i for i in np.argsort(-alike, kind="stable")[:limit] if alike[i] >= MAYBE_SIM]
+        quality = np.array([rows[i]["score"] * min(rows[i]["w"], rows[i]["h"]) for i in best])
+        return [best[j] for j in different_first(embs[best], quality)] if best else []
+
+    return faces("f.person_id IS NULL AND f.not_person IS NOT ?", likely) + faces(
+        "f.person_id = ? AND f.locked = 0", lambda alike, *_: np.argsort(alike, kind="stable")[:unsure]
     )
-    if not rows:
-        return []
-    alike = likeness_to(embs, owners, refs, [pid])[:, 0]
-    best = [i for i in np.argsort(-alike, kind="stable")[:limit] if alike[i] >= MAYBE_SIM]
-    return [{**{k: rows[i][k] for k in _KEEP}, "emb": embs[i]} for i in best]
 
 
-def likeness_order(embs, quality) -> list[int]:
-    """An order for one group's faces (normalized embeddings) in which look-alikes sit together: the
-    faces split into tighter sets (each started by its clearest face, which leads it), the set of the
-    clearest face first, then each time the set most like the one before; in a set, after its first
-    face, the ones most like the set first."""
+def different_first(embs, quality) -> list[int]:
+    """An order for faces (normalized embeddings) in which each one is the least like those before it
+    (weighed by how clear it is, so a blur or an odd detection doesn't lead): the first few show the
+    range of how someone looks (angles, light, ages), which teaches recognizing the most. Near-copies
+    come last. The clearest face comes first."""
     n = len(embs)
-    cents, sums, members = np.empty_like(embs), np.empty_like(embs), []
-    for i in np.argsort(-quality, kind="stable"):
-        k = len(members)
-        if k:
-            sims = cents[:k] @ embs[i]
-            j = int(np.argmax(sims))
-            if sims[j] >= SUBGROUP_SIM:
-                members[j].append(i)
-                sums[j] += embs[i]
-                cents[j] = unit_vectors(sums[j])
-                continue
-        cents[k] = sums[k] = embs[i]
-        members.append([i])
-    k = len(members)
-    cents = cents[:k]
-    order, left, last = [], np.ones(k, bool), 0
-    for _ in range(k):
-        left[last] = False
-        head, rest = members[last][0], members[last][1:]
-        order += [head] + sorted(rest, key=lambda i: -float(embs[i] @ cents[last]))
-        if not left.any():
-            break
-        sims = np.where(left, cents @ cents[last], -2.0)
-        last = int(np.argmax(sims))
-    assert len(order) == n
-    return [int(i) for i in order]
+    if not n:
+        return []
+    clear = np.asarray(quality, np.float64) / max(float(np.max(quality)), 1e-9)
+    first = int(np.argmax(clear))
+    order, left = [first], np.ones(n, bool)
+    left[first] = False
+    closest = embs @ embs[first]  # each face's likeness to the most like it of those chosen
+    for _ in range(n - 1):
+        i = int(np.argmax(np.where(left, (1 - closest) * clear, -np.inf)))
+        order.append(i)
+        left[i] = False
+        closest = np.maximum(closest, embs @ embs[i])
+    return order
 
 
 def by_likeness(faces: list[dict], to: list[dict]) -> list[dict]:

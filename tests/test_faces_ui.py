@@ -153,9 +153,14 @@ def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
     window.who.name_button.click()
     assert window.who.waiting_for == "Ann"  # looking for faces that might be Ann too...
     settle(app, window)
-    wait_until(app, lambda: window.who.grid.count() == 3)  # none (Bob's are nothing like her): on to the next group
-    assert window.who.follow is None
-    assert names(pf) == ["Ann"] * 5 + [None] * 3  # the one left out was recognized, being so alike
+    # Is this Ann? none might be (Bob's are nothing like her), but the one left out was recognized,
+    # being so alike: it's shown, to check
+    wait_until(app, lambda: window.who.follow is not None and window.who.grid.count() == 1)
+    assert names(pf) == ["Ann"] * 5 + [None] * 3
+    assert window.who.title.text() == "Is this Ann?"
+    window.who.skip()  # (it is her: leave it as it is)
+    wait_until(app, lambda: window.who.grid.count() == 3)  # on to the next group
+    assert names(pf) == ["Ann"] * 5 + [None] * 3
     wait_until(app, lambda: window.who.remaining() == 1)
     assert "Ann" in window.people_names.values()
 

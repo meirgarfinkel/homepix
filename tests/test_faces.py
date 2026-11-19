@@ -78,9 +78,10 @@ def test_naming_a_group_recognizes_the_rest_and_undo_takes_it_all_back(db):
     assert all(names(db)[f] == "Ann" for f in ann)
 
 
-def test_look_alikes_in_a_group_sit_together(db):
-    """Two people who look alike end up in one group (siblings, say). Their faces used to come in
-    order of clearness, mixed together; now each one's faces come together, the clearest face first."""
+def test_a_group_shows_its_most_different_faces_first(db):
+    """Two people who look alike end up in one group (siblings, say). The clearest face comes first,
+    then the one least like it (the other sibling), and the near-copies after: the first faces show
+    the range, which teaches recognizing the most."""
     rng = np.random.default_rng(5)
 
     def sibling(n):
@@ -100,7 +101,7 @@ def test_look_alikes_in_a_group_sit_together(db):
     db.commit()
     (group,) = people.who_groups(db)
     first = [who[f["photo_id"] - 1] for f in group]
-    assert first == [1] * 5 + [2] * 5
+    assert first[:2] == [1, 2] and sorted(first) == [1] * 5 + [2] * 5
     assert group[0]["photo_id"] == 1  # the clearest
 
     # Most like ticked: the ticked first, then the ones most like them
@@ -486,3 +487,28 @@ def test_recognizing_stopped_partway_tags_nothing_and_runs_again(db, monkeypatch
     assert people.auto_assign_if_changed(db, should_stop=lambda: True) == 0
     assert names(db)[a[2]] is None and people._assigned == {}
     assert people.auto_assign_if_changed(db) == 1 and names(db)[a[2]] == "Ann"
+
+
+def test_the_follow_up_ends_with_the_least_sure_matches_and_the_rest_arent_unnames_them(db):
+    """After the faces that might be Ann, the ones just recognized as her that are least like her:
+    Enter leaves those not ticked as they are; "the rest aren't Ann" unnames them, and they're never
+    recognized as her again."""
+    rng = np.random.default_rng(4)
+    e = np.eye(128, dtype=np.float32)
+    ann = [_face(db, e[1] + rng.normal(0, 0.02, 128)) for _ in range(3)]
+    sure = [_face(db, e[1] + rng.normal(0, 0.02, 128)) for _ in range(3)]
+    unsure = _face(db, e[1] + 0.9 * e[4])  # recognized, but the least like her
+    maybe = _face(db, e[1] + 1.6 * e[5])  # might be her
+    db.commit()
+    do(db, people.plan_name(db, ann, "Ann"))
+    got = names(db)
+    assert all(got[f] == "Ann" for f in [*sure, unsure]) and got[maybe] is None
+    shown = [f["id"] for f in people.follow_up(db, "Ann", unsure=2)]
+    assert shown[0] == maybe and shown[1] == unsure and len(shown) == 3  # (the maybes, then the 2 least sure)
+    do(db, people.plan_confirm(db, [maybe], [unsure], "Ann"))
+    got = names(db)
+    assert got[maybe] == "Ann" and got[unsure] is None and all(got[f] == "Ann" for f in sure)
+    people.auto_assign(db)
+    assert names(db)[unsure] is None  # not recognized as her again
+    fileops.undo(db)
+    assert names(db)[unsure] == "Ann" and names(db)[maybe] is None
