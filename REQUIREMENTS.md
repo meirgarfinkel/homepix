@@ -95,6 +95,7 @@ Agreed 2026-10-27, brought up to date 2026-11-12 (HomePix 1.17, phone app 0.8). 
 | Edit description, keywords, GPS | v1 |
 | Writing: via exiftool, file modification time kept, old values journaled for undo, index fingerprint updated in the same step (so faces and names survive) | v1 |
 | Faces and people stay in the app's database | v1 |
+| Naming even a group of a thousand faces takes a second or two (numpy's math runs on at most 4 threads: on every core it was many times slower), and its follow-up is waited for once the naming is done, so a slow naming doesn't skip it | v1 |
 
 ## 6. Editing
 

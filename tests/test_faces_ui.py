@@ -87,7 +87,7 @@ def test_most_like_ticked_brings_their_look_alikes_to_the_front(app):
 def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
     from homepix.core.people import KNOWN, NEW
     from homepix.ui import workers
-    from homepix.ui.views.faces import WhoView
+    from homepix.ui.views.faces import FOLLOW_UP_WAIT, NAMING_WAIT, WhoView
 
     rng = np.random.default_rng(2)
 
@@ -114,6 +114,9 @@ def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
 
         v.set_groups([known], ["Ann", "Cy"])  # (worked out before the naming was done: still waiting)
         assert v.waiting_for == "Cy"
+        assert v._give_up.interval() == NAMING_WAIT  # a big naming on a slow disk isn't given up on
+        v.looking_for_follow_up()  # (the naming is done)
+        assert v._give_up.interval() == FOLLOW_UP_WAIT
         maybe = faces(20, 4)
         v.set_groups([known], ["Ann", "Cy"], maybe)
         assert v.title.text() == "Is this Cy?" and v.name.text() == "Cy" and v.grid.count() == 4

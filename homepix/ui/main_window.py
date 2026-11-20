@@ -722,7 +722,10 @@ class MainWindow(QMainWindow):
             self.people.set_who(self.who_count if self.unnamed else None)
 
         # (a follow-up once the naming is done, so it doesn't offer faces that naming recognized)
-        self._faces_jobs.run(load_who, done, None if self.ops.busy else self.who.waiting_for)
+        follow = None if self.ops.busy else self.who.waiting_for
+        if follow:
+            self.who.looking_for_follow_up()
+        self._faces_jobs.run(load_who, done, follow)
 
     def _load_person_faces(self, pid):
         def done(res, err):

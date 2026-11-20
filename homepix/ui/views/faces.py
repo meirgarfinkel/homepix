@@ -28,6 +28,8 @@ from .people import CROP
 
 TILE = 112
 ID_ROLE = Qt.ItemDataRole.UserRole
+NAMING_WAIT = 5 * 60_000  # (ms) the longest to wait for a naming to be done, for its follow-up
+FOLLOW_UP_WAIT = 10_000  # ...and then for the follow-up to be found
 BATCH = 200  # face pictures asked for at a time: the first ones, then more as they're scrolled to
 
 
@@ -412,7 +414,9 @@ class WhoView(QWidget):
         self.waiting_for = None  # a name just given: its follow-up is being looked for
         self.follow = None  # the follow-up being shown: {"name", "faces"}
         self._naming = None
-        self._give_up = QTimer(self, singleShot=True, interval=10_000)  # (no follow-up came: go on)
+        # (no follow-up came: go on. Naming a big group can take a while on a slow disk, so the short
+        # wait starts once the naming is done and the follow-up is being looked for)
+        self._give_up = QTimer(self, singleShot=True)
         self._give_up.timeout.connect(lambda: self._got_follow_up(None) if self.waiting_for else None)
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
@@ -491,6 +495,11 @@ class WhoView(QWidget):
         else:
             self._update_text()
 
+    def looking_for_follow_up(self):
+        """The naming is done and the follow-up is being looked for: go on if it doesn't come soon."""
+        if self.waiting_for:
+            self._give_up.start(FOLLOW_UP_WAIT)
+
     def _got_follow_up(self, faces):
         name, self.waiting_for = self.waiting_for, None
         self._give_up.stop()
@@ -504,7 +513,7 @@ class WhoView(QWidget):
         self.groups = [kept for g in self.groups if len(kept := [f for f in g if f["id"] not in gone]) >= 2]
         if self._naming and not self.follow:
             self.waiting_for = self._naming
-            self._give_up.start()
+            self._give_up.start(NAMING_WAIT)
         self.follow = None
         self.name.clear()
         self._show_group()
