@@ -491,7 +491,7 @@ def test_recognizing_stopped_partway_tags_nothing_and_runs_again(db, monkeypatch
 
 def test_the_follow_up_ends_with_the_least_sure_matches_and_the_rest_arent_unnames_them(db):
     """After the faces that might be Ann, the ones just recognized as her that are least like her:
-    Enter leaves those not ticked as they are; "the rest aren't Ann" unnames them, and they're never
+    Enter leaves those not ticked as they are; "No pictures of Ann here" unnames them, and they're never
     recognized as her again."""
     rng = np.random.default_rng(4)
     e = np.eye(128, dtype=np.float32)

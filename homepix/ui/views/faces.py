@@ -110,11 +110,6 @@ class FaceGrid(QListWidget):
         self._items, self._asked = {}, set()  # face id -> its tile; ids whose pictures were asked for
         self.itemDoubleClicked.connect(lambda it: self.opened.emit(self.faces[self.row(it)]))
 
-    def fits(self) -> int:
-        """How many tiles fit on the page without scrolling."""
-        size, view = self.gridSize(), self.viewport().size()
-        return max(1, view.width() // size.width()) * max(1, view.height() // size.height())
-
     def set_faces(self, faces: list[dict], selected: bool = False):
         self.faces = []
         self.clear()  # (says the selection changed: with no faces left)
@@ -551,7 +546,7 @@ class WhoView(QWidget):
             w.setEnabled(bool(group))
         self.rest_button.setVisible(bool(self.follow))
         if self.follow:
-            self.rest_button.setText(f"The rest aren't {self.follow['name']}")
+            self.rest_button.setText(f"No pictures of {self.follow['name']} here")
         self._update_text()
         self._selection_changed()
         if group:
