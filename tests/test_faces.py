@@ -78,9 +78,10 @@ def test_naming_a_group_recognizes_the_rest_and_undo_takes_it_all_back(db):
     assert all(names(db)[f] == "Ann" for f in ann)
 
 
-def test_look_alikes_in_a_group_sit_together(db):
-    """Two people who look alike end up in one group (siblings, say). Their faces used to come in
-    order of clearness, mixed together; now each one's faces come together, the clearest face first."""
+def test_a_group_shows_its_most_different_faces_first(db):
+    """Two people who look alike end up in one group (siblings, say). The clearest face comes first,
+    then the one least like it (the other sibling), and the near-copies after: the first faces show
+    the range, which teaches recognizing the most."""
     rng = np.random.default_rng(5)
 
     def sibling(n):
@@ -100,7 +101,7 @@ def test_look_alikes_in_a_group_sit_together(db):
     db.commit()
     (group,) = people.who_groups(db)
     first = [who[f["photo_id"] - 1] for f in group]
-    assert first == [1] * 5 + [2] * 5
+    assert first[:2] == [1, 2] and sorted(first) == [1] * 5 + [2] * 5
     assert group[0]["photo_id"] == 1  # the clearest
 
     # Most like ticked: the ticked first, then the ones most like them
@@ -109,9 +110,10 @@ def test_look_alikes_in_a_group_sit_together(db):
     assert order[0] is ticked[0] and [who[f["photo_id"] - 1] for f in order[1:5]] == [2] * 4
 
 
-def test_recognizing_compares_with_named_faces_only_and_never_small_ones(db):
+def test_recognizing_compares_with_named_faces_only_and_small_ones_only_when_clear(db):
     """A face recognized by itself is never a reason to recognize another (one wrong match used to
-    pull in more, each a bit further off); and a face too small to tell isn't recognized at all."""
+    pull in more, each a bit further off); and a face too small to tell is recognized only when the
+    match is clearer than a bigger face needs."""
 
     def face(v, px=None):
         pid = db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/r/{face.n}.jpg", f"r{face.n}")).lastrowid
@@ -124,13 +126,15 @@ def test_recognizing_compares_with_named_faces_only_and_never_small_ones(db):
     face.n = 0
     e = np.eye(128, dtype=np.float32)
     named = [face(e[1] + 0.05 * e[k]) for k in (3, 4, 5)]
-    near = face(e[1] + 0.9 * e[2], px=120)  # like the named ones: recognized
+    near = face(e[1] + 1.2 * e[2], px=120)  # like the named ones (0.64): recognized
     further = face(e[2] + 0.5 * e[1], px=120)  # like `near`, not like the named ones
-    small = face(e[1], px=40)  # just like them, but a blur
+    small_unsure = face(e[1] + 1.2 * e[2], px=40)  # as alike as `near`, but a blur: not clear enough
+    small_clear = face(e[1], px=40)  # a blur, but just like them
     db.commit()
     do(db, people.plan_name(db, named, "Ann"))
     got = names(db)
-    assert got[near] == "Ann" and got[further] is None and got[small] is None
+    assert got[near] == "Ann" and got[further] is None
+    assert got[small_unsure] is None and got[small_clear] == "Ann"
 
 
 def test_starting_faces_over_forgets_them_and_finds_them_again(db, pf):
@@ -287,8 +291,8 @@ def _face(db, v, px=None):
 
 
 def _people_and_others(db):
-    """Ann and Bob named; unnamed: someone new (4 faces), 6 that might be Bob, and 3 of Ann too
-    small to be recognized by themselves."""
+    """Ann and Bob named; unnamed: someone new (4 faces), 6 that might be Bob, and 3 small ones that
+    are like Ann, but not clearly enough to be recognized (the background: never asked about)."""
     rng = np.random.default_rng(11)
     e = np.eye(128, dtype=np.float32)
 
@@ -296,27 +300,49 @@ def _people_and_others(db):
         return [_face(db, v + rng.normal(0, 0.02, 128), px) for _ in range(n)]
 
     ann, bob = some(e[1], 3), some(e[2], 3)
-    new, maybe_bob, small_ann = some(e[3], 4), some(e[2] + 1.6 * e[5], 6), some(e[1], 3, px=40)
+    new, maybe_bob, small_ann = some(e[3], 4), some(e[2] + 1.6 * e[5], 6), some(e[1] + 1.2 * e[6], 3, px=40)
     db.commit()
     do(db, people.plan_name(db, ann, "Ann"))
     do(db, people.plan_name(db, bob, "Bob"))
     return new, maybe_bob, small_ann
 
 
-def test_who_is_this_asks_about_new_faces_first(db):
+def test_who_is_this_asks_about_the_people_in_the_most_photos_first_and_not_the_background(db):
     new, maybe_bob, small_ann = _people_and_others(db)
     groups = people.who_groups(db)
-    assert [{f["id"] for f in g} for g in groups] == [set(new), set(maybe_bob), set(small_ann)]
-    assert [(g[0]["tier"], g[0]["like"]) for g in groups] == [
-        (people.NEW, None),
-        (people.MAYBE, "Bob"),
-        (people.KNOWN, "Ann"),
-    ]
+    assert [{f["id"] for f in g} for g in groups] == [set(maybe_bob), set(new)]  # (no small ones)
+    assert [(g[0]["tier"], g[0]["like"]) for g in groups] == [(people.MAYBE, "Bob"), (people.NEW, None)]
+    assert all(names(db)[f] is None for f in small_ann)
+
+
+def test_a_face_far_smaller_than_the_main_one_in_its_photo_is_background(db):
+    """A stranger behind the people photographed, sharp enough to read: never asked about, but
+    recognized if it clearly is someone."""
+    e = np.eye(128, dtype=np.float32)
+    ann = [_face(db, e[1] + 0.05 * e[k]) for k in (3, 4, 5)]
+    do(db, people.plan_name(db, ann, "Ann"))
+    photos = []
+    for n in range(3):
+        photos.append(db.execute("INSERT INTO photos (path, qhash) VALUES (?, ?)", (f"/b/{n}.jpg", f"b{n}")).lastrowid)
+
+    def face(photo, v, w):
+        return db.execute(
+            "INSERT INTO faces (photo_id, x, y, w, h, score, emb, px) VALUES (?, .1, .1, ?, ?, .99, ?, 200)",
+            (photo, w, w, to_blob(unit(v))),
+        ).lastrowid
+
+    front = [face(p, e[7] + 0.05 * e[8 + n], 0.4) for n, p in enumerate(photos)]
+    behind = [face(p, e[9] + 0.05 * e[20 + n], 0.1) for n, p in enumerate(photos)]  # someone, three times
+    behind_ann = face(photos[0], e[1], 0.1)
+    db.commit()
+    groups = [{f["id"] for f in g} for g in people.who_groups(db)]
+    assert set(front) in groups and not any(set(behind) & g for g in groups)
+    assert people.auto_assign(db) == 1 and names(db)[behind_ann] == "Ann"
 
 
 def test_the_faces_that_might_be_someone_just_named(db):
     new, maybe_bob, small_ann = _people_and_others(db)
-    assert {f["id"] for f in people.follow_up(db, "Ann")} == set(small_ann)  # from any group, never others'
+    assert people.follow_up(db, "Ann") == []  # (the small ones are background: never asked about)
     got = [f["id"] for f in people.follow_up(db, "Bob")]
     assert set(got) == set(maybe_bob)
     assert len(people.follow_up(db, "Bob", limit=4)) == 4
@@ -461,3 +487,28 @@ def test_recognizing_stopped_partway_tags_nothing_and_runs_again(db, monkeypatch
     assert people.auto_assign_if_changed(db, should_stop=lambda: True) == 0
     assert names(db)[a[2]] is None and people._assigned == {}
     assert people.auto_assign_if_changed(db) == 1 and names(db)[a[2]] == "Ann"
+
+
+def test_the_follow_up_ends_with_the_least_sure_matches_and_the_rest_arent_unnames_them(db):
+    """After the faces that might be Ann, the ones just recognized as her that are least like her:
+    Enter leaves those not ticked as they are; "No pictures of Ann here" unnames them, and they're never
+    recognized as her again."""
+    rng = np.random.default_rng(4)
+    e = np.eye(128, dtype=np.float32)
+    ann = [_face(db, e[1] + rng.normal(0, 0.02, 128)) for _ in range(3)]
+    sure = [_face(db, e[1] + rng.normal(0, 0.02, 128)) for _ in range(3)]
+    unsure = _face(db, e[1] + 0.9 * e[4])  # recognized, but the least like her
+    maybe = _face(db, e[1] + 1.6 * e[5])  # might be her
+    db.commit()
+    do(db, people.plan_name(db, ann, "Ann"))
+    got = names(db)
+    assert all(got[f] == "Ann" for f in [*sure, unsure]) and got[maybe] is None
+    shown = [f["id"] for f in people.follow_up(db, "Ann", unsure=2)]
+    assert shown[0] == maybe and shown[1] == unsure and len(shown) == 3  # (the maybes, then the 2 least sure)
+    do(db, people.plan_confirm(db, [maybe], [unsure], "Ann"))
+    got = names(db)
+    assert got[maybe] == "Ann" and got[unsure] is None and all(got[f] == "Ann" for f in sure)
+    people.auto_assign(db)
+    assert names(db)[unsure] is None  # not recognized as her again
+    fileops.undo(db)
+    assert names(db)[unsure] == "Ann" and names(db)[maybe] is None

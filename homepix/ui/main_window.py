@@ -98,7 +98,10 @@ def load_library(place, index=None):
             )
             months = group_by_month(items)
         counts = folder_counts(db)
-        unnamed = db.execute("SELECT EXISTS (SELECT 1 FROM faces WHERE person_id IS NULL AND hidden = 0)").fetchone()[0]
+        unnamed = db.execute(
+            "SELECT EXISTS (SELECT 1 FROM faces f WHERE f.person_id IS NULL AND f.hidden = 0 "
+            f"AND {known_people.FOREGROUND})"
+        ).fetchone()[0]
         total = sum(n for f, n in counts.items() if not within(f, excluded))
         return months, counts, total, named_people(db), bool(unnamed)
     finally:
@@ -719,9 +722,10 @@ class MainWindow(QMainWindow):
             self.people.set_who(self.who_count if self.unnamed else None)
 
         # (a follow-up once the naming is done, so it doesn't offer faces that naming recognized)
-        # (a follow-up fills the page, and is never smaller than FOLLOW_UP_FACES)
-        limit = max(FOLLOW_UP_FACES, self.who.grid.fits())
-        self._faces_jobs.run(load_who, done, None if self.ops.busy else self.who.waiting_for, limit)
+        follow = None if self.ops.busy else self.who.waiting_for
+        if follow:
+            self.who.looking_for_follow_up()
+        self._faces_jobs.run(load_who, done, follow)
 
     def _load_person_faces(self, pid):
         def done(res, err):

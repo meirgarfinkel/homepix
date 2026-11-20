@@ -28,6 +28,8 @@ from .people import CROP
 
 TILE = 112
 ID_ROLE = Qt.ItemDataRole.UserRole
+NAMING_WAIT = 5 * 60_000  # (ms) the longest to wait for a naming to be done, for its follow-up
+FOLLOW_UP_WAIT = 10_000  # ...and then for the follow-up to be found
 BATCH = 200  # face pictures asked for at a time: the first ones, then more as they're scrolled to
 
 
@@ -109,11 +111,6 @@ class FaceGrid(QListWidget):
         self._showing = False  # (read on worker threads: pictures not made yet are left while it's hidden)
         self._items, self._asked = {}, set()  # face id -> its tile; ids whose pictures were asked for
         self.itemDoubleClicked.connect(lambda it: self.opened.emit(self.faces[self.row(it)]))
-
-    def fits(self) -> int:
-        """How many tiles fit on the page without scrolling."""
-        size, view = self.gridSize(), self.viewport().size()
-        return max(1, view.width() // size.width()) * max(1, view.height() // size.height())
 
     def set_faces(self, faces: list[dict], selected: bool = False):
         self.faces = []
@@ -401,8 +398,9 @@ class PersonFaces(QWidget):
 class WhoView(QWidget):
     """One group of unnamed look-alike faces at a time, none ticked to start with: those ticked are
     named (or hidden), so a face is only named once it's been clicked. Right after a group is named,
-    the faces that might be that person too come once (a follow-up: "Is this Ann?"), then the
-    groups again, the least like anyone named first."""
+    the faces that might be that person too come once, and after them those recognized as them that
+    are least like them (a follow-up: "Is this Ann?"), then the
+    groups again, the people in the most photos first."""
 
     named = Signal(list, str)  # face ids, name
     confirmed = Signal(list, list, str)  # a follow-up's faces that are them, those that aren't, name
@@ -416,7 +414,9 @@ class WhoView(QWidget):
         self.waiting_for = None  # a name just given: its follow-up is being looked for
         self.follow = None  # the follow-up being shown: {"name", "faces"}
         self._naming = None
-        self._give_up = QTimer(self, singleShot=True, interval=10_000)  # (no follow-up came: go on)
+        # (no follow-up came: go on. Naming a big group can take a while on a slow disk, so the short
+        # wait starts once the naming is done and the follow-up is being looked for)
+        self._give_up = QTimer(self, singleShot=True)
         self._give_up.timeout.connect(lambda: self._got_follow_up(None) if self.waiting_for else None)
         self.title = QLabel()
         self.title.setObjectName("pageTitle")
@@ -495,6 +495,11 @@ class WhoView(QWidget):
         else:
             self._update_text()
 
+    def looking_for_follow_up(self):
+        """The naming is done and the follow-up is being looked for: go on if it doesn't come soon."""
+        if self.waiting_for:
+            self._give_up.start(FOLLOW_UP_WAIT)
+
     def _got_follow_up(self, faces):
         name, self.waiting_for = self.waiting_for, None
         self._give_up.stop()
@@ -508,7 +513,7 @@ class WhoView(QWidget):
         self.groups = [kept for g in self.groups if len(kept := [f for f in g if f["id"] not in gone]) >= 2]
         if self._naming and not self.follow:
             self.waiting_for = self._naming
-            self._give_up.start()
+            self._give_up.start(NAMING_WAIT)
         self.follow = None
         self.name.clear()
         self._show_group()
@@ -550,7 +555,7 @@ class WhoView(QWidget):
             w.setEnabled(bool(group))
         self.rest_button.setVisible(bool(self.follow))
         if self.follow:
-            self.rest_button.setText(f"The rest aren't {self.follow['name']}")
+            self.rest_button.setText(f"No pictures of {self.follow['name']} here")
         self._update_text()
         self._selection_changed()
         if group:

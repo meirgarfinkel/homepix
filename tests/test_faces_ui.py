@@ -87,7 +87,7 @@ def test_most_like_ticked_brings_their_look_alikes_to_the_front(app):
 def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
     from homepix.core.people import KNOWN, NEW
     from homepix.ui import workers
-    from homepix.ui.views.faces import WhoView
+    from homepix.ui.views.faces import FOLLOW_UP_WAIT, NAMING_WAIT, WhoView
 
     rng = np.random.default_rng(2)
 
@@ -114,10 +114,13 @@ def test_naming_a_group_asks_once_about_faces_that_might_be_them(app):
 
         v.set_groups([known], ["Ann", "Cy"])  # (worked out before the naming was done: still waiting)
         assert v.waiting_for == "Cy"
+        assert v._give_up.interval() == NAMING_WAIT  # a big naming on a slow disk isn't given up on
+        v.looking_for_follow_up()  # (the naming is done)
+        assert v._give_up.interval() == FOLLOW_UP_WAIT
         maybe = faces(20, 4)
         v.set_groups([known], ["Ann", "Cy"], maybe)
         assert v.title.text() == "Is this Cy?" and v.name.text() == "Cy" and v.grid.count() == 4
-        assert not v.rest_button.isHidden() and v.rest_button.text() == "The rest aren't Cy"
+        assert not v.rest_button.isHidden() and v.rest_button.text() == "No pictures of Cy here"
         v.grid.item(0).setSelected(True)
         v.rest_button.click()
         assert confirmed == [([20], [21, 22, 23], "Cy")]
@@ -153,9 +156,14 @@ def test_who_is_this_names_a_group_and_undo_takes_it_back(window, pf, app):
     window.who.name_button.click()
     assert window.who.waiting_for == "Ann"  # looking for faces that might be Ann too...
     settle(app, window)
-    wait_until(app, lambda: window.who.grid.count() == 3)  # none (Bob's are nothing like her): on to the next group
-    assert window.who.follow is None
-    assert names(pf) == ["Ann"] * 5 + [None] * 3  # the one left out was recognized, being so alike
+    # Is this Ann? none might be (Bob's are nothing like her), but the one left out was recognized,
+    # being so alike: it's shown, to check
+    wait_until(app, lambda: window.who.follow is not None and window.who.grid.count() == 1)
+    assert names(pf) == ["Ann"] * 5 + [None] * 3
+    assert window.who.title.text() == "Is this Ann?"
+    window.who.skip()  # (it is her: leave it as it is)
+    wait_until(app, lambda: window.who.grid.count() == 3)  # on to the next group
+    assert names(pf) == ["Ann"] * 5 + [None] * 3
     wait_until(app, lambda: window.who.remaining() == 1)
     assert "Ann" in window.people_names.values()
 
@@ -318,28 +326,6 @@ def test_a_face_grid_can_be_drawn_before_it_has_faces(app, monkeypatch):
     grid.resize(400, 300)
     grid.grab()  # (paints it)
     assert errors == []
-
-
-def test_a_follow_up_fills_the_page(window, app, monkeypatch):
-    """The faces that might be someone just named: as many as fit on the page, never fewer than 30."""
-    from homepix.core.config import FOLLOW_UP_FACES
-    from homepix.ui.views.faces import FaceGrid
-
-    grid = FaceGrid()
-    grid.resize(1300, 700)
-    grid.show()
-    app.processEvents()
-    cell, view = grid.gridSize(), grid.viewport().size()
-    assert grid.fits() == (view.width() // cell.width()) * (view.height() // cell.height()) > 30
-    grid.close()
-
-    asked = []
-    monkeypatch.setattr(window._faces_jobs, "run", lambda fn, done, *args: asked.append(args))
-    window.who.waiting_for = "Ann"
-    for fits, wanted in ((80, 80), (12, FOLLOW_UP_FACES)):
-        monkeypatch.setattr(window.who.grid, "fits", lambda fits=fits: fits)
-        window._load_who()
-        assert asked[-1] == ("Ann", wanted)
 
 
 def test_start_faces_over_asks_first_and_says_what_goes(window, pf, app, monkeypatch):

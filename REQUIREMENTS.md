@@ -95,6 +95,7 @@ Agreed 2026-10-27, brought up to date 2026-11-12 (HomePix 1.17, phone app 0.8). 
 | Edit description, keywords, GPS | v1 |
 | Writing: via exiftool, file modification time kept, old values journaled for undo, index fingerprint updated in the same step (so faces and names survive) | v1 |
 | Faces and people stay in the app's database | v1 |
+| Naming even a group of a thousand faces takes a second or two (numpy's math runs on at most 4 threads: on every core it was many times slower), and its follow-up is waited for once the naming is done, so a slow naming doesn't skip it | v1 |
 
 ## 6. Editing
 
@@ -110,6 +111,8 @@ Agreed 2026-10-27, brought up to date 2026-11-12 (HomePix 1.17, phone app 0.8). 
 | Search by description | v1 |
 | **Declutter** (in the ☰ menu): photos that may be junk (ads and flyers, screenshots, documents and receipts, memes, accidental shots), found with the search model from what every photo already has, listed by kind; picked ones go to the Trash like any delete, with Undo. Nothing goes by itself | v1 |
 | Faces: boxes in the viewer; name, rename, merge, split, fix wrong matches; the "who is this" flow | v1 |
+| A group shows its most different faces first (each the least like those before it, weighed by how clear it is), near-copies last. The follow-up ("Is this Ann?", once per name) shows up to 10 faces that might be them, then, in the same grid, the 5 faces just recognized as them that are least like them. All start unticked: Enter names the ticked ones and leaves the rest as they were; "No pictures of Ann here" also marks the others as not her, unnaming those recognized as her | v1 |
+| Who is this? asks about the people in the most photos first (the biggest groups). Background faces (smaller than a third of the biggest face in their photo, or under 80 px) are never asked about, in a group or a follow-up; they're only recognized, and one under 80 px only at a stricter bar (0.65 alike, 0.15 more than anyone else) | v1 |
 | Automatic scene labels for every photo (food, beach, ...) using the existing search model, and filtering by them (Declutter does this for junk only) | Later |
 | Burst grouping with best-shot suggestions | v2 |
 | Search text inside photos (OCR) | Later |
