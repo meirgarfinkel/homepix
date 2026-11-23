@@ -339,7 +339,7 @@ class MainWindow(QMainWindow):
         self.timeline.current_changed.connect(self._timeline_current)
         self.timeline.selection_changed.connect(self._timeline_current)
         self.viewer.closed.connect(self.close_viewer)
-        self.viewer.current_changed.connect(lambda i: self.info.show_photo(self.viewer.items[i].id))
+        self.viewer.current_changed.connect(lambda i: self.info.show_item(self.viewer.items[i]))
         self.sidebar.chosen.connect(self.show_place)
         self.people.chosen.connect(lambda pid: self.show_place(person_place(pid)))
         self.people.who_chosen.connect(lambda: self.show_place(WHO))

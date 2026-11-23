@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from ...core.db import open_db
-from ...core.info import photo_info
+from ...core.info import file_info, photo_info
 from .. import theme, workers
 from .timeline import video_length
 
@@ -65,12 +65,14 @@ class InfoPanel(QScrollArea):
         self.setWidget(body)
         self._latest = workers.Latest()
         self._id = None
+        self._file = None  # (path, kind) of a photo shown that isn't in the library
         self._info = None
+        self._count = 1
         self.show_photo(None)
         theme.signals.changed.connect(self._recolour)
 
     def _recolour(self):
-        if self._id is None:
+        if self._id is None and self._file is None:
             self.show_photo(None)
         elif self._info is not None:
             self._show_info(self._info, None)
@@ -78,6 +80,7 @@ class InfoPanel(QScrollArea):
     def show_photo(self, photo_id, count: int = 1):
         """photo_id None: nothing selected. count > 1: several selected (the info is for photo_id)."""
         self._id = photo_id
+        self._file = None
         if photo_id is None:
             self.head.hide()
             self.label.setText(f"<p style='color:{_colour('muted')}'>Select a photo.</p>")
@@ -85,8 +88,23 @@ class InfoPanel(QScrollArea):
         self._count = count
         self._latest.run(_load_info, self._show_info, photo_id)
 
+    def show_item(self, item):
+        """A photo in the viewer: from the library if it has an id, otherwise from its file."""
+        if item.id is not None:
+            self.show_photo(item.id)
+            return
+        self._id, self._count = None, 1
+        self._file = (item.path, item.kind)
+        self._load_file()
+
+    def _load_file(self):
+        file = self._file
+        self._latest.run(file_info, lambda res, err: self._file == file and self._show_info(res, err), *file)
+
     def refresh(self):
-        if self._id is not None:
+        if self._file is not None:
+            self._load_file()
+        elif self._id is not None:
             self.show_photo(self._id, self._count)
 
     def _show_info(self, info, err):

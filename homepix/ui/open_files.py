@@ -2,7 +2,7 @@
 app's icon. The photo is shown large, and the arrows go through the other photos in its folder.
 
 A photo that isn't in the library is shown just the same, straight from its folder: nothing is added
-to the library. HomePix knows nothing else about it (faces, details), so it can only be looked at."""
+to the library. The info panel reads its details from the file. It can only be looked at."""
 
 import os
 

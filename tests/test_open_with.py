@@ -179,3 +179,25 @@ def test_quitting_waits_for_a_file_change_but_not_long_for_other_work():
     assert time.time() - start < 5
     slow.set()
     assert workers.wait_idle(5)
+
+
+def test_a_photo_outside_the_library_shows_its_details(window, pf, app, tmp_path):
+    from PIL import ExifTags, Image
+
+    path = tmp_path / "Downloads" / "beach.jpg"
+    path.parent.mkdir()
+    exif = Image.Exif()
+    exif[ExifTags.Base.Model] = "Test Camera"
+    exif.get_ifd(0x8769)[ExifTags.Base.DateTimeOriginal] = "2021:06:05 14:30:00"
+    Image.new("RGB", (64, 48), "teal").save(path, exif=exif)
+    photo(path.parent / "other.jpg")
+
+    window.opener.open([str(path)])
+    wait_until(app, lambda: "Test Camera" in window.info.label.text())
+    text = window.info.label.text()
+    assert "June" in text and "2021" in text and "64 × 48" in text
+    assert "beach" in window.info.head.text()
+
+    window.viewer.go(window.viewer.index + 1)  # the arrows: the next photo's details
+    wait_until(app, lambda: "other" in window.info.head.text())
+    assert "Test Camera" not in window.info.label.text()

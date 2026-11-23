@@ -11,4 +11,4 @@ os.environ["ORT_DISABLE_TELEMETRY"] = "1"
 # A few threads are as fast as any. Set before numpy loads; it's read only then.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", str(min(4, os.cpu_count() or 1)))
 
-__version__ = "1.17.3"
+__version__ = "1.17.4"
