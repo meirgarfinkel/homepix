@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import ExifTags, Image
 
+from . import dates, metadata
 from .video import video_size
 
 GPS_IFD = 0x8825
@@ -103,16 +104,41 @@ def photo_info(db, photo_id: int) -> dict | None:
         info["duration"] = r["duration"]
     info["keywords"] = json.loads(r["keywords"]) if r["keywords"] else []
     info["description"] = r["description"] or ""
+    _add_from_file(info, path, r["kind"])
+    if info.get("offline") and r["size"]:
+        info["size"] = human_size(r["size"])
+    return info
+
+
+def _add_from_file(info: dict, path: Path, kind: str):
+    """Size, dimensions and EXIF. A file it can't reach gets 'offline', a damaged one 'error'."""
     try:
         info["size"] = human_size(os.stat(path).st_size)
-        if r["kind"] == "photo":
+        if kind == "photo":
             info.update(read_exif(path))
         elif dims := video_size(path):
             info["dimensions"] = dims
     except OSError:
         info["offline"] = True
-        if r["size"]:
-            info["size"] = human_size(r["size"])
-    except Exception as e:  # a damaged file: show what the index knows
+    except Exception as e:
         info["error"] = str(e)
+
+
+def file_info(path: str, kind: str) -> dict:
+    """The same details for a file the library doesn't have, all read from the file itself."""
+    p = Path(path)
+    info = {"id": None, "path": str(p), "name": p.name, "folder": str(p.parent), "kind": kind, "people": []}
+    info["keywords"], info["description"] = [], ""
+    try:
+        taken, source, _ = dates.quick_file_date(p, kind, os.stat(p).st_mtime)
+        info["taken"], info["date_source"] = taken, DATE_SOURCES.get(source, source)
+    except OSError:
+        info["taken"], info["date_source"] = "", None
+    try:
+        written = metadata.read([str(p)]).get(str(p))
+        if written:
+            info["keywords"], info["description"] = written.keywords, written.description
+    except Exception:  # no ExifTool, or it can't read this file: the rest still shows
+        pass
+    _add_from_file(info, p, kind)
     return info
